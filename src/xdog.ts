@@ -3,13 +3,26 @@
  * 
  * These classes provide convenient wrappers that compose the blur strategies
  * and DoG processor together.
+ * 
+ * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including 
+ * advanced image stylization" by Winnemöller et al. (2012)
  */
 
-import { GrayscaleImage, DoGConfig, ETFConfig, DEFAULT_DOG_CONFIG, DEFAULT_ETF_CONFIG } from './types.js';
+import { 
+  GrayscaleImage, 
+  DoGConfig, 
+  ETFConfig, 
+  FDoGConfig,
+  DEFAULT_DOG_CONFIG, 
+  DEFAULT_ETF_CONFIG,
+  DEFAULT_FDOG_CONFIG,
+  STYLE_PRESETS,
+  FDOG_STYLE_PRESETS
+} from './types.js';
 import { DoGProcessor } from './dog.js';
-import { IsotropicBlur, FlowGuidedBlur } from './blur.js';
+import { IsotropicBlur, FlowGuidedBlur, GradientAlignedBlur, FDoGBlur } from './blur.js';
 import { EdgeTangentFlow } from './etf.js';
-import { imageDataToGrayscale, grayscaleToImageData } from './utils.js';
+import { imageDataToGrayscale, grayscaleToImageData, createGrayscaleImage } from './utils.js';
 
 /**
  * XDoG configuration combining DoG parameters with isotropic blur options
@@ -20,21 +33,13 @@ export interface XDoGConfig extends DoGConfig {
 }
 
 /**
- * FDoG configuration combining DoG parameters with ETF options
- */
-export interface FDoGConfig extends DoGConfig {
-  /** ETF refinement iterations (default: 3) */
-  etfIterations?: number;
-  
-  /** ETF smoothing kernel size (default: 5) */
-  etfKernelSize?: number;
-}
-
-/**
  * XDoG (Extended Difference of Gaussians)
  * 
  * Uses standard isotropic Gaussian blur for edge detection and stylization.
  * Good for general-purpose edge detection and artistic effects.
+ * 
+ * This implements the reparameterized XDoG from Section 2.5 of the paper,
+ * using Equation 7 for the sharpening computation.
  */
 export class XDoG {
   private processor: DoGProcessor;
@@ -53,10 +58,31 @@ export class XDoG {
   }
   
   /**
+   * Create XDoG with a preset style
+   */
+  static withPreset(presetName: keyof typeof STYLE_PRESETS): XDoG {
+    return new XDoG(STYLE_PRESETS[presetName]);
+  }
+  
+  /**
    * Process a grayscale image
    */
   async process(input: GrayscaleImage, overrides: Partial<DoGConfig> = {}): Promise<GrayscaleImage> {
     return this.processor.process(input, overrides);
+  }
+  
+  /**
+   * Process without thresholding (returns sharpened image)
+   */
+  async processSharpened(input: GrayscaleImage, overrides: Partial<DoGConfig> = {}): Promise<GrayscaleImage> {
+    return this.processor.processNoThreshold(input, overrides);
+  }
+  
+  /**
+   * Get raw DoG response for visualization
+   */
+  async processRawDoG(input: GrayscaleImage, overrides: Partial<DoGConfig> = {}): Promise<GrayscaleImage> {
+    return this.processor.processRawDoG(input, overrides);
   }
   
   /**
@@ -98,44 +124,120 @@ export class XDoG {
  * Uses flow-guided blur along edge tangent directions for coherent line drawing.
  * Produces smoother, more artistic results similar to hand-drawn illustrations.
  * 
- * Note: FDoG is more computationally expensive than XDoG due to:
- * 1. Computing the Edge Tangent Flow field
- * 2. Line integral convolution for flow-guided blur
+ * This implements the full FDoG pipeline from Section 2.6:
+ * 1. Compute Edge Tangent Flow (ETF) from structure tensor
+ * 2. Apply gradient-aligned DoG (across edges)
+ * 3. Apply flow-aligned smoothing (along edges)
+ * 4. Apply soft thresholding
+ * 5. Optional: Apply anti-aliasing LIC pass
+ * 
+ * Parameters:
+ * - σc: Structure tensor smoothing (controls ETF smoothness)
+ * - σe: Edge detection sigma (controls edge width)
+ * - σm: Flow-aligned smoothing (controls line coherence)
+ * - σa: Anti-aliasing sigma (optional post-processing)
  */
 export class FDoG {
   private config: FDoGConfig;
   
   constructor(config: Partial<FDoGConfig> = {}) {
     this.config = {
-      ...DEFAULT_DOG_CONFIG,
-      etfIterations: DEFAULT_ETF_CONFIG.iterations,
-      etfKernelSize: DEFAULT_ETF_CONFIG.kernelSize,
+      ...DEFAULT_FDOG_CONFIG,
       ...config,
     };
+  }
+  
+  /**
+   * Create FDoG with a preset style
+   */
+  static withPreset(presetName: keyof typeof FDOG_STYLE_PRESETS): FDoG {
+    return new FDoG(FDOG_STYLE_PRESETS[presetName]);
   }
   
   /**
    * Process a grayscale image
    * 
    * Unlike XDoG, FDoG computes a new flow field for each image,
-   * so the processor is created fresh each time.
+   * so the full pipeline runs fresh each time.
    */
   async process(input: GrayscaleImage, overrides: Partial<FDoGConfig> = {}): Promise<GrayscaleImage> {
     const params = { ...this.config, ...overrides };
     
-    // Compute Edge Tangent Flow for this image
+    // Step 1: Compute Edge Tangent Flow for this image
     const etf = EdgeTangentFlow.compute(input, {
-      iterations: params.etfIterations,
-      kernelSize: params.etfKernelSize,
-    });
+      iterations: DEFAULT_ETF_CONFIG.iterations,
+      kernelSize: Math.ceil(params.sigmaC * 2.45) * 2 + 1,
+    }, params.sigmaC);
     
-    // Create flow-guided blur strategy
-    const blurStrategy = new FlowGuidedBlur(etf);
+    // Step 2: Create blur strategies
+    // For FDoG, we need gradient-aligned blur for DoG computation
+    const gradientBlur = new GradientAlignedBlur(etf);
     
-    // Create and run processor
-    const processor = new DoGProcessor(blurStrategy, params);
+    // Step 3: Create processor with gradient-aligned blur
+    const processor = new DoGProcessor(gradientBlur, params);
     
-    return processor.process(input);
+    // Step 4: Process image (DoG + threshold)
+    let result = await processor.process(input);
+    
+    // Step 5: Apply flow-aligned smoothing (σm)
+    if (params.sigmaM > 0) {
+      const flowBlur = new FlowGuidedBlur(etf);
+      result = await flowBlur.blur(result, params.sigmaM);
+    }
+    
+    // Step 6: Apply anti-aliasing if specified (σa)
+    if (params.sigmaA > 0) {
+      const aaBlur = new FlowGuidedBlur(etf);
+      result = await aaBlur.blur(result, params.sigmaA);
+    }
+    
+    return result;
+  }
+  
+  /**
+   * Process with more control over individual stages
+   */
+  async processDetailed(
+    input: GrayscaleImage, 
+    overrides: Partial<FDoGConfig> = {}
+  ): Promise<{
+    result: GrayscaleImage;
+    etf: EdgeTangentFlow;
+    sharpened: GrayscaleImage;
+    thresholded: GrayscaleImage;
+    smoothed: GrayscaleImage;
+  }> {
+    const params = { ...this.config, ...overrides };
+    
+    // Compute ETF
+    const etf = EdgeTangentFlow.compute(input, {
+      iterations: DEFAULT_ETF_CONFIG.iterations,
+      kernelSize: Math.ceil(params.sigmaC * 2.45) * 2 + 1,
+    }, params.sigmaC);
+    
+    // Create blur strategies
+    const gradientBlur = new GradientAlignedBlur(etf);
+    const processor = new DoGProcessor(gradientBlur, params);
+    
+    // Get intermediate results
+    const sharpened = await processor.processNoThreshold(input);
+    const thresholded = await processor.process(input);
+    
+    // Flow-aligned smoothing
+    let smoothed = thresholded;
+    if (params.sigmaM > 0) {
+      const flowBlur = new FlowGuidedBlur(etf);
+      smoothed = await flowBlur.blur(thresholded, params.sigmaM);
+    }
+    
+    // Anti-aliasing
+    let result = smoothed;
+    if (params.sigmaA > 0) {
+      const aaBlur = new FlowGuidedBlur(etf);
+      result = await aaBlur.blur(smoothed, params.sigmaA);
+    }
+    
+    return { result, etf, sharpened, thresholded, smoothed };
   }
   
   /**
@@ -156,12 +258,26 @@ export class FDoG {
   async processWithETF(
     input: GrayscaleImage,
     etf: EdgeTangentFlow,
-    overrides: Partial<DoGConfig> = {}
+    overrides: Partial<FDoGConfig> = {}
   ): Promise<GrayscaleImage> {
     const params = { ...this.config, ...overrides };
-    const blurStrategy = new FlowGuidedBlur(etf);
-    const processor = new DoGProcessor(blurStrategy, params);
-    return processor.process(input);
+    
+    const gradientBlur = new GradientAlignedBlur(etf);
+    const processor = new DoGProcessor(gradientBlur, params);
+    
+    let result = await processor.process(input);
+    
+    if (params.sigmaM > 0) {
+      const flowBlur = new FlowGuidedBlur(etf);
+      result = await flowBlur.blur(result, params.sigmaM);
+    }
+    
+    if (params.sigmaA > 0) {
+      const aaBlur = new FlowGuidedBlur(etf);
+      result = await aaBlur.blur(result, params.sigmaA);
+    }
+    
+    return result;
   }
   
   /**
@@ -169,14 +285,29 @@ export class FDoG {
    * 
    * Useful for visualizing the flow field or reusing it across frames.
    */
-  computeETF(input: GrayscaleImage, overrides: Partial<ETFConfig> = {}): EdgeTangentFlow {
-    const params = {
-      iterations: this.config.etfIterations ?? DEFAULT_ETF_CONFIG.iterations,
-      kernelSize: this.config.etfKernelSize ?? DEFAULT_ETF_CONFIG.kernelSize,
-      ...overrides,
-    };
+  computeETF(input: GrayscaleImage, sigmaC?: number): EdgeTangentFlow {
+    const sigma = sigmaC ?? this.config.sigmaC;
+    return EdgeTangentFlow.compute(input, {
+      iterations: DEFAULT_ETF_CONFIG.iterations,
+      kernelSize: Math.ceil(sigma * 2.45) * 2 + 1,
+    }, sigma);
+  }
+  
+  /**
+   * Apply only the anti-aliasing pass to an already-processed image
+   */
+  async applyAntiAliasing(
+    input: GrayscaleImage,
+    etf: EdgeTangentFlow,
+    sigmaA?: number
+  ): Promise<GrayscaleImage> {
+    const sigma = sigmaA ?? this.config.sigmaA;
+    if (sigma <= 0) {
+      return { data: new Float32Array(input.data), width: input.width, height: input.height };
+    }
     
-    return EdgeTangentFlow.compute(input, params);
+    const aaBlur = new FlowGuidedBlur(etf);
+    return aaBlur.blur(input, sigma);
   }
   
   /**
@@ -192,4 +323,38 @@ export class FDoG {
   setConfig(config: Partial<FDoGConfig>): void {
     this.config = { ...this.config, ...config };
   }
+}
+
+/**
+ * Convenience function for one-shot XDoG processing
+ */
+export async function xdog(
+  input: GrayscaleImage | ImageData,
+  config: Partial<XDoGConfig> = {}
+): Promise<GrayscaleImage> {
+  const processor = new XDoG(config);
+  
+  if ('data' in input && input.data instanceof Uint8ClampedArray) {
+    const grayscale = imageDataToGrayscale(input as ImageData);
+    return processor.process(grayscale);
+  }
+  
+  return processor.process(input as GrayscaleImage);
+}
+
+/**
+ * Convenience function for one-shot FDoG processing
+ */
+export async function fdog(
+  input: GrayscaleImage | ImageData,
+  config: Partial<FDoGConfig> = {}
+): Promise<GrayscaleImage> {
+  const processor = new FDoG(config);
+  
+  if ('data' in input && input.data instanceof Uint8ClampedArray) {
+    const grayscale = imageDataToGrayscale(input as ImageData);
+    return processor.process(grayscale);
+  }
+  
+  return processor.process(input as GrayscaleImage);
 }
