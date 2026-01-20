@@ -30,6 +30,25 @@ export function getPixel(image, x, y) {
     return image.data[clampedY * image.width + clampedX];
 }
 /**
+ * Get pixel value with bilinear interpolation for sub-pixel sampling
+ */
+export function getPixelBilinear(image, x, y) {
+    const x0 = Math.floor(x);
+    const y0 = Math.floor(y);
+    const x1 = x0 + 1;
+    const y1 = y0 + 1;
+    const fx = x - x0;
+    const fy = y - y0;
+    const v00 = getPixel(image, x0, y0);
+    const v10 = getPixel(image, x1, y0);
+    const v01 = getPixel(image, x0, y1);
+    const v11 = getPixel(image, x1, y1);
+    return (v00 * (1 - fx) * (1 - fy) +
+        v10 * fx * (1 - fy) +
+        v01 * (1 - fx) * fy +
+        v11 * fx * fy);
+}
+/**
  * Set pixel value
  */
 export function setPixel(image, x, y, value) {
@@ -106,9 +125,55 @@ export function dotVec2(a, b) {
     return a.x * b.x + a.y * b.y;
 }
 /**
- * Rotate vector 90 degrees counter-clockwise
+ * Rotate vector 90 degrees counter-clockwise (perpendicular)
  */
 export function perpendicular(v) {
     return { x: -v.y, y: v.x };
+}
+/**
+ * Generate 1D Gaussian kernel
+ * @param sigma Standard deviation
+ * @param size Kernel size (should be odd)
+ * @returns Normalized Gaussian kernel
+ */
+export function generateGaussianKernel(sigma, size) {
+    const kernel = new Float32Array(size);
+    const center = Math.floor(size / 2);
+    const sigma2 = 2 * sigma * sigma;
+    let sum = 0;
+    for (let i = 0; i < size; i++) {
+        const x = i - center;
+        kernel[i] = Math.exp(-(x * x) / sigma2);
+        sum += kernel[i];
+    }
+    // Normalize
+    for (let i = 0; i < size; i++) {
+        kernel[i] /= sum;
+    }
+    return kernel;
+}
+/**
+ * Compute kernel size from sigma
+ * Paper samples at all integer locations less than 2× sigma for flow-aligned,
+ * and extends to 2.45σ for structure tensor blur
+ *
+ * @param sigma Standard deviation
+ * @param multiplier Size multiplier (default 6 = 3σ on each side)
+ */
+export function computeKernelSize(sigma, multiplier = 6) {
+    // Ensure odd size for symmetric kernel
+    return Math.max(3, Math.floor(sigma * multiplier) | 1);
+}
+/**
+ * Clamp a value to a range
+ */
+export function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+}
+/**
+ * Linear interpolation
+ */
+export function lerp(a, b, t) {
+    return a + (b - a) * t;
 }
 //# sourceMappingURL=utils.js.map

@@ -5,22 +5,57 @@
  * and Flow-based Difference-of-Gaussians (FDoG) for artistic line drawing
  * and edge stylization.
  *
+ * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
+ * advanced image stylization" by Winnemöller et al. (2012)
+ *
+ * Key differences from a naive implementation:
+ *
+ * 1. Uses the reparameterized sharpening formulation (Equation 7):
+ *    S_σ,k,p(x) = (1 + p) · G_σ(x) - p · G_kσ(x)
+ *    This decouples edge sharpening strength from threshold parameters.
+ *
+ * 2. FDoG uses three separate sigma parameters:
+ *    - σc: Structure tensor smoothing
+ *    - σe: Edge detection (gradient-aligned DoG)
+ *    - σm: Flow-aligned smoothing
+ *
+ * 3. Includes anti-aliasing pass (σa) for FDoG
+ *
+ * 4. Structure tensor is smoothed with Gaussian (not box filter)
+ *
  * @example Basic XDoG usage
  * ```typescript
  * import { XDoG } from 'xdog';
  *
- * const xdog = new XDoG({ sigma: 1.0, phi: 10 });
- * const result = xdog.processImageData(canvasImageData);
+ * const xdog = new XDoG({ sigma: 1.0, p: 20, phi: 10 });
+ * const result = await xdog.processImageData(canvasImageData);
  * ctx.putImageData(result, 0, 0);
+ * ```
+ *
+ * @example Using a style preset
+ * ```typescript
+ * import { XDoG, STYLE_PRESETS } from 'xdog';
+ *
+ * // Use pencil shading preset
+ * const xdog = new XDoG(STYLE_PRESETS.pencilShading);
+ *
+ * // Or use the static factory method
+ * const xdog2 = XDoG.withPreset('threshold');
  * ```
  *
  * @example FDoG for coherent line drawing
  * ```typescript
  * import { FDoG } from 'xdog';
  *
- * const fdog = new FDoG({ sigma: 1.0, etfIterations: 3 });
- * const result = fdog.processImageData(canvasImageData);
- * ctx.putImageData(result, 0, 0);
+ * const fdog = new FDoG({
+ *   sigma: 1.4,      // Edge detection sigma (σe)
+ *   sigmaC: 2.5,     // Structure tensor smoothing (σc)
+ *   sigmaM: 4.0,     // Flow-aligned smoothing (σm)
+ *   sigmaA: 1.0,     // Anti-aliasing (σa)
+ *   p: 20,
+ *   phi: 10
+ * });
+ * const result = await fdog.processImageData(canvasImageData);
  * ```
  *
  * @example Custom blur strategy
@@ -28,22 +63,33 @@
  * import { DoGProcessor, IsotropicBlur } from 'xdog';
  *
  * const blur = new IsotropicBlur({ kernelSizeMultiplier: 8 });
- * const processor = new DoGProcessor(blur, { sigma: 2.0, phi: 5 });
- * const result = processor.process(grayscaleImage);
+ * const processor = new DoGProcessor(blur, { sigma: 2.0, p: 30, phi: 5 });
+ * const result = await processor.process(grayscaleImage);
+ * ```
+ *
+ * @example With preprocessing for noisy images
+ * ```typescript
+ * import { XDoG, Preprocessor, imageDataToGrayscale, grayscaleToImageData } from 'xdog';
+ *
+ * const preprocessor = new Preprocessor()
+ *   .bilateral({ sigmaSpatial: 4, sigmaRange: 0.1 });
+ *
+ * const gray = imageDataToGrayscale(imageData);
+ * const cleaned = preprocessor.apply(gray);
+ *
+ * const xdog = new XDoG({ p: 20, phi: 100 });
+ * const result = await xdog.process(cleaned);
  * ```
  */
-export { XDoG, FDoG } from './xdog.js';
-export type { XDoGConfig, FDoGConfig } from './xdog.js';
-export { DoGProcessor, ThresholdModes } from './dog.js';
-export { IsotropicBlur, FlowGuidedBlur } from './blur.js';
-export type { BlurStrategy, BlurStrategyClass, IsotropicBlurConfig } from './blur.js';
-export { WebGLIsotropicBlur, WebGLFlowGuidedBlur } from './blur-webgl.js';
-export type { WebGLBlurConfig } from './blur-webgl.js';
-export { WebGPUIsotropicBlur, WebGPUFlowGuidedBlur } from './blur-webgpu.js';
-export type { WebGPUBlurConfig } from './blur-webgpu.js';
+export { XDoG, FDoG, xdog, fdog } from './xdog.js';
+export type { XDoGConfig } from './xdog.js';
+export { DoGProcessor, ThresholdModes, applyCustomThreshold } from './dog.js';
+export { IsotropicBlur, FlowGuidedBlur, GradientAlignedBlur, FDoGBlur } from './blur.js';
+export type { BlurStrategy, BlurStrategyClass, IsotropicBlurConfig, FlowGuidedBlurConfig } from './blur.js';
 export { EdgeTangentFlow } from './etf.js';
-export { PreprocessingPresets, Preprocessor } from './preprocess.js';
-export type { Vec2, GrayscaleImage, RGBImage, FlowField, DoGConfig, ETFConfig, } from './types.js';
-export { DEFAULT_DOG_CONFIG, DEFAULT_ETF_CONFIG } from './types.js';
-export { createGrayscaleImage, cloneGrayscaleImage, imageDataToGrayscale, grayscaleToImageData, rgbToGrayscale, getPixel, setPixel, } from './utils.js';
+export { PreprocessingPresets, Preprocessor, bilateralFilter, medianFilter, kuwaharaFilter, gaussianBlur, enhanceContrast, quantize } from './preprocess.js';
+export type { BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from './preprocess.js';
+export type { Vec2, GrayscaleImage, RGBImage, FlowField, DoGConfig, ETFConfig, FDoGConfig, } from './types.js';
+export { DEFAULT_DOG_CONFIG, DEFAULT_ETF_CONFIG, DEFAULT_FDOG_CONFIG, STYLE_PRESETS, FDOG_STYLE_PRESETS, tauToP, pToTau } from './types.js';
+export { createGrayscaleImage, cloneGrayscaleImage, imageDataToGrayscale, grayscaleToImageData, rgbToGrayscale, getPixel, getPixelBilinear, setPixel, normalizeVec2, dotVec2, perpendicular, generateGaussianKernel, computeKernelSize, clamp, lerp, } from './utils.js';
 //# sourceMappingURL=index.d.ts.map

@@ -3,10 +3,14 @@
  * 
  * Provides filters to prepare images before line detection.
  * These help reduce noise and texture while preserving important edges.
+ * 
+ * Section 3.2 of the paper discusses the importance of bilateral
+ * preprocessing for "indication" - attenuating weak edges while
+ * preserving strong edges.
  */
 
 import { GrayscaleImage } from './types.js';
-import { createGrayscaleImage, getPixel } from './utils.js';
+import { createGrayscaleImage, getPixel, generateGaussianKernel } from './utils.js';
 
 /**
  * Configuration for bilateral filter
@@ -60,6 +64,10 @@ const DEFAULT_KUWAHARA_CONFIG: KuwaharaFilterConfig = {
  * (like grass) while keeping strong edges (like the car outline) sharp.
  * 
  * This is the recommended preprocessing for most images.
+ * 
+ * As mentioned in Section 3.2, bilateral filtering can serve as a
+ * "prioritization mechanism" for indication - attenuating weak edges
+ * while supporting strong edges.
  */
 export function bilateralFilter(
   input: GrayscaleImage,
@@ -232,18 +240,7 @@ export function gaussianBlur(
   
   const radius = Math.ceil(sigma * 3);
   const kernelSize = radius * 2 + 1;
-  const kernel = new Float32Array(kernelSize);
-  const sigma2 = 2 * sigma * sigma;
-  
-  let sum = 0;
-  for (let i = 0; i < kernelSize; i++) {
-    const x = i - radius;
-    kernel[i] = Math.exp(-(x * x) / sigma2);
-    sum += kernel[i];
-  }
-  for (let i = 0; i < kernelSize; i++) {
-    kernel[i] /= sum;
-  }
+  const kernel = generateGaussianKernel(sigma, kernelSize);
   
   // Horizontal pass
   const temp = createGrayscaleImage(width, height);

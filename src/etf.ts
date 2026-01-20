@@ -3,10 +3,13 @@
  * 
  * The ETF represents the direction of edges at each pixel, computed from
  * the structure tensor of the image gradients.
+ * 
+ * Based on Section 2.6 of Winnemöller et al. (2012) and
+ * Kang et al. (2007) "Coherent Line Drawing"
  */
 
 import { GrayscaleImage, FlowField, Vec2, ETFConfig, DEFAULT_ETF_CONFIG } from './types.js';
-import { createGrayscaleImage, getPixel, normalizeVec2, dotVec2 } from './utils.js';
+import { createGrayscaleImage, getPixel, normalizeVec2, dotVec2, generateGaussianKernel } from './utils.js';
 
 /**
  * Structure tensor components at a pixel
@@ -18,6 +21,15 @@ interface StructureTensor {
   e: Float32Array; // Ix²
   f: Float32Array; // Ix * Iy
   g: Float32Array; // Iy²
+}
+
+/**
+ * Gradient field with x, y components and magnitude
+ */
+interface Gradients {
+  x: Float32Array;
+  y: Float32Array;
+  magnitude: Float32Array;
 }
 
 /**
@@ -41,9 +53,29 @@ export class EdgeTangentFlow implements FlowField {
   }
   
   /**
-   * Compute Edge Tangent Flow from a grayscale image
+   * Get all tangents as a flat array (for GPU upload)
    */
-  static compute(input: GrayscaleImage, config: Partial<ETFConfig> = {}): EdgeTangentFlow {
+  getTangentArray(): Float32Array {
+    const result = new Float32Array(this.width * this.height * 2);
+    for (let i = 0; i < this.tangents.length; i++) {
+      result[i * 2] = this.tangents[i].x;
+      result[i * 2 + 1] = this.tangents[i].y;
+    }
+    return result;
+  }
+  
+  /**
+   * Compute Edge Tangent Flow from a grayscale image
+   * 
+   * @param input Grayscale image (values in 0-1)
+   * @param config ETF configuration
+   * @param sigmaC Structure tensor smoothing sigma (optional override)
+   */
+  static compute(
+    input: GrayscaleImage, 
+    config: Partial<ETFConfig> = {},
+    sigmaC?: number
+  ): EdgeTangentFlow {
     const cfg = { ...DEFAULT_ETF_CONFIG, ...config };
     const { width, height } = input;
     
@@ -53,8 +85,12 @@ export class EdgeTangentFlow implements FlowField {
     // Step 2: Build structure tensor from gradients
     const tensor = buildStructureTensor(gradients, width, height);
     
-    // Step 3: Smooth the structure tensor
-    const smoothedTensor = smoothStructureTensor(tensor, width, height, cfg.kernelSize);
+    // Step 3: Smooth the structure tensor with Gaussian (not box filter!)
+    // Paper specifies sampling within 2.45 * σc for structure tensor blur
+    const smoothSigma = sigmaC ?? (cfg.kernelSize / 2.45);
+    const smoothedTensor = smoothStructureTensorGaussian(
+      tensor, width, height, smoothSigma
+    );
     
     // Step 4: Extract initial tangent field from smoothed tensor
     let tangents = extractTangentField(smoothedTensor, width, height);
@@ -66,12 +102,83 @@ export class EdgeTangentFlow implements FlowField {
     
     return new EdgeTangentFlow(tangents, width, height);
   }
+  
+  /**
+   * Visualize the flow field as a grayscale image
+   * Encodes direction as intensity (useful for debugging)
+   */
+  visualize(): GrayscaleImage {
+    const output = createGrayscaleImage(this.width, this.height);
+    
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        const idx = y * this.width + x;
+        const t = this.tangents[idx];
+        // Convert direction to angle, then to 0-1 range
+        const angle = Math.atan2(t.y, t.x);
+        output.data[idx] = (angle + Math.PI) / (2 * Math.PI);
+      }
+    }
+    
+    return output;
+  }
+  
+  /**
+   * Visualize as a color image (HSV with direction as hue)
+   */
+  visualizeColor(): ImageData {
+    const imageData = new ImageData(this.width, this.height);
+    
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        const idx = y * this.width + x;
+        const t = this.tangents[idx];
+        
+        // Direction as hue
+        const angle = Math.atan2(t.y, t.x);
+        const hue = (angle + Math.PI) / (2 * Math.PI);
+        
+        // Magnitude as saturation (always 1 for normalized vectors)
+        const saturation = 1;
+        const value = 1;
+        
+        // HSV to RGB
+        const [r, g, b] = hsvToRgb(hue, saturation, value);
+        
+        const i = idx * 4;
+        imageData.data[i] = r;
+        imageData.data[i + 1] = g;
+        imageData.data[i + 2] = b;
+        imageData.data[i + 3] = 255;
+      }
+    }
+    
+    return imageData;
+  }
 }
 
-interface Gradients {
-  x: Float32Array;
-  y: Float32Array;
-  magnitude: Float32Array;
+/**
+ * Convert HSV to RGB
+ */
+function hsvToRgb(h: number, s: number, v: number): [number, number, number] {
+  const i = Math.floor(h * 6);
+  const f = h * 6 - i;
+  const p = v * (1 - s);
+  const q = v * (1 - f * s);
+  const t = v * (1 - (1 - f) * s);
+  
+  let r: number, g: number, b: number;
+  switch (i % 6) {
+    case 0: r = v; g = t; b = p; break;
+    case 1: r = q; g = v; b = p; break;
+    case 2: r = p; g = v; b = t; break;
+    case 3: r = p; g = q; b = v; break;
+    case 4: r = t; g = p; b = v; break;
+    case 5: r = v; g = p; b = q; break;
+    default: r = 0; g = 0; b = 0;
+  }
+  
+  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
 }
 
 /**
@@ -140,50 +247,72 @@ function buildStructureTensor(gradients: Gradients, width: number, height: numbe
 }
 
 /**
- * Smooth the structure tensor with a box filter
+ * Smooth the structure tensor with Gaussian filter
+ * 
+ * Paper specifies Gaussian smoothing (not box filter!) with sampling
+ * extended to all pixels within 2.45 * σc
  */
-function smoothStructureTensor(
+function smoothStructureTensorGaussian(
   tensor: StructureTensor,
   width: number,
   height: number,
-  kernelSize: number
+  sigma: number
 ): StructureTensor {
-  const half = Math.floor(kernelSize / 2);
   const size = width * height;
   
-  const smoothE = new Float32Array(size);
-  const smoothF = new Float32Array(size);
-  const smoothG = new Float32Array(size);
+  // Kernel size based on paper's 2.45σ sampling rule
+  const radius = Math.ceil(sigma * 2.45);
+  const kernelSize = radius * 2 + 1;
+  const kernel = generateGaussianKernel(sigma, kernelSize);
   
-  // Simple box filter (could be optimized with separable passes)
+  // Separable Gaussian blur for each component
+  const smoothE = gaussianBlur2D(tensor.e, width, height, kernel, radius);
+  const smoothF = gaussianBlur2D(tensor.f, width, height, kernel, radius);
+  const smoothG = gaussianBlur2D(tensor.g, width, height, kernel, radius);
+  
+  return { e: smoothE, f: smoothF, g: smoothG };
+}
+
+/**
+ * Apply 2D Gaussian blur using separable convolution
+ */
+function gaussianBlur2D(
+  input: Float32Array,
+  width: number,
+  height: number,
+  kernel: Float32Array,
+  radius: number
+): Float32Array {
+  const size = width * height;
+  const temp = new Float32Array(size);
+  const output = new Float32Array(size);
+  const kernelSize = kernel.length;
+  
+  // Horizontal pass
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      let sumE = 0, sumF = 0, sumG = 0;
-      let count = 0;
-      
-      for (let ky = -half; ky <= half; ky++) {
-        for (let kx = -half; kx <= half; kx++) {
-          const sx = x + kx;
-          const sy = y + ky;
-          
-          if (sx >= 0 && sx < width && sy >= 0 && sy < height) {
-            const idx = sy * width + sx;
-            sumE += tensor.e[idx];
-            sumF += tensor.f[idx];
-            sumG += tensor.g[idx];
-            count++;
-          }
-        }
+      let sum = 0;
+      for (let k = 0; k < kernelSize; k++) {
+        const sx = Math.max(0, Math.min(width - 1, x + k - radius));
+        sum += input[y * width + sx] * kernel[k];
       }
-      
-      const idx = y * width + x;
-      smoothE[idx] = sumE / count;
-      smoothF[idx] = sumF / count;
-      smoothG[idx] = sumG / count;
+      temp[y * width + x] = sum;
     }
   }
   
-  return { e: smoothE, f: smoothF, g: smoothG };
+  // Vertical pass
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let sum = 0;
+      for (let k = 0; k < kernelSize; k++) {
+        const sy = Math.max(0, Math.min(height - 1, y + k - radius));
+        sum += temp[sy * width + x] * kernel[k];
+      }
+      output[y * width + x] = sum;
+    }
+  }
+  
+  return output;
 }
 
 /**

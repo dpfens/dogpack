@@ -3,6 +3,10 @@
  *
  * Provides filters to prepare images before line detection.
  * These help reduce noise and texture while preserving important edges.
+ *
+ * Section 3.2 of the paper discusses the importance of bilateral
+ * preprocessing for "indication" - attenuating weak edges while
+ * preserving strong edges.
  */
 import { GrayscaleImage } from './types.js';
 /**
@@ -38,6 +42,10 @@ export interface KuwaharaFilterConfig {
  * (like grass) while keeping strong edges (like the car outline) sharp.
  *
  * This is the recommended preprocessing for most images.
+ *
+ * As mentioned in Section 3.2, bilateral filtering can serve as a
+ * "prioritization mechanism" for indication - attenuating weak edges
+ * while supporting strong edges.
  */
 export declare function bilateralFilter(input: GrayscaleImage, config?: Partial<BilateralFilterConfig>): GrayscaleImage;
 /**
