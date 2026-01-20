@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "lib": ["DOM", "ES2022"],
+    "module": "ES2022",                                  /* Changed from commonjs */
+    "moduleResolution": "bundler",                       /* Add this for modern resolution */
+    "target": "ES2022",                                  /* Add explicit target */
+    "types": ["@webgpu/types"],
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "skipLibCheck": true
+  }
+}
