@@ -1,87 +1,104 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-bs-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>XDoG / FDoG Line Drawing Demo</title>
+    <title>XDoG / FDoG Line Drawing Studio</title>
+    
+    <!-- Bootstrap 5.3 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+    
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        :root {
+            --accent-color: #6ee7b7;
+            --accent-dim: #34d399;
+            --surface-1: rgba(30, 41, 59, 0.7);
+            --surface-2: rgba(51, 65, 85, 0.5);
         }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            font-family: 'Outfit', sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
             min-height: 100vh;
-            color: #fff;
         }
         
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-            padding: 2rem;
+        .font-mono {
+            font-family: 'JetBrains Mono', monospace;
         }
         
-        header {
+        .accent-text {
+            color: var(--accent-color);
+        }
+        
+        .navbar {
+            background: var(--surface-1);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .navbar-brand {
+            font-weight: 600;
+            letter-spacing: -0.02em;
+        }
+        
+        .card {
+            background: var(--surface-1);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 1rem;
+        }
+        
+        .card-header {
+            background: transparent;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            font-weight: 500;
+        }
+        
+        /* Drop Zone */
+        .drop-zone {
+            border: 2px dashed rgba(110, 231, 183, 0.3);
+            border-radius: 1rem;
+            padding: 3rem;
             text-align: center;
-            margin-bottom: 2rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: rgba(110, 231, 183, 0.02);
         }
         
-        h1 {
-            font-size: 2.5rem;
-            font-weight: 300;
-            margin-bottom: 0.5rem;
-            background: linear-gradient(90deg, #fff, #a8d8ea);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+        .drop-zone:hover,
+        .drop-zone.drag-over {
+            border-color: var(--accent-color);
+            background: rgba(110, 231, 183, 0.08);
         }
         
-        .subtitle {
-            color: #8892b0;
-            font-size: 1.1rem;
+        .drop-zone-icon {
+            font-size: 3rem;
+            color: var(--accent-color);
+            opacity: 0.6;
         }
         
-        .main-content {
-            display: grid;
-            grid-template-columns: 1fr 320px;
-            gap: 2rem;
-        }
-        
-        @media (max-width: 1000px) {
-            .main-content {
-                grid-template-columns: 1fr;
-            }
-        }
-        
-        .image-panel {
-            background: rgba(255, 255, 255, 0.03);
-            border-radius: 16px;
-            padding: 1.5rem;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-        
-        .image-comparison {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1rem;
-            margin-bottom: 1rem;
-        }
-        
-        .image-box {
+        /* Image boxes */
+        .image-container {
             position: relative;
-            background: #0a0a0f;
-            border-radius: 12px;
+            background: #0a0f1a;
+            border-radius: 0.75rem;
             overflow: hidden;
             aspect-ratio: 4/3;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         
-        .image-box img,
-        .image-box canvas {
-            width: 100%;
-            height: 100%;
+        .image-container img,
+        .image-container canvas {
+            max-width: 100%;
+            max-height: 100%;
             object-fit: contain;
         }
         
@@ -90,416 +107,551 @@
             bottom: 0;
             left: 0;
             right: 0;
-            padding: 0.5rem;
-            background: linear-gradient(transparent, rgba(0,0,0,0.8));
+            padding: 0.5rem 1rem;
+            background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
+            font-size: 0.8rem;
+            color: var(--accent-color);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        /* Controls */
+        .form-label {
             font-size: 0.85rem;
-            color: #a8d8ea;
-            text-align: center;
-        }
-        
-        .drop-zone {
-            border: 2px dashed rgba(168, 216, 234, 0.3);
-            border-radius: 12px;
-            padding: 2rem;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            margin-bottom: 1rem;
-        }
-        
-        .drop-zone:hover,
-        .drop-zone.drag-over {
-            border-color: #a8d8ea;
-            background: rgba(168, 216, 234, 0.05);
-        }
-        
-        .drop-zone-icon {
-            font-size: 2.5rem;
-            margin-bottom: 0.5rem;
-        }
-        
-        .control-panel {
-            background: rgba(255, 255, 255, 0.03);
-            border-radius: 16px;
-            padding: 1.5rem;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-        
-        .panel-title {
-            font-size: 1.1rem;
             font-weight: 500;
-            margin-bottom: 1rem;
-            color: #a8d8ea;
+            color: #94a3b8;
+            margin-bottom: 0.35rem;
         }
         
-        .presets {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 0.5rem;
-            margin-bottom: 1.5rem;
+        .form-range {
+            height: 0.5rem;
         }
         
+        .form-range::-webkit-slider-thumb {
+            background: var(--accent-color);
+            box-shadow: 0 0 8px rgba(110, 231, 183, 0.4);
+        }
+        
+        .param-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            color: var(--accent-color);
+            min-width: 4rem;
+            text-align: right;
+        }
+        
+        .btn-accent {
+            background: linear-gradient(135deg, var(--accent-dim), var(--accent-color));
+            border: none;
+            color: #0f172a;
+            font-weight: 500;
+        }
+        
+        .btn-accent:hover {
+            background: linear-gradient(135deg, var(--accent-color), #a7f3d0);
+            color: #0f172a;
+            transform: translateY(-1px);
+            box-shadow: 0 8px 24px rgba(110, 231, 183, 0.3);
+        }
+        
+        .btn-accent:disabled {
+            background: #475569;
+            color: #94a3b8;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        /* Preset buttons */
         .preset-btn {
-            padding: 0.6rem 0.8rem;
-            border: 1px solid rgba(168, 216, 234, 0.3);
+            font-size: 0.8rem;
+            padding: 0.4rem 0.75rem;
+            border-radius: 2rem;
+            border: 1px solid rgba(255, 255, 255, 0.15);
             background: transparent;
-            color: #fff;
-            border-radius: 8px;
-            cursor: pointer;
+            color: #cbd5e1;
             transition: all 0.2s ease;
-            font-size: 0.85rem;
         }
         
         .preset-btn:hover {
-            background: rgba(168, 216, 234, 0.1);
-            border-color: #a8d8ea;
+            border-color: var(--accent-color);
+            color: var(--accent-color);
+            background: rgba(110, 231, 183, 0.1);
         }
         
         .preset-btn.active {
-            background: rgba(168, 216, 234, 0.2);
-            border-color: #a8d8ea;
+            background: rgba(110, 231, 183, 0.2);
+            border-color: var(--accent-color);
+            color: var(--accent-color);
         }
         
-        .control-group {
-            margin-bottom: 1.25rem;
+        /* Mode toggle */
+        .mode-toggle .btn-check:checked + .btn {
+            background: rgba(110, 231, 183, 0.2);
+            border-color: var(--accent-color);
+            color: var(--accent-color);
         }
         
-        .control-label {
+        .mode-toggle .btn {
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+        
+        /* Accordion customization */
+        .accordion-button {
+            background: transparent;
+            color: #e2e8f0;
+            font-weight: 500;
+            padding: 0.75rem 1rem;
+        }
+        
+        .accordion-button:not(.collapsed) {
+            background: rgba(110, 231, 183, 0.05);
+            color: var(--accent-color);
+        }
+        
+        .accordion-button::after {
+            filter: invert(1);
+        }
+        
+        .accordion-body {
+            background: rgba(0, 0, 0, 0.2);
+        }
+        
+        /* Processing spinner */
+        .processing-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.9);
             display: flex;
-            justify-content: space-between;
-            margin-bottom: 0.4rem;
-            font-size: 0.9rem;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            z-index: 10;
+            border-radius: 0.75rem;
         }
         
-        .control-label span:first-child {
-            color: #ccd6f6;
+        .processing-overlay.d-none {
+            display: none !important;
         }
         
-        .control-label span:last-child {
-            color: #a8d8ea;
-            font-family: 'SF Mono', 'Fira Code', monospace;
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        /* Section titles */
+        .section-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #64748b;
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        
+        /* FDoG params panel */
+        .fdog-params {
+            transition: all 0.3s ease;
+        }
+        
+        .fdog-params.collapsed {
+            max-height: 0;
+            overflow: hidden;
+            opacity: 0;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        
+        /* Info tooltip icon */
+        .info-icon {
+            color: #64748b;
+            cursor: help;
             font-size: 0.85rem;
         }
         
-        input[type="range"] {
-            width: 100%;
-            height: 6px;
-            border-radius: 3px;
-            background: rgba(255, 255, 255, 0.1);
-            outline: none;
-            -webkit-appearance: none;
-        }
-        
-        input[type="range"]::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
-            background: #a8d8ea;
-            cursor: pointer;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-        }
-        
-        .process-btn {
-            width: 100%;
-            padding: 1rem;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border: none;
-            border-radius: 10px;
-            color: #fff;
-            font-size: 1rem;
-            font-weight: 500;
-            cursor: pointer;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-            margin-top: 1rem;
-        }
-        
-        .process-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
-        }
-        
-        .process-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-        }
-        
-        .processing-indicator {
-            display: none;
-            align-items: center;
-            justify-content: center;
-            gap: 0.5rem;
-            margin-top: 1rem;
-            color: #a8d8ea;
-        }
-        
-        .processing-indicator.visible {
-            display: flex;
-        }
-        
-        .spinner {
-            width: 20px;
-            height: 20px;
-            border: 2px solid rgba(168, 216, 234, 0.3);
-            border-top-color: #a8d8ea;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-        
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        
-        .divider {
-            height: 1px;
-            background: rgba(255, 255, 255, 0.1);
-            margin: 1.5rem 0;
-        }
-        
-        .info-text {
-            font-size: 0.8rem;
-            color: #8892b0;
-            line-height: 1.5;
-        }
-        
-        .download-btn {
-            width: 100%;
-            padding: 0.75rem;
-            background: transparent;
-            border: 1px solid rgba(168, 216, 234, 0.3);
-            border-radius: 10px;
-            color: #a8d8ea;
-            font-size: 0.9rem;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            margin-top: 0.75rem;
-        }
-        
-        .download-btn:hover {
-            background: rgba(168, 216, 234, 0.1);
-            border-color: #a8d8ea;
-        }
-        
-        .mode-toggle {
-            display: flex;
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 8px;
-            padding: 4px;
-            margin-bottom: 1rem;
-        }
-        
-        .mode-btn {
-            flex: 1;
-            padding: 0.5rem;
-            border: none;
-            background: transparent;
-            color: #8892b0;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            font-size: 0.9rem;
-        }
-        
-        .mode-btn.active {
-            background: rgba(168, 216, 234, 0.2);
-            color: #fff;
+        .info-icon:hover {
+            color: var(--accent-color);
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>XDoG / FDoG Line Drawing</h1>
-            <p class="subtitle">Transform photos into beautiful line art</p>
-        </header>
-        
-        <div class="main-content">
-            <div class="image-panel">
-                <div class="drop-zone" id="dropZone">
-                    <div class="drop-zone-icon">🖼️</div>
-                    <div>Drop an image here or click to upload</div>
-                    <input type="file" id="fileInput" accept="image/*" hidden>
-                </div>
-                
-                <div class="image-comparison">
-                    <div class="image-box">
-                        <img id="originalImage" src="" alt="Original">
-                        <div class="image-label">Original</div>
-                    </div>
-                    <div class="image-box">
-                        <canvas id="resultCanvas"></canvas>
-                        <div class="image-label">Line Drawing</div>
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg sticky-top">
+        <div class="container-fluid px-4">
+            <span class="navbar-brand">
+                <i class="bi bi-vector-pen me-2 accent-text"></i>
+                XDoG / FDoG Studio
+            </span>
+            <div class="d-flex align-items-center gap-3">
+                <a href="https://github.com" class="text-secondary text-decoration-none" target="_blank">
+                    <i class="bi bi-github"></i>
+                </a>
+                <span class="badge bg-secondary bg-opacity-25 text-secondary font-mono">v1.0</span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid py-4 px-4">
+        <div class="row g-4">
+            <!-- Left Panel - Images -->
+            <div class="col-lg-8">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <!-- Drop Zone -->
+                        <div class="drop-zone mb-4" id="dropZone">
+                            <div class="drop-zone-icon mb-2">
+                                <i class="bi bi-cloud-arrow-up"></i>
+                            </div>
+                            <p class="mb-1 text-light">Drop an image here or click to upload</p>
+                            <small class="text-secondary">Supports JPG, PNG, WebP</small>
+                            <input type="file" id="fileInput" accept="image/*" hidden>
+                        </div>
+                        
+                        <!-- Image Comparison -->
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <div class="image-container">
+                                    <img id="originalImage" src="" alt="Original" class="d-none">
+                                    <div class="text-secondary" id="originalPlaceholder">
+                                        <i class="bi bi-image fs-1 opacity-25"></i>
+                                    </div>
+                                    <div class="image-label">Original</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="image-container">
+                                    <canvas id="resultCanvas"></canvas>
+                                    <div class="processing-overlay d-none" id="processingOverlay">
+                                        <div class="spinner-border text-light" role="status">
+                                            <span class="visually-hidden">Processing...</span>
+                                        </div>
+                                        <span class="text-light">Processing...</span>
+                                    </div>
+                                    <div class="image-label">Result</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Action Buttons -->
+                        <div class="d-flex gap-2 mt-3">
+                            <button class="btn btn-accent flex-grow-1" id="processBtn" disabled>
+                                <i class="bi bi-magic me-2"></i>Generate Line Drawing
+                            </button>
+                            <button class="btn btn-outline-light" id="downloadBtn" disabled title="Download Result">
+                                <i class="bi bi-download"></i>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
             
-            <div class="control-panel">
-                <div class="panel-title">Mode</div>
-                <div class="mode-toggle">
-                    <button class="mode-btn active" data-mode="xdog">XDoG</button>
-                    <button class="mode-btn" data-mode="fdog">FDoG</button>
-                </div>
-                
-                <div class="panel-title">Style Presets</div>
-                <div class="presets">
-                    <button class="preset-btn active" data-preset="clean">✨ Clean</button>
-                    <button class="preset-btn" data-preset="sketch">✏️ Sketch</button>
-                    <button class="preset-btn" data-preset="detailed">🔍 Detailed</button>
-                    <button class="preset-btn" data-preset="bold">🖊️ Bold</button>
-                    <button class="preset-btn" data-preset="manga">📖 Manga</button>
-                    <button class="preset-btn" data-preset="technical">📐 Technical</button>
-                </div>
-                
-                <div class="divider"></div>
-                
-                <div class="panel-title">Fine-Tune Parameters</div>
-                
-                <div class="control-group">
-                    <div class="control-label">
-                        <span>Sigma (blur radius)</span>
-                        <span id="sigmaValue">0.5</span>
+            <!-- Right Panel - Controls -->
+            <div class="col-lg-4">
+                <div class="card">
+                    <div class="card-body" style="max-height: calc(100vh - 140px); overflow-y: auto;">
+                        
+                        <!-- Mode Selection -->
+                        <div class="section-title">Processing Mode</div>
+                        <div class="btn-group mode-toggle w-100 mb-4" role="group">
+                            <input type="radio" class="btn-check" name="mode" id="modeXDoG" value="xdog" checked>
+                            <label class="btn btn-outline-light" for="modeXDoG">
+                                <i class="bi bi-lightning me-1"></i> XDoG
+                            </label>
+                            <input type="radio" class="btn-check" name="mode" id="modeFDoG" value="fdog">
+                            <label class="btn btn-outline-light" for="modeFDoG">
+                                <i class="bi bi-bezier2 me-1"></i> FDoG
+                            </label>
+                        </div>
+                        
+                        <!-- XDoG Presets -->
+                        <div id="xdogPresets">
+                            <div class="section-title">Style Presets</div>
+                            <div class="d-flex flex-wrap gap-2 mb-4">
+                                <button class="preset-btn active" data-preset="threshold" data-mode="xdog">
+                                    ✒️ Line Art
+                                </button>
+                                <button class="preset-btn" data-preset="pencilShading" data-mode="xdog">
+                                    ✏️ Pencil
+                                </button>
+                                <button class="preset-btn" data-preset="pastel" data-mode="xdog">
+                                    🎨 Pastel
+                                </button>
+                                <button class="preset-btn" data-preset="charcoal" data-mode="xdog">
+                                    🖤 Charcoal
+                                </button>
+                                <button class="preset-btn" data-preset="woodcut" data-mode="xdog">
+                                    🪵 Woodcut
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- FDoG Presets -->
+                        <div id="fdogPresets" class="d-none">
+                            <div class="section-title">FDoG Style Presets</div>
+                            <div class="d-flex flex-wrap gap-2 mb-4">
+                                <button class="preset-btn active" data-preset="standard" data-mode="fdog">
+                                    📐 Standard
+                                </button>
+                                <button class="preset-btn" data-preset="pastel" data-mode="fdog">
+                                    🎨 Pastel
+                                </button>
+                                <button class="preset-btn" data-preset="woodcut" data-mode="fdog">
+                                    🪵 Woodcut
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Core DoG Parameters -->
+                        <div class="accordion" id="paramsAccordion">
+                            <div class="accordion-item bg-transparent border-0">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#coreParams">
+                                        Core Parameters
+                                    </button>
+                                </h2>
+                                <div id="coreParams" class="accordion-collapse collapse show" data-bs-parent="#paramsAccordion">
+                                    <div class="accordion-body">
+                                        <!-- Sigma -->
+                                        <div class="mb-3">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <label class="form-label mb-0">
+                                                    σ (Sigma) - Edge Scale
+                                                    <i class="bi bi-info-circle info-icon ms-1" 
+                                                       data-bs-toggle="tooltip" 
+                                                       title="Controls the scale of detected edges. Larger values detect coarser edges."></i>
+                                                </label>
+                                                <span class="param-value" id="sigmaValue">1.4</span>
+                                            </div>
+                                            <input type="range" class="form-range" id="sigma" min="0.3" max="8" step="0.1" value="1.4">
+                                        </div>
+                                        
+                                        <!-- K -->
+                                        <div class="mb-3">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <label class="form-label mb-0">
+                                                    k - Blur Ratio
+                                                    <i class="bi bi-info-circle info-icon ms-1" 
+                                                       data-bs-toggle="tooltip" 
+                                                       title="Ratio between the two Gaussian blurs. 1.6 is recommended."></i>
+                                                </label>
+                                                <span class="param-value" id="kValue">1.6</span>
+                                            </div>
+                                            <input type="range" class="form-range" id="k" min="1.1" max="3" step="0.1" value="1.6">
+                                        </div>
+                                        
+                                        <!-- P (sharpening strength) -->
+                                        <div class="mb-3">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <label class="form-label mb-0">
+                                                    p - Sharpening Strength
+                                                    <i class="bi bi-info-circle info-icon ms-1" 
+                                                       data-bs-toggle="tooltip" 
+                                                       title="Controls edge emphasis. ~20 for normal, ~100+ for woodcut style."></i>
+                                                </label>
+                                                <span class="param-value" id="pValue">20</span>
+                                            </div>
+                                            <input type="range" class="form-range" id="p" min="0" max="150" step="1" value="20">
+                                        </div>
+                                        
+                                        <!-- Epsilon -->
+                                        <div class="mb-3">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <label class="form-label mb-0">
+                                                    ε (Epsilon) - Threshold
+                                                    <i class="bi bi-info-circle info-icon ms-1" 
+                                                       data-bs-toggle="tooltip" 
+                                                       title="Values above this become white. Range 0-1 for normalized images."></i>
+                                                </label>
+                                                <span class="param-value" id="epsilonValue">0.78</span>
+                                            </div>
+                                            <input type="range" class="form-range" id="epsilon" min="0" max="1" step="0.01" value="0.78">
+                                        </div>
+                                        
+                                        <!-- Phi -->
+                                        <div class="mb-0">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <label class="form-label mb-0">
+                                                    φ (Phi) - Threshold Sharpness
+                                                    <i class="bi bi-info-circle info-icon ms-1" 
+                                                       data-bs-toggle="tooltip" 
+                                                       title="Controls transition sharpness. Low values for soft gradients, high for hard edges."></i>
+                                                </label>
+                                                <span class="param-value" id="phiValue">100</span>
+                                            </div>
+                                            <input type="range" class="form-range" id="phi" min="0.01" max="200" step="0.5" value="100">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- FDoG-Specific Parameters -->
+                            <div class="accordion-item bg-transparent border-0 fdog-params collapsed" id="fdogParamsSection">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#fdogParams">
+                                        FDoG Flow Parameters
+                                    </button>
+                                </h2>
+                                <div id="fdogParams" class="accordion-collapse collapse" data-bs-parent="#paramsAccordion">
+                                    <div class="accordion-body">
+                                        <!-- SigmaC -->
+                                        <div class="mb-3">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <label class="form-label mb-0">
+                                                    σc - Structure Tensor Smoothing
+                                                    <i class="bi bi-info-circle info-icon ms-1" 
+                                                       data-bs-toggle="tooltip" 
+                                                       title="Controls ETF smoothness. Small values capture fine edges, large values create smoother flow."></i>
+                                                </label>
+                                                <span class="param-value" id="sigmaCValue">2.28</span>
+                                            </div>
+                                            <input type="range" class="form-range" id="sigmaC" min="0.1" max="8" step="0.1" value="2.28">
+                                        </div>
+                                        
+                                        <!-- SigmaM -->
+                                        <div class="mb-3">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <label class="form-label mb-0">
+                                                    σm - Flow-Aligned Smoothing
+                                                    <i class="bi bi-info-circle info-icon ms-1" 
+                                                       data-bs-toggle="tooltip" 
+                                                       title="Controls line coherence. Larger values create longer, smoother lines."></i>
+                                                </label>
+                                                <span class="param-value" id="sigmaMValue">4.4</span>
+                                            </div>
+                                            <input type="range" class="form-range" id="sigmaM" min="0" max="25" step="0.1" value="4.4">
+                                        </div>
+                                        
+                                        <!-- SigmaA -->
+                                        <div class="mb-0">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <label class="form-label mb-0">
+                                                    σa - Anti-Aliasing
+                                                    <i class="bi bi-info-circle info-icon ms-1" 
+                                                       data-bs-toggle="tooltip" 
+                                                       title="Post-processing smoothing along ETF. 0 disables, 0.5-2 typical."></i>
+                                                </label>
+                                                <span class="param-value" id="sigmaAValue">1.0</span>
+                                            </div>
+                                            <input type="range" class="form-range" id="sigmaA" min="0" max="10" step="0.1" value="1.0">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Preprocessing -->
+                            <div class="accordion-item bg-transparent border-0">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#preprocessParams">
+                                        Preprocessing
+                                    </button>
+                                </h2>
+                                <div id="preprocessParams" class="accordion-collapse collapse" data-bs-parent="#paramsAccordion">
+                                    <div class="accordion-body">
+                                        <div class="mb-3">
+                                            <label class="form-label">Preprocessing Mode</label>
+                                            <select class="form-select form-select-sm" id="preprocessMode">
+                                                <option value="none">None</option>
+                                                <option value="light">Light (clean images)</option>
+                                                <option value="standard" selected>Standard (most photos)</option>
+                                                <option value="heavy">Heavy (textured images)</option>
+                                                <option value="nature">Nature (landscapes)</option>
+                                                <option value="artistic">Artistic (painterly)</option>
+                                            </select>
+                                        </div>
+                                        <small class="text-secondary">
+                                            Preprocessing smooths textures while preserving edges, 
+                                            reducing noise in the final result.
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Info -->
+                        <div class="mt-4 p-3 rounded" style="background: rgba(110, 231, 183, 0.05); border: 1px solid rgba(110, 231, 183, 0.1);">
+                            <h6 class="accent-text mb-2">
+                                <i class="bi bi-lightbulb me-1"></i> Tips
+                            </h6>
+                            <small class="text-secondary d-block mb-2">
+                                <strong class="text-light">XDoG</strong> uses isotropic Gaussian blur - fast and great for most images.
+                            </small>
+                            <small class="text-secondary d-block">
+                                <strong class="text-light">FDoG</strong> uses flow-guided blur along edge tangents for smoother, 
+                                more coherent lines. Best for portraits and subjects where line continuity matters.
+                            </small>
+                        </div>
                     </div>
-                    <input type="range" id="sigma" min="0.3" max="3" step="0.1" value="0.5">
                 </div>
-                
-                <div class="control-group">
-                    <div class="control-label">
-                        <span>K (blur ratio)</span>
-                        <span id="kValue">1.6</span>
-                    </div>
-                    <input type="range" id="k" min="1.1" max="5" step="0.1" value="1.6">
-                </div>
-                
-                <div class="control-group">
-                    <div class="control-label">
-                        <span>Tau (edge sensitivity)</span>
-                        <span id="tauValue">0.99</span>
-                    </div>
-                    <input type="range" id="tau" min="0.9" max="1.1" step="0.01" value="0.99">
-                </div>
-                
-                <div class="control-group">
-                    <div class="control-label">
-                        <span>Epsilon (threshold)</span>
-                        <span id="epsilonValue">0</span>
-                    </div>
-                    <input type="range" id="epsilon" min="-0.1" max="0.1" step="0.005" value="0">
-                </div>
-                
-                <div class="control-group">
-                    <div class="control-label">
-                        <span>Phi (sharpness)</span>
-                        <span id="phiValue">100</span>
-                    </div>
-                    <input type="range" id="phi" min="1" max="500" step="1" value="100">
-                </div>
-                
-                <button class="process-btn" id="processBtn" disabled>
-                    Generate Line Drawing
-                </button>
-                
-                <div class="processing-indicator" id="processingIndicator">
-                    <div class="spinner"></div>
-                    <span>Processing...</span>
-                </div>
-                
-                <button class="download-btn" id="downloadBtn" disabled>
-                    📥 Download Result
-                </button>
-                
-                <div class="divider"></div>
-                
-                <p class="info-text">
-                    <strong>XDoG</strong> uses isotropic Gaussian blur - fast and good for most images.<br><br>
-                    <strong>FDoG</strong> uses flow-guided blur along edge tangents for smoother, more coherent lines (slower but better for portraits).
-                </p>
             </div>
         </div>
     </div>
 
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    
     <script type="module">
         import { 
             XDoG,
             FDoG,
+            STYLE_PRESETS,
+            FDOG_STYLE_PRESETS,
             imageDataToGrayscale, 
             grayscaleToImageData,
+            PreprocessingPresets,
+            tauToP
         } from './dist/index.js';
-
-        // Presets optimized for different styles
-        const presets = {
-            clean: {
-                sigma: 0.5,
-                k: 1.6,
-                tau: 0.99,
-                epsilon: 0,
-                phi: 100,
-                description: 'Clean lines with minimal noise'
-            },
-            sketch: {
-                sigma: 0.4,
-                k: 1.4,
-                tau: 0.985,
-                epsilon: -0.01,
-                phi: 50,
-                description: 'Softer, pencil-like appearance'
-            },
-            detailed: {
-                sigma: 0.3,
-                k: 1.3,
-                tau: 0.98,
-                epsilon: -0.02,
-                phi: 150,
-                description: 'Captures fine details'
-            },
-            bold: {
-                sigma: 0.8,
-                k: 2.0,
-                tau: 1.0,
-                epsilon: 0.01,
-                phi: 200,
-                description: 'Thick, confident strokes'
-            },
-            manga: {
-                sigma: 0.6,
-                k: 1.8,
-                tau: 0.995,
-                epsilon: 0.005,
-                phi: 300,
-                description: 'High contrast manga style'
-            },
-            technical: {
-                sigma: 0.35,
-                k: 1.5,
-                tau: 0.99,
-                epsilon: 0.01,
-                phi: 400,
-                description: 'Sharp technical drawing look'
-            }
-        };
 
         // State
         let currentMode = 'xdog';
-        let currentPreset = 'clean';
         let loadedImage = null;
 
         // DOM Elements
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
         const originalImage = document.getElementById('originalImage');
+        const originalPlaceholder = document.getElementById('originalPlaceholder');
         const resultCanvas = document.getElementById('resultCanvas');
         const processBtn = document.getElementById('processBtn');
         const downloadBtn = document.getElementById('downloadBtn');
-        const processingIndicator = document.getElementById('processingIndicator');
+        const processingOverlay = document.getElementById('processingOverlay');
+        const xdogPresets = document.getElementById('xdogPresets');
+        const fdogPresets = document.getElementById('fdogPresets');
+        const fdogParamsSection = document.getElementById('fdogParamsSection');
+        const preprocessMode = document.getElementById('preprocessMode');
 
-        // Sliders
+        // Core parameter sliders
         const sliders = {
             sigma: document.getElementById('sigma'),
             k: document.getElementById('k'),
-            tau: document.getElementById('tau'),
+            p: document.getElementById('p'),
             epsilon: document.getElementById('epsilon'),
-            phi: document.getElementById('phi')
+            phi: document.getElementById('phi'),
         };
+
+        // FDoG-specific sliders
+        const fdogSliders = {
+            sigmaC: document.getElementById('sigmaC'),
+            sigmaM: document.getElementById('sigmaM'),
+            sigmaA: document.getElementById('sigmaA'),
+        };
+
+        // Initialize Bootstrap tooltips
+        const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+        const tooltipList = [...tooltipTriggerList].map(el => new bootstrap.Tooltip(el));
 
         // Helper to wait for image load
         function waitForImage(img) {
@@ -515,36 +667,78 @@
 
         // Update slider value displays
         function updateSliderDisplays() {
-            document.getElementById('sigmaValue').textContent = sliders.sigma.value;
-            document.getElementById('kValue').textContent = sliders.k.value;
-            document.getElementById('tauValue').textContent = sliders.tau.value;
-            document.getElementById('epsilonValue').textContent = sliders.epsilon.value;
-            document.getElementById('phiValue').textContent = sliders.phi.value;
+            document.getElementById('sigmaValue').textContent = parseFloat(sliders.sigma.value).toFixed(1);
+            document.getElementById('kValue').textContent = parseFloat(sliders.k.value).toFixed(1);
+            document.getElementById('pValue').textContent = sliders.p.value;
+            document.getElementById('epsilonValue').textContent = parseFloat(sliders.epsilon.value).toFixed(2);
+            document.getElementById('phiValue').textContent = parseFloat(sliders.phi.value).toFixed(1);
+            
+            document.getElementById('sigmaCValue').textContent = parseFloat(fdogSliders.sigmaC.value).toFixed(2);
+            document.getElementById('sigmaMValue').textContent = parseFloat(fdogSliders.sigmaM.value).toFixed(1);
+            document.getElementById('sigmaAValue').textContent = parseFloat(fdogSliders.sigmaA.value).toFixed(1);
         }
 
-        // Set sliders from preset
-        function applyPreset(presetName) {
-            const preset = presets[presetName];
+        // Apply XDoG preset
+        function applyXDoGPreset(presetName) {
+            const preset = STYLE_PRESETS[presetName];
             if (!preset) return;
 
             sliders.sigma.value = preset.sigma;
             sliders.k.value = preset.k;
-            sliders.tau.value = preset.tau;
+            sliders.p.value = preset.p;
             sliders.epsilon.value = preset.epsilon;
             sliders.phi.value = preset.phi;
 
             updateSliderDisplays();
         }
 
+        // Apply FDoG preset
+        function applyFDoGPreset(presetName) {
+            const preset = FDOG_STYLE_PRESETS[presetName];
+            if (!preset) return;
+
+            sliders.sigma.value = preset.sigma;
+            sliders.k.value = preset.k;
+            sliders.p.value = preset.p;
+            sliders.epsilon.value = preset.epsilon;
+            sliders.phi.value = preset.phi;
+            
+            fdogSliders.sigmaC.value = preset.sigmaC;
+            fdogSliders.sigmaM.value = preset.sigmaM;
+            fdogSliders.sigmaA.value = preset.sigmaA;
+
+            updateSliderDisplays();
+        }
+
         // Get current parameters from sliders
         function getParams() {
-            return {
+            const params = {
                 sigma: parseFloat(sliders.sigma.value),
                 k: parseFloat(sliders.k.value),
-                tau: parseFloat(sliders.tau.value),
+                p: parseFloat(sliders.p.value),
                 epsilon: parseFloat(sliders.epsilon.value),
-                phi: parseFloat(sliders.phi.value)
+                phi: parseFloat(sliders.phi.value),
             };
+            
+            if (currentMode === 'fdog') {
+                params.sigmaC = parseFloat(fdogSliders.sigmaC.value);
+                params.sigmaM = parseFloat(fdogSliders.sigmaM.value);
+                params.sigmaA = parseFloat(fdogSliders.sigmaA.value);
+            }
+            
+            return params;
+        }
+
+        // Apply preprocessing
+        function applyPreprocessing(grayscale) {
+            const mode = preprocessMode.value;
+            if (mode === 'none') return grayscale;
+            
+            const preprocessFn = PreprocessingPresets[mode];
+            if (preprocessFn) {
+                return preprocessFn(grayscale);
+            }
+            return grayscale;
         }
 
         // Process image
@@ -552,7 +746,7 @@
             if (!loadedImage) return;
 
             processBtn.disabled = true;
-            processingIndicator.classList.add('visible');
+            processingOverlay.classList.remove('d-none');
 
             // Small delay to let UI update
             await new Promise(r => setTimeout(r, 50));
@@ -568,18 +762,17 @@
                 tempCtx.drawImage(loadedImage, 0, 0);
                 
                 const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-                const grayscale = imageDataToGrayscale(imageData);
+                let grayscale = imageDataToGrayscale(imageData);
+                
+                // Apply preprocessing
+                grayscale = applyPreprocessing(grayscale);
 
                 let result;
                 if (currentMode === 'xdog') {
                     const xdog = new XDoG(params);
                     result = await xdog.process(grayscale);
                 } else {
-                    const fdog = new FDoG({
-                        ...params,
-                        etfIterations: 3,
-                        etfKernelSize: 5
-                    });
+                    const fdog = new FDoG(params);
                     result = await fdog.process(grayscale);
                 }
 
@@ -597,7 +790,7 @@
                 alert('Error processing image: ' + error.message);
             } finally {
                 processBtn.disabled = false;
-                processingIndicator.classList.remove('visible');
+                processingOverlay.classList.add('d-none');
             }
         }
 
@@ -612,6 +805,8 @@
             reader.onload = async (e) => {
                 originalImage.src = e.target.result;
                 await waitForImage(originalImage);
+                originalImage.classList.remove('d-none');
+                originalPlaceholder.classList.add('d-none');
                 loadedImage = originalImage;
                 processBtn.disabled = false;
                 
@@ -619,6 +814,19 @@
                 processImage();
             };
             reader.readAsDataURL(file);
+        }
+
+        // Toggle mode UI
+        function updateModeUI() {
+            if (currentMode === 'xdog') {
+                xdogPresets.classList.remove('d-none');
+                fdogPresets.classList.add('d-none');
+                fdogParamsSection.classList.add('collapsed');
+            } else {
+                xdogPresets.classList.add('d-none');
+                fdogPresets.classList.remove('d-none');
+                fdogParamsSection.classList.remove('collapsed');
+            }
         }
 
         // Event Listeners
@@ -646,27 +854,47 @@
         });
 
         // Mode toggle
-        document.querySelectorAll('.mode-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                currentMode = btn.dataset.mode;
+        document.querySelectorAll('input[name="mode"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                currentMode = e.target.value;
+                updateModeUI();
+                
+                // Apply default preset for the mode
+                if (currentMode === 'xdog') {
+                    applyXDoGPreset('threshold');
+                    document.querySelectorAll('#xdogPresets .preset-btn').forEach(b => b.classList.remove('active'));
+                    document.querySelector('#xdogPresets .preset-btn[data-preset="threshold"]').classList.add('active');
+                } else {
+                    applyFDoGPreset('standard');
+                    document.querySelectorAll('#fdogPresets .preset-btn').forEach(b => b.classList.remove('active'));
+                    document.querySelector('#fdogPresets .preset-btn[data-preset="standard"]').classList.add('active');
+                }
+                
                 if (loadedImage) processImage();
             });
         });
 
-        // Preset buttons
-        document.querySelectorAll('.preset-btn').forEach(btn => {
+        // XDoG preset buttons
+        document.querySelectorAll('#xdogPresets .preset-btn').forEach(btn => {
             btn.addEventListener('click', () => {
-                document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('#xdogPresets .preset-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
-                currentPreset = btn.dataset.preset;
-                applyPreset(currentPreset);
+                applyXDoGPreset(btn.dataset.preset);
                 if (loadedImage) processImage();
             });
         });
 
-        // Sliders
+        // FDoG preset buttons
+        document.querySelectorAll('#fdogPresets .preset-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('#fdogPresets .preset-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                applyFDoGPreset(btn.dataset.preset);
+                if (loadedImage) processImage();
+            });
+        });
+
+        // Core sliders
         Object.values(sliders).forEach(slider => {
             slider.addEventListener('input', updateSliderDisplays);
             slider.addEventListener('change', () => {
@@ -674,20 +902,32 @@
             });
         });
 
+        // FDoG sliders
+        Object.values(fdogSliders).forEach(slider => {
+            slider.addEventListener('input', updateSliderDisplays);
+            slider.addEventListener('change', () => {
+                if (loadedImage) processImage();
+            });
+        });
+
+        // Preprocessing mode change
+        preprocessMode.addEventListener('change', () => {
+            if (loadedImage) processImage();
+        });
+
         processBtn.addEventListener('click', processImage);
 
         downloadBtn.addEventListener('click', () => {
             const link = document.createElement('a');
-            link.download = 'line-drawing.png';
+            link.download = `line-drawing-${currentMode}.png`;
             link.href = resultCanvas.toDataURL('image/png');
             link.click();
         });
 
         // Initialize
         updateSliderDisplays();
-
-        // Load demo image if available (optional)
-        // You can set a default image URL here
+        updateModeUI();
+        applyXDoGPreset('threshold');
     </script>
 </body>
 </html>
