@@ -504,6 +504,10 @@ export class WebGLIsotropicBlur implements BlurStrategy {
 
 /**
  * Fragment shader for flow-guided blur
+ * 
+ * Note: WebGL 1.0 (GLSL ES 1.00) requires array indices to be constant expressions
+ * or loop indices. We use a helper function with unrolled comparisons to work around
+ * this limitation.
  */
 const FLOW_BLUR_SHADER = `
   precision highp float;
@@ -515,6 +519,16 @@ const FLOW_BLUR_SHADER = `
   uniform int u_kernelSize;
   
   varying vec2 v_texCoord;
+  
+  // Helper function to access kernel array with dynamic index
+  // WebGL 1.0 requires constant or loop index for array access,
+  // so we unroll the comparisons
+  float getKernelValue(int index) {
+    for (int i = 0; i < 64; i++) {
+      if (i == index) return u_kernel[i];
+    }
+    return 0.0;
+  }
   
   void main() {
     vec2 texelSize = 1.0 / u_resolution;
@@ -533,8 +547,9 @@ const FLOW_BLUR_SHADER = `
       int idx = halfSize + i;
       if (idx >= u_kernelSize) break;
       
-      result += texture2D(u_image, pos).r * u_kernel[idx];
-      weightSum += u_kernel[idx];
+      float w = getKernelValue(idx);
+      result += texture2D(u_image, pos).r * w;
+      weightSum += w;
       
       // Step along flow
       vec2 localFlow = texture2D(u_flowField, pos).rg * 2.0 - 1.0;
@@ -552,8 +567,9 @@ const FLOW_BLUR_SHADER = `
       vec2 localFlow = texture2D(u_flowField, pos).rg * 2.0 - 1.0;
       pos -= localFlow * texelSize;
       
-      result += texture2D(u_image, pos).r * u_kernel[idx];
-      weightSum += u_kernel[idx];
+      float w = getKernelValue(idx);
+      result += texture2D(u_image, pos).r * w;
+      weightSum += w;
     }
     
     result = weightSum > 0.0 ? result / weightSum : 0.0;

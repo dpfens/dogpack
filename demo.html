@@ -611,7 +611,7 @@
             FDOG_STYLE_PRESETS,
             imageDataToGrayscale, 
             grayscaleToImageData,
-            PreprocessingPresets,
+            PreprocessingPresetsWebGL,
             tauToP
         } from './dist/index.js';
 
@@ -734,7 +734,7 @@
             const mode = preprocessMode.value;
             if (mode === 'none') return grayscale;
             
-            const preprocessFn = PreprocessingPresets[mode];
+            const preprocessFn = PreprocessingPresetsWebGL[mode];
             if (preprocessFn) {
                 return preprocessFn(grayscale);
             }
