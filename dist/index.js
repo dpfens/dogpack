@@ -91,6 +91,7 @@ export { IsotropicBlur, FlowGuidedBlur, GradientAlignedBlur, FDoGBlur } from './
 export { EdgeTangentFlow } from './etf.js';
 // Preprocessing
 export { PreprocessingPresets, Preprocessor, bilateralFilter, medianFilter, kuwaharaFilter, gaussianBlur, enhanceContrast, quantize } from './preprocess.js';
+export { PreprocessingPresetsWebGL, PreprocessorWebGL } from './preprocess-webgl.js';
 export { DEFAULT_DOG_CONFIG, DEFAULT_ETF_CONFIG, DEFAULT_FDOG_CONFIG, STYLE_PRESETS, FDOG_STYLE_PRESETS, tauToP, pToTau } from './types.js';
 // Utilities
 export { createGrayscaleImage, cloneGrayscaleImage, imageDataToGrayscale, grayscaleToImageData, rgbToGrayscale, getPixel, getPixelBilinear, setPixel, normalizeVec2, dotVec2, perpendicular, generateGaussianKernel, computeKernelSize, clamp, lerp, } from './utils.js';

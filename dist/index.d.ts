@@ -88,8 +88,8 @@ export { IsotropicBlur, FlowGuidedBlur, GradientAlignedBlur, FDoGBlur } from './
 export type { BlurStrategy, BlurStrategyClass, IsotropicBlurConfig, FlowGuidedBlurConfig } from './blur.js';
 export { EdgeTangentFlow } from './etf.js';
 export { PreprocessingPresets, Preprocessor, bilateralFilter, medianFilter, kuwaharaFilter, gaussianBlur, enhanceContrast, quantize } from './preprocess.js';
-export type { BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from './preprocess.js';
-export type { Vec2, GrayscaleImage, RGBImage, FlowField, DoGConfig, ETFConfig, FDoGConfig, } from './types.js';
+export { PreprocessingPresetsWebGL, PreprocessorWebGL } from './preprocess-webgl.js';
+export type { Vec2, GrayscaleImage, RGBImage, FlowField, DoGConfig, ETFConfig, FDoGConfig, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from './types.js';
 export { DEFAULT_DOG_CONFIG, DEFAULT_ETF_CONFIG, DEFAULT_FDOG_CONFIG, STYLE_PRESETS, FDOG_STYLE_PRESETS, tauToP, pToTau } from './types.js';
 export { createGrayscaleImage, cloneGrayscaleImage, imageDataToGrayscale, grayscaleToImageData, rgbToGrayscale, getPixel, getPixelBilinear, setPixel, normalizeVec2, dotVec2, perpendicular, generateGaussianKernel, computeKernelSize, clamp, lerp, } from './utils.js';
 //# sourceMappingURL=index.d.ts.map

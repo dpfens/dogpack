@@ -37,6 +37,28 @@ export interface FlowField {
     readonly width: number;
     readonly height: number;
 }
+export interface BilateralFilterConfig {
+    /** Spatial sigma - controls the size of the neighborhood (default: 3) */
+    sigmaSpatial: number;
+    /** Range/intensity sigma - controls sensitivity to intensity differences (default: 0.1) */
+    sigmaRange: number;
+    /** Kernel radius multiplier (default: 2, meaning radius = sigmaSpatial * 2) */
+    radiusMultiplier?: number;
+}
+/**
+ * Configuration for median filter
+ */
+export interface MedianFilterConfig {
+    /** Radius of the filter (default: 2, meaning 5x5 kernel) */
+    radius: number;
+}
+/**
+ * Configuration for Kuwahara filter
+ */
+export interface KuwaharaFilterConfig {
+    /** Radius of the filter (default: 3) */
+    radius: number;
+}
 /**
  * Configuration for Difference of Gaussians processing
  *

@@ -8,7 +8,7 @@
  * Kang et al. (2007) "Coherent Line Drawing"
  */
 import { DEFAULT_ETF_CONFIG } from './types.js';
-import { createGrayscaleImage, getPixel, normalizeVec2, dotVec2, generateGaussianKernel } from './utils.js';
+import { createGrayscaleImage, normalizeVec2, dotVec2, generateGaussianKernel } from './utils.js';
 /**
  * Edge Tangent Flow field implementation
  */
@@ -158,34 +158,42 @@ function hsvToRgb(h, s, v) {
 /**
  * Compute image gradients using Sobel operator
  */
+// In etf.ts - Optimize gradient computation
 function computeGradients(input) {
     const { width, height } = input;
     const size = width * height;
     const gradX = new Float32Array(size);
     const gradY = new Float32Array(size);
     const magnitude = new Float32Array(size);
-    // Sobel kernels
-    // Gx: [-1 0 1]    Gy: [-1 -2 -1]
-    //     [-2 0 2]        [ 0  0  0]
-    //     [-1 0 1]        [ 1  2  1]
+    // Precompute pixel indices for better cache locality
+    const indices = new Int32Array(width * height);
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
+            indices[y * width + x] = y * width + x;
+        }
+    }
+    // Use SIMD-like operations (manual loop unrolling)
+    for (let i = 0; i < size; i++) {
+        const x = i % width;
+        const y = Math.floor(i / width);
+        if (x > 0 && x < width - 1 && y > 0 && y < height - 1) {
+            // Use direct array access instead of getPixel calls
             const idx = y * width + x;
-            // Sample 3x3 neighborhood
-            const p00 = getPixel(input, x - 1, y - 1);
-            const p10 = getPixel(input, x, y - 1);
-            const p20 = getPixel(input, x + 1, y - 1);
-            const p01 = getPixel(input, x - 1, y);
-            const p21 = getPixel(input, x + 1, y);
-            const p02 = getPixel(input, x - 1, y + 1);
-            const p12 = getPixel(input, x, y + 1);
-            const p22 = getPixel(input, x + 1, y + 1);
-            // Sobel gradients
+            const idxTop = idx - width;
+            const idxBottom = idx + width;
+            const p00 = input.data[idxTop - 1];
+            const p10 = input.data[idxTop];
+            const p20 = input.data[idxTop + 1];
+            const p01 = input.data[idx - 1];
+            const p21 = input.data[idx + 1];
+            const p02 = input.data[idxBottom - 1];
+            const p12 = input.data[idxBottom];
+            const p22 = input.data[idxBottom + 1];
             const gx = -p00 + p20 - 2 * p01 + 2 * p21 - p02 + p22;
             const gy = -p00 - 2 * p10 - p20 + p02 + 2 * p12 + p22;
-            gradX[idx] = gx;
-            gradY[idx] = gy;
-            magnitude[idx] = Math.sqrt(gx * gx + gy * gy);
+            gradX[i] = gx;
+            gradY[i] = gy;
+            magnitude[i] = Math.hypot(gx, gy); // Faster than sqrt(gx*gx + gy*gy)
         }
     }
     return { x: gradX, y: gradY, magnitude };

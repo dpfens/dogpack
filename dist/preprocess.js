@@ -37,7 +37,7 @@ export function bilateralFilter(input, config = {}) {
     const cfg = { ...DEFAULT_BILATERAL_CONFIG, ...config };
     const { width, height } = input;
     const output = createGrayscaleImage(width, height);
-    const radius = Math.ceil(cfg.sigmaSpatial * cfg.radiusMultiplier);
+    const radius = Math.ceil(cfg.sigmaSpatial * (cfg.radiusMultiplier ?? 2));
     const sigmaSpatial2 = 2 * cfg.sigmaSpatial * cfg.sigmaSpatial;
     const sigmaRange2 = 2 * cfg.sigmaRange * cfg.sigmaRange;
     // Precompute spatial weights

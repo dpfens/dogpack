@@ -117,11 +117,7 @@ export {
   enhanceContrast,
   quantize
 } from './preprocess.js';
-export type {
-  BilateralFilterConfig,
-  MedianFilterConfig,
-  KuwaharaFilterConfig
-} from './preprocess.js';
+export {PreprocessingPresetsWebGL, PreprocessorWebGL} from './preprocess-webgl.js';
 
 // Types
 export type {
@@ -132,6 +128,9 @@ export type {
   DoGConfig,
   ETFConfig,
   FDoGConfig,
+  BilateralFilterConfig,
+  MedianFilterConfig,
+  KuwaharaFilterConfig
 } from './types.js';
 
 export { 

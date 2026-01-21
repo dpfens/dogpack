@@ -62,7 +62,6 @@ export class DoGProcessor {
     
     // Step 3: Apply soft thresholding using Equation 5
     const output = this.applyThreshold(sharpened, params.epsilon, params.phi);
-    
     return output;
   }
   
