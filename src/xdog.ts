@@ -20,9 +20,11 @@ import {
   FDOG_STYLE_PRESETS
 } from './types.js';
 import { DoGProcessor } from './dog.js';
-import { IsotropicBlur, FlowGuidedBlur, GradientAlignedBlur, FDoGBlur } from './blur.js';
+import { IsotropicBlur, FlowGuidedBlur, GradientAlignedBlur, FDoGBlur, BlurStrategy } from './blur.js';
+import { WebGLIsotropicBlur, WebGLFlowGuidedBlur } from './blur-webgl.js';
 import { EdgeTangentFlow } from './etf.js';
 import { imageDataToGrayscale, grayscaleToImageData, createGrayscaleImage } from './utils.js';
+import { WebGPUIsotropicBlur } from './blur-webgpu.js';
 
 /**
  * XDoG configuration combining DoG parameters with isotropic blur options
@@ -30,6 +32,7 @@ import { imageDataToGrayscale, grayscaleToImageData, createGrayscaleImage } from
 export interface XDoGConfig extends DoGConfig {
   /** Kernel size multiplier for Gaussian blur (default: 6) */
   kernelSizeMultiplier?: number;
+  blurStrategy?: BlurStrategy;
 }
 
 /**
@@ -49,8 +52,9 @@ export class XDoG {
     const { kernelSizeMultiplier, ...dogConfig } = config;
     
     this.config = { ...DEFAULT_DOG_CONFIG, kernelSizeMultiplier: 6, ...config };
-    
-    const blurStrategy = new IsotropicBlur({
+
+    const blurCls = WebGPUIsotropicBlur.isSupported() ? WebGPUIsotropicBlur : WebGLIsotropicBlur.isSupported() ? WebGLIsotropicBlur : IsotropicBlur;
+    const blurStrategy = new blurCls({
       kernelSizeMultiplier: this.config.kernelSizeMultiplier,
     });
     
@@ -181,7 +185,8 @@ export class FDoG {
     
     // Step 5: Apply flow-aligned smoothing (σm)
     if (params.sigmaM > 0) {
-      const flowBlur = new FlowGuidedBlur(etf);
+      const flowCls = WebGLFlowGuidedBlur.isSupported() ? WebGLFlowGuidedBlur : FlowGuidedBlur;
+      const flowBlur = new flowCls(etf);
       result = await flowBlur.blur(result, params.sigmaM);
     }
     
@@ -233,7 +238,8 @@ export class FDoG {
     // Anti-aliasing
     let result = smoothed;
     if (params.sigmaA > 0) {
-      const aaBlur = new FlowGuidedBlur(etf);
+      const flowCls = WebGLFlowGuidedBlur.isSupported() ? WebGLFlowGuidedBlur : FlowGuidedBlur;
+      const aaBlur = new flowCls(etf);
       result = await aaBlur.blur(smoothed, params.sigmaA);
     }
     
@@ -266,14 +272,15 @@ export class FDoG {
     const processor = new DoGProcessor(gradientBlur, params);
     
     let result = await processor.process(input);
-    
+
+    const flowCls = WebGLFlowGuidedBlur.isSupported() ? WebGLFlowGuidedBlur : FlowGuidedBlur;
     if (params.sigmaM > 0) {
-      const flowBlur = new FlowGuidedBlur(etf);
+      const flowBlur = new flowCls(etf);
       result = await flowBlur.blur(result, params.sigmaM);
     }
     
     if (params.sigmaA > 0) {
-      const aaBlur = new FlowGuidedBlur(etf);
+      const aaBlur = new flowCls(etf);
       result = await aaBlur.blur(result, params.sigmaA);
     }
     
@@ -305,8 +312,9 @@ export class FDoG {
     if (sigma <= 0) {
       return { data: new Float32Array(input.data), width: input.width, height: input.height };
     }
-    
-    const aaBlur = new FlowGuidedBlur(etf);
+
+    const flowCls = WebGLFlowGuidedBlur.isSupported() ? WebGLFlowGuidedBlur : FlowGuidedBlur;
+    const aaBlur = new flowCls(etf);
     return aaBlur.blur(input, sigma);
   }
   

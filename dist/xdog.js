@@ -10,8 +10,10 @@
 import { DEFAULT_DOG_CONFIG, DEFAULT_ETF_CONFIG, DEFAULT_FDOG_CONFIG, STYLE_PRESETS, FDOG_STYLE_PRESETS } from './types.js';
 import { DoGProcessor } from './dog.js';
 import { IsotropicBlur, FlowGuidedBlur, GradientAlignedBlur } from './blur.js';
+import { WebGLIsotropicBlur, WebGLFlowGuidedBlur } from './blur-webgl.js';
 import { EdgeTangentFlow } from './etf.js';
 import { imageDataToGrayscale, grayscaleToImageData } from './utils.js';
+import { WebGPUIsotropicBlur } from './blur-webgpu.js';
 /**
  * XDoG (Extended Difference of Gaussians)
  *
@@ -27,7 +29,8 @@ export class XDoG {
     constructor(config = {}) {
         const { kernelSizeMultiplier, ...dogConfig } = config;
         this.config = { ...DEFAULT_DOG_CONFIG, kernelSizeMultiplier: 6, ...config };
-        const blurStrategy = new IsotropicBlur({
+        const blurCls = WebGPUIsotropicBlur.isSupported() ? WebGPUIsotropicBlur : WebGLIsotropicBlur.isSupported() ? WebGLIsotropicBlur : IsotropicBlur;
+        const blurStrategy = new blurCls({
             kernelSizeMultiplier: this.config.kernelSizeMultiplier,
         });
         this.processor = new DoGProcessor(blurStrategy, dogConfig);
@@ -139,7 +142,8 @@ export class FDoG {
         let result = await processor.process(input);
         // Step 5: Apply flow-aligned smoothing (σm)
         if (params.sigmaM > 0) {
-            const flowBlur = new FlowGuidedBlur(etf);
+            const flowCls = WebGLFlowGuidedBlur.isSupported() ? WebGLFlowGuidedBlur : FlowGuidedBlur;
+            const flowBlur = new flowCls(etf);
             result = await flowBlur.blur(result, params.sigmaM);
         }
         // Step 6: Apply anti-aliasing if specified (σa)
@@ -174,7 +178,8 @@ export class FDoG {
         // Anti-aliasing
         let result = smoothed;
         if (params.sigmaA > 0) {
-            const aaBlur = new FlowGuidedBlur(etf);
+            const flowCls = WebGLFlowGuidedBlur.isSupported() ? WebGLFlowGuidedBlur : FlowGuidedBlur;
+            const aaBlur = new flowCls(etf);
             result = await aaBlur.blur(smoothed, params.sigmaA);
         }
         return { result, etf, sharpened, thresholded, smoothed };
@@ -198,12 +203,13 @@ export class FDoG {
         const gradientBlur = new GradientAlignedBlur(etf);
         const processor = new DoGProcessor(gradientBlur, params);
         let result = await processor.process(input);
+        const flowCls = WebGLFlowGuidedBlur.isSupported() ? WebGLFlowGuidedBlur : FlowGuidedBlur;
         if (params.sigmaM > 0) {
-            const flowBlur = new FlowGuidedBlur(etf);
+            const flowBlur = new flowCls(etf);
             result = await flowBlur.blur(result, params.sigmaM);
         }
         if (params.sigmaA > 0) {
-            const aaBlur = new FlowGuidedBlur(etf);
+            const aaBlur = new flowCls(etf);
             result = await aaBlur.blur(result, params.sigmaA);
         }
         return result;
@@ -228,7 +234,8 @@ export class FDoG {
         if (sigma <= 0) {
             return { data: new Float32Array(input.data), width: input.width, height: input.height };
         }
-        const aaBlur = new FlowGuidedBlur(etf);
+        const flowCls = WebGLFlowGuidedBlur.isSupported() ? WebGLFlowGuidedBlur : FlowGuidedBlur;
+        const aaBlur = new flowCls(etf);
         return aaBlur.blur(input, sigma);
     }
     /**

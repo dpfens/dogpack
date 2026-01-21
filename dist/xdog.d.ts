@@ -8,6 +8,7 @@
  * advanced image stylization" by Winnemöller et al. (2012)
  */
 import { GrayscaleImage, DoGConfig, FDoGConfig, STYLE_PRESETS, FDOG_STYLE_PRESETS } from './types.js';
+import { BlurStrategy } from './blur.js';
 import { EdgeTangentFlow } from './etf.js';
 /**
  * XDoG configuration combining DoG parameters with isotropic blur options
@@ -15,6 +16,7 @@ import { EdgeTangentFlow } from './etf.js';
 export interface XDoGConfig extends DoGConfig {
     /** Kernel size multiplier for Gaussian blur (default: 6) */
     kernelSizeMultiplier?: number;
+    blurStrategy?: BlurStrategy;
 }
 /**
  * XDoG (Extended Difference of Gaussians)
