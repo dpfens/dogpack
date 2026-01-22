@@ -11,20 +11,20 @@
 import { 
   GrayscaleImage, 
   DoGConfig, 
-  ETFConfig, 
   FDoGConfig,
   DEFAULT_DOG_CONFIG, 
   DEFAULT_ETF_CONFIG,
   DEFAULT_FDOG_CONFIG,
   STYLE_PRESETS,
-  FDOG_STYLE_PRESETS
+  FDOG_STYLE_PRESETS,
+  BlurStrategy
 } from './types.js';
 import { DoGProcessor } from './dog.js';
-import { IsotropicBlur, FlowGuidedBlur, GradientAlignedBlur, FDoGBlur, BlurStrategy } from './blur.js';
-import { WebGLIsotropicBlur, WebGLFlowGuidedBlur } from './blur-webgl.js';
-import { EdgeTangentFlow } from './etf.js';
-import { imageDataToGrayscale, grayscaleToImageData, createGrayscaleImage } from './utils.js';
-import { WebGPUIsotropicBlur } from './blur-webgpu.js';
+import { EdgeTangentFlow } from './etf/index.js';
+import { imageDataToGrayscale, grayscaleToImageData } from './utils.js';
+import { IsotropicBlur } from './blur/isotropic.js';
+import { GradientAlignedBlur } from './blur/gradient-aligned.js';
+import { FlowGuidedBlur } from './blur/flow-guided.js';
 
 /**
  * XDoG configuration combining DoG parameters with isotropic blur options
@@ -53,7 +53,7 @@ export class XDoG {
     
     this.config = { ...DEFAULT_DOG_CONFIG, kernelSizeMultiplier: 6, ...config };
 
-    const blurCls = WebGPUIsotropicBlur.isSupported() ? WebGPUIsotropicBlur : WebGLIsotropicBlur.isSupported() ? WebGLIsotropicBlur : IsotropicBlur;
+    const blurCls = IsotropicBlur;
     const blurStrategy = new blurCls({
       kernelSizeMultiplier: this.config.kernelSizeMultiplier,
     });
@@ -167,35 +167,28 @@ export class FDoG {
   async process(input: GrayscaleImage, overrides: Partial<FDoGConfig> = {}): Promise<GrayscaleImage> {
     const params = { ...this.config, ...overrides };
     
-    // Step 1: Compute Edge Tangent Flow for this image
+    // Step 1: Compute Edge Tangent Flow
     const etf = EdgeTangentFlow.compute(input, {
       iterations: DEFAULT_ETF_CONFIG.iterations,
       kernelSize: Math.ceil(params.sigmaC * 2.45) * 2 + 1,
     }, params.sigmaC);
     
-    // Step 2: Create blur strategies
-    // For FDoG, we need gradient-aligned blur for DoG computation
     const gradientBlur = new GradientAlignedBlur(etf);
-    
-    // Step 3: Create processor with gradient-aligned blur
     const processor = new DoGProcessor(gradientBlur, params);
     
     // Step 4: Process image (DoG + threshold)
     let result = await processor.process(input);
+    const flowBlur = new FlowGuidedBlur(etf);
     
-    // Step 5: Apply flow-aligned smoothing (σm)
+    // Step 5: Flow-aligned smoothing
     if (params.sigmaM > 0) {
-      const flowCls = WebGLFlowGuidedBlur.isSupported() ? WebGLFlowGuidedBlur : FlowGuidedBlur;
-      const flowBlur = new flowCls(etf);
       result = await flowBlur.blur(result, params.sigmaM);
     }
     
-    // Step 6: Apply anti-aliasing if specified (σa)
+    // Step 6: Anti-aliasing
     if (params.sigmaA > 0) {
-      const aaBlur = new FlowGuidedBlur(etf);
-      result = await aaBlur.blur(result, params.sigmaA);
-    }
-    
+      result = await flowBlur.blur(result, params.sigmaA);
+    }  
     return result;
   }
   
@@ -238,7 +231,7 @@ export class FDoG {
     // Anti-aliasing
     let result = smoothed;
     if (params.sigmaA > 0) {
-      const flowCls = WebGLFlowGuidedBlur.isSupported() ? WebGLFlowGuidedBlur : FlowGuidedBlur;
+      const flowCls = FlowGuidedBlur;
       const aaBlur = new flowCls(etf);
       result = await aaBlur.blur(smoothed, params.sigmaA);
     }
@@ -273,7 +266,7 @@ export class FDoG {
     
     let result = await processor.process(input);
 
-    const flowCls = WebGLFlowGuidedBlur.isSupported() ? WebGLFlowGuidedBlur : FlowGuidedBlur;
+    const flowCls = FlowGuidedBlur;
     if (params.sigmaM > 0) {
       const flowBlur = new flowCls(etf);
       result = await flowBlur.blur(result, params.sigmaM);
@@ -313,7 +306,7 @@ export class FDoG {
       return { data: new Float32Array(input.data), width: input.width, height: input.height };
     }
 
-    const flowCls = WebGLFlowGuidedBlur.isSupported() ? WebGLFlowGuidedBlur : FlowGuidedBlur;
+    const flowCls = FlowGuidedBlur;
     const aaBlur = new flowCls(etf);
     return aaBlur.blur(input, sigma);
   }

@@ -81,15 +81,18 @@
  * const result = await xdog.process(cleaned);
  * ```
  */
+export type { BlurStrategy, BlurStrategyClass } from './types.js';
 export { XDoG, FDoG, xdog, fdog } from './xdog.js';
 export type { XDoGConfig } from './xdog.js';
 export { DoGProcessor, ThresholdModes, applyCustomThreshold } from './dog.js';
-export { IsotropicBlur, FlowGuidedBlur, GradientAlignedBlur, FDoGBlur } from './blur.js';
-export type { BlurStrategy, BlurStrategyClass, IsotropicBlurConfig, FlowGuidedBlurConfig } from './blur.js';
-export { EdgeTangentFlow } from './etf.js';
+export { IsotropicBlur, FlowGuidedBlur, GradientAlignedBlur, } from './blur/index.js';
+export type { IsotropicBlurConfig, FlowGuidedBlurConfig } from './blur/index.js';
+export { EdgeTangentFlow } from './etf/index.js';
 export { PreprocessingPresets, Preprocessor, bilateralFilter, medianFilter, kuwaharaFilter, gaussianBlur, enhanceContrast, quantize } from './preprocess.js';
 export { PreprocessingPresetsWebGL, PreprocessorWebGL } from './preprocess-webgl.js';
 export type { Vec2, GrayscaleImage, RGBImage, FlowField, DoGConfig, ETFConfig, FDoGConfig, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from './types.js';
 export { DEFAULT_DOG_CONFIG, DEFAULT_ETF_CONFIG, DEFAULT_FDOG_CONFIG, STYLE_PRESETS, FDOG_STYLE_PRESETS, tauToP, pToTau } from './types.js';
 export { createGrayscaleImage, cloneGrayscaleImage, imageDataToGrayscale, grayscaleToImageData, rgbToGrayscale, getPixel, getPixelBilinear, setPixel, normalizeVec2, dotVec2, perpendicular, generateGaussianKernel, computeKernelSize, clamp, lerp, } from './utils.js';
+export { AntiAliasingStrategy, HatchingStrategy, NaturalMediaStrategy, ColorRetentionStrategy, MultiScaleStrategy, ExtensionPipeline, imageDataToRGB, rgbToImageData, grayscaleToRGB, } from './extensions.js';
+export type { ExtensionStrategy, DoGResult, AntiAliasingConfig, HatchTexture, HatchingConfig, NaturalMediaStyle, NaturalMediaConfig, ColorRetentionConfig, MultiScaleLayer, MultiScaleConfig, } from './extensions.js';
 //# sourceMappingURL=index.d.ts.map

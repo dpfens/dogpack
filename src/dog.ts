@@ -9,8 +9,7 @@
  * advanced image stylization" by Winnemöller et al. (2012)
  */
 
-import { GrayscaleImage, DoGConfig, DEFAULT_DOG_CONFIG } from './types.js';
-import { BlurStrategy } from './blur.js';
+import { BlurStrategy, GrayscaleImage, DoGConfig, DEFAULT_DOG_CONFIG } from './types.js';
 import { createGrayscaleImage } from './utils.js';
 
 /**

@@ -30,6 +30,35 @@ export interface RGBImage {
     height: number;
 }
 /**
+ * Abstract blur strategy interface
+ * Implementations provide different blur algorithms (isotropic, flow-guided, etc.)
+ */
+export interface BlurStrategy {
+    /**
+     * Apply blur to an image with the given sigma
+     * @param input Source image
+     * @param sigma Blur radius (standard deviation)
+     * @returns Blurred image
+     */
+    blur(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage>;
+}
+/**
+ * Static interface for blur strategy classes
+ * Used to check runtime availability before instantiation
+ */
+export interface BlurStrategyClass {
+    /**
+     * Check if this blur strategy is supported in the current environment
+     * @returns true if the strategy can be used, false otherwise
+     */
+    isSupported(): boolean;
+    /**
+     * Get a human-readable reason if the strategy is not supported
+     * @returns undefined if supported, or a string explaining why it's not
+     */
+    getUnsupportedReason?(): string | undefined;
+}
+/**
  * Flow field representing edge tangent directions at each pixel
  */
 export interface FlowField {

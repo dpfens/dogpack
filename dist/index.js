@@ -81,18 +81,19 @@
  * const result = await xdog.process(cleaned);
  * ```
  */
-// High-level API
 export { XDoG, FDoG, xdog, fdog } from './xdog.js';
 // Core processor (for advanced usage)
 export { DoGProcessor, ThresholdModes, applyCustomThreshold } from './dog.js';
 // Blur strategies (for custom configurations)
-export { IsotropicBlur, FlowGuidedBlur, GradientAlignedBlur, FDoGBlur } from './blur.js';
+export { IsotropicBlur, FlowGuidedBlur, GradientAlignedBlur, } from './blur/index.js';
 // Edge Tangent Flow (for visualization or custom pipelines)
-export { EdgeTangentFlow } from './etf.js';
+export { EdgeTangentFlow } from './etf/index.js';
 // Preprocessing
 export { PreprocessingPresets, Preprocessor, bilateralFilter, medianFilter, kuwaharaFilter, gaussianBlur, enhanceContrast, quantize } from './preprocess.js';
 export { PreprocessingPresetsWebGL, PreprocessorWebGL } from './preprocess-webgl.js';
 export { DEFAULT_DOG_CONFIG, DEFAULT_ETF_CONFIG, DEFAULT_FDOG_CONFIG, STYLE_PRESETS, FDOG_STYLE_PRESETS, tauToP, pToTau } from './types.js';
 // Utilities
 export { createGrayscaleImage, cloneGrayscaleImage, imageDataToGrayscale, grayscaleToImageData, rgbToGrayscale, getPixel, getPixelBilinear, setPixel, normalizeVec2, dotVec2, perpendicular, generateGaussianKernel, computeKernelSize, clamp, lerp, } from './utils.js';
+// Extensions (composable strategies for advanced stylization)
+export { AntiAliasingStrategy, HatchingStrategy, NaturalMediaStrategy, ColorRetentionStrategy, MultiScaleStrategy, ExtensionPipeline, imageDataToRGB, rgbToImageData, grayscaleToRGB, } from './extensions.js';
 //# sourceMappingURL=index.js.map

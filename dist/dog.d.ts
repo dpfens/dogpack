@@ -8,8 +8,7 @@
  * "XDoG: An eXtended difference-of-Gaussians compendium including
  * advanced image stylization" by Winnemöller et al. (2012)
  */
-import { GrayscaleImage, DoGConfig } from './types.js';
-import { BlurStrategy } from './blur.js';
+import { BlurStrategy, GrayscaleImage, DoGConfig } from './types.js';
 /**
  * Difference of Gaussians processor
  *

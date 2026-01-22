@@ -83,6 +83,7 @@
  */
 
 // High-level API
+export type {BlurStrategy, BlurStrategyClass} from './types.js';
 export { XDoG, FDoG, xdog, fdog } from './xdog.js';
 export type { XDoGConfig } from './xdog.js';
 
@@ -94,17 +95,14 @@ export {
   IsotropicBlur, 
   FlowGuidedBlur, 
   GradientAlignedBlur,
-  FDoGBlur 
-} from './blur.js';
-export type { 
-  BlurStrategy, 
-  BlurStrategyClass, 
+} from './blur/index.js';
+export type {  
   IsotropicBlurConfig,
-  FlowGuidedBlurConfig 
-} from './blur.js';
+  FlowGuidedBlurConfig
+} from './blur/index.js';
 
 // Edge Tangent Flow (for visualization or custom pipelines)
-export { EdgeTangentFlow } from './etf.js';
+export { EdgeTangentFlow } from './etf/index.js';
 
 // Preprocessing
 export { 
@@ -161,3 +159,27 @@ export {
   clamp,
   lerp,
 } from './utils.js';
+// Extensions (composable strategies for advanced stylization)
+export {
+  AntiAliasingStrategy,
+  HatchingStrategy,
+  NaturalMediaStrategy,
+  ColorRetentionStrategy,
+  MultiScaleStrategy,
+  ExtensionPipeline,
+  imageDataToRGB,
+  rgbToImageData,
+  grayscaleToRGB,
+} from './extensions.js';
+export type {
+  ExtensionStrategy,
+  DoGResult,
+  AntiAliasingConfig,
+  HatchTexture,
+  HatchingConfig,
+  NaturalMediaStyle,
+  NaturalMediaConfig,
+  ColorRetentionConfig,
+  MultiScaleLayer,
+  MultiScaleConfig,
+} from './extensions.js';

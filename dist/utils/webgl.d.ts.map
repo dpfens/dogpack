@@ -1,0 +1,1 @@
+{"version":3,"file":"webgl.d.ts","sourceRoot":"","sources":["../../src/utils/webgl.ts"],"names":[],"mappings":"AAAA;;GAEG;AACH,wBAAgB,aAAa,CAC3B,EAAE,EAAE,sBAAsB,EAC1B,MAAM,EAAE,MAAM,EACd,IAAI,EAAE,MAAM,GACX,WAAW,CAgBb;AAED;;GAEG;AACH,wBAAgB,aAAa,CAC3B,EAAE,EAAE,sBAAsB,EAC1B,YAAY,EAAE,MAAM,EACpB,cAAc,EAAE,MAAM,GACrB,YAAY,CAwBd"}
