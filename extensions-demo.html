@@ -1,0 +1,1224 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XDoG Extensions Studio</title>
+    
+    <!-- Bootstrap 5.3 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --accent-color: #c4b5fd;
+            --accent-dim: #a78bfa;
+            --accent-bright: #ddd6fe;
+            --surface-1: rgba(30, 27, 45, 0.85);
+            --surface-2: rgba(51, 45, 75, 0.5);
+        }
+        
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: linear-gradient(135deg, #0f0d1a 0%, #1a1625 50%, #0f0d1a 100%);
+            min-height: 100vh;
+        }
+        
+        .font-mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        .accent-text {
+            color: var(--accent-color);
+        }
+        
+        .navbar {
+            background: var(--surface-1);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .navbar-brand {
+            font-weight: 600;
+            letter-spacing: -0.02em;
+        }
+        
+        .card {
+            background: var(--surface-1);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 1rem;
+        }
+        
+        .card-header {
+            background: transparent;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            font-weight: 500;
+        }
+        
+        /* Drop Zone */
+        .drop-zone {
+            border: 2px dashed rgba(196, 181, 253, 0.3);
+            border-radius: 1rem;
+            padding: 2.5rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: rgba(196, 181, 253, 0.02);
+        }
+        
+        .drop-zone:hover,
+        .drop-zone.drag-over {
+            border-color: var(--accent-color);
+            background: rgba(196, 181, 253, 0.08);
+        }
+        
+        .drop-zone-icon {
+            font-size: 2.5rem;
+            color: var(--accent-color);
+            opacity: 0.6;
+        }
+        
+        /* Image boxes */
+        .image-container {
+            position: relative;
+            background: #0a0a10;
+            border-radius: 0.75rem;
+            overflow: hidden;
+            aspect-ratio: 4/3;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .image-container img,
+        .image-container canvas {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        
+        .image-label {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 0.5rem 1rem;
+            background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
+            font-size: 0.8rem;
+            color: var(--accent-color);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        /* Controls */
+        .form-label {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: #94a3b8;
+            margin-bottom: 0.35rem;
+        }
+        
+        .form-range {
+            height: 0.5rem;
+        }
+        
+        .form-range::-webkit-slider-thumb {
+            background: var(--accent-color);
+            box-shadow: 0 0 8px rgba(196, 181, 253, 0.4);
+        }
+        
+        .param-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            color: var(--accent-color);
+            min-width: 4rem;
+            text-align: right;
+        }
+        
+        .btn-accent {
+            background: linear-gradient(135deg, var(--accent-dim), var(--accent-color));
+            border: none;
+            color: #0f0d1a;
+            font-weight: 500;
+        }
+        
+        .btn-accent:hover {
+            background: linear-gradient(135deg, var(--accent-color), var(--accent-bright));
+            color: #0f0d1a;
+            transform: translateY(-1px);
+            box-shadow: 0 8px 24px rgba(196, 181, 253, 0.3);
+        }
+        
+        .btn-accent:disabled {
+            background: #475569;
+            color: #94a3b8;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        /* Extension buttons */
+        .extension-btn {
+            font-size: 0.8rem;
+            padding: 0.5rem 0.85rem;
+            border-radius: 0.5rem;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: transparent;
+            color: #cbd5e1;
+            transition: all 0.2s ease;
+            text-align: left;
+        }
+        
+        .extension-btn:hover {
+            border-color: var(--accent-color);
+            color: var(--accent-color);
+            background: rgba(196, 181, 253, 0.1);
+        }
+        
+        .extension-btn.active {
+            background: rgba(196, 181, 253, 0.2);
+            border-color: var(--accent-color);
+            color: var(--accent-color);
+        }
+        
+        .extension-btn .bi {
+            font-size: 1rem;
+            margin-right: 0.5rem;
+        }
+        
+        /* Preset buttons */
+        .preset-btn {
+            font-size: 0.75rem;
+            padding: 0.35rem 0.65rem;
+            border-radius: 2rem;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            background: transparent;
+            color: #cbd5e1;
+            transition: all 0.2s ease;
+        }
+        
+        .preset-btn:hover {
+            border-color: var(--accent-color);
+            color: var(--accent-color);
+            background: rgba(196, 181, 253, 0.1);
+        }
+        
+        .preset-btn.active {
+            background: rgba(196, 181, 253, 0.2);
+            border-color: var(--accent-color);
+            color: var(--accent-color);
+        }
+        
+        /* Accordion customization */
+        .accordion-button {
+            background: transparent;
+            color: #e2e8f0;
+            font-weight: 500;
+            padding: 0.75rem 1rem;
+            font-size: 0.9rem;
+        }
+        
+        .accordion-button:not(.collapsed) {
+            background: rgba(196, 181, 253, 0.05);
+            color: var(--accent-color);
+        }
+        
+        .accordion-button::after {
+            filter: invert(1);
+        }
+        
+        .accordion-body {
+            background: rgba(0, 0, 0, 0.2);
+        }
+        
+        /* Processing spinner */
+        .processing-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(15, 13, 26, 0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+            z-index: 10;
+            border-radius: 0.75rem;
+        }
+        
+        .processing-overlay.d-none {
+            display: none !important;
+        }
+        
+        /* Section titles */
+        .section-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #64748b;
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        
+        /* Extension panel */
+        .extension-params {
+            transition: all 0.3s ease;
+            max-height: 800px;
+            overflow: hidden;
+        }
+        
+        .extension-params.collapsed {
+            max-height: 0;
+            opacity: 0;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        
+        /* Info tooltip icon */
+        .info-icon {
+            color: #64748b;
+            cursor: help;
+            font-size: 0.85rem;
+        }
+        
+        .info-icon:hover {
+            color: var(--accent-color);
+        }
+        
+        /* Color picker wrapper */
+        .color-picker-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .color-picker-wrapper input[type="color"] {
+            width: 2.5rem;
+            height: 2rem;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 0.25rem;
+            padding: 0;
+            cursor: pointer;
+        }
+        
+        /* Toggle switch styling */
+        .form-check-input:checked {
+            background-color: var(--accent-color);
+            border-color: var(--accent-color);
+        }
+        
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        /* Extension description badge */
+        .ext-badge {
+            font-size: 0.65rem;
+            padding: 0.2rem 0.4rem;
+            border-radius: 0.25rem;
+            background: rgba(196, 181, 253, 0.15);
+            color: var(--accent-color);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg sticky-top">
+        <div class="container-fluid px-4">
+            <span class="navbar-brand">
+                <i class="bi bi-brush me-2 accent-text"></i>
+                XDoG Extensions Studio
+            </span>
+            <div class="d-flex align-items-center gap-3">
+                <span class="ext-badge">Extensions API</span>
+                <span class="badge bg-secondary bg-opacity-25 text-secondary font-mono">v1.0</span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid py-4 px-4">
+        <div class="row g-4">
+            <!-- Left Panel - Images -->
+            <div class="col-lg-8">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <!-- Drop Zone -->
+                        <div class="drop-zone mb-4" id="dropZone">
+                            <div class="drop-zone-icon mb-2">
+                                <i class="bi bi-cloud-arrow-up"></i>
+                            </div>
+                            <p class="mb-1 text-light">Drop an image here or click to upload</p>
+                            <small class="text-secondary">Supports JPG, PNG, WebP</small>
+                            <input type="file" id="fileInput" accept="image/*" hidden>
+                        </div>
+                        
+                        <!-- Image Comparison -->
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <div class="image-container">
+                                    <img id="originalImage" src="" alt="Original" class="d-none">
+                                    <div class="text-secondary" id="originalPlaceholder">
+                                        <i class="bi bi-image fs-1 opacity-25"></i>
+                                    </div>
+                                    <div class="image-label">Original</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="image-container">
+                                    <canvas id="resultCanvas"></canvas>
+                                    <div class="processing-overlay d-none" id="processingOverlay">
+                                        <div class="spinner-border text-light" role="status">
+                                            <span class="visually-hidden">Processing...</span>
+                                        </div>
+                                        <span class="text-light">Processing...</span>
+                                    </div>
+                                    <div class="image-label">Result</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Action Buttons -->
+                        <div class="d-flex gap-2 mt-3">
+                            <button class="btn btn-accent flex-grow-1" id="processBtn" disabled>
+                                <i class="bi bi-magic me-2"></i>Apply Extension
+                            </button>
+                            <button class="btn btn-outline-light" id="downloadBtn" disabled title="Download Result">
+                                <i class="bi bi-download"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Right Panel - Controls -->
+            <div class="col-lg-4">
+                <div class="card">
+                    <div class="card-body" style="max-height: calc(100vh - 140px); overflow-y: auto;">
+                        
+                        <!-- Extension Selection -->
+                        <div class="section-title">Extension Strategy</div>
+                        <div class="d-flex flex-column gap-2 mb-4">
+                            <button class="extension-btn active" data-extension="naturalMedia">
+                                <i class="bi bi-palette"></i>
+                                <span>Natural Media</span>
+                                <small class="d-block text-secondary mt-1">Pencil, pastel, charcoal effects</small>
+                            </button>
+                            <button class="extension-btn" data-extension="multiScale">
+                                <i class="bi bi-layers"></i>
+                                <span>Multi-Scale</span>
+                                <small class="d-block text-secondary mt-1">Combine results at different scales</small>
+                            </button>
+                            <button class="extension-btn" data-extension="hatching">
+                                <i class="bi bi-slash-lg"></i>
+                                <span>Hatching / Tonal Art Maps</span>
+                                <small class="d-block text-secondary mt-1">Create cross-hatching effects</small>
+                            </button>
+                            <button class="extension-btn" data-extension="colorRetention">
+                                <i class="bi bi-droplet-half"></i>
+                                <span>Color Retention</span>
+                                <small class="d-block text-secondary mt-1">Preserve original colors in edges</small>
+                            </button>
+                            <button class="extension-btn" data-extension="antiAliasing">
+                                <i class="bi bi-bezier2"></i>
+                                <span>Anti-Aliasing (LIC)</span>
+                                <small class="d-block text-secondary mt-1">Flow-aligned edge smoothing</small>
+                            </button>
+                        </div>
+                        
+                        <!-- Natural Media Parameters -->
+                        <div class="extension-params" id="naturalMediaParams">
+                            <div class="section-title">Natural Media Style</div>
+                            <div class="d-flex flex-wrap gap-2 mb-3">
+                                <button class="preset-btn active" data-style="pencilShading">✏️ Pencil</button>
+                                <button class="preset-btn" data-style="pastel">🎨 Pastel</button>
+                                <button class="preset-btn" data-style="charcoal">🖤 Charcoal</button>
+                                <button class="preset-btn" data-style="dryBrush">🖌️ Dry Brush</button>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label mb-0">σ (Sigma) - Edge Scale</label>
+                                    <span class="param-value" id="nmSigmaValue">0.4</span>
+                                </div>
+                                <input type="range" class="form-range" id="nmSigma" min="0.3" max="10" step="0.1" value="0.4">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label mb-0">p - Edge Emphasis</label>
+                                    <span class="param-value" id="nmPValue">20</span>
+                                </div>
+                                <input type="range" class="form-range" id="nmP" min="0" max="100" step="1" value="20">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label mb-0">φ (Phi) - Threshold Sharpness</label>
+                                    <span class="param-value" id="nmPhiValue">0.01</span>
+                                </div>
+                                <input type="range" class="form-range" id="nmPhi" min="0.01" max="100" step="0.5" value="0.01">
+                            </div>
+                            
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" type="checkbox" id="nmUseFlow">
+                                <label class="form-check-label" for="nmUseFlow">Use Flow-Based Processing (FDoG)</label>
+                            </div>
+                        </div>
+                        
+                        <!-- Multi-Scale Parameters -->
+                        <div class="extension-params collapsed" id="multiScaleParams">
+                            <div class="section-title">Multi-Scale Presets</div>
+                            <div class="d-flex flex-wrap gap-2 mb-3">
+                                <button class="preset-btn active" data-ms-preset="detailed">🔍 Detailed</button>
+                                <button class="preset-btn" data-ms-preset="balanced">⚖️ Balanced</button>
+                                <button class="preset-btn" data-ms-preset="abstract">🌀 Abstract</button>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Blend Mode</label>
+                                <select class="form-select form-select-sm" id="msBlendMode">
+                                    <option value="min">Minimum (Darkest)</option>
+                                    <option value="average" selected>Weighted Average</option>
+                                    <option value="max">Maximum (Brightest)</option>
+                                    <option value="multiply">Multiply</option>
+                                </select>
+                            </div>
+                            
+                            <div class="p-2 rounded mb-3" style="background: rgba(0,0,0,0.2);">
+                                <small class="text-secondary">
+                                    <strong class="text-light">Detailed:</strong> Fine + medium edges (XDoG)<br>
+                                    <strong class="text-light">Balanced:</strong> XDoG + FDoG layers<br>
+                                    <strong class="text-light">Abstract:</strong> Large-scale FDoG layers
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <!-- Hatching Parameters -->
+                        <div class="extension-params collapsed" id="hatchingParams">
+                            <div class="section-title">Hatching / Tonal Art Maps</div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Number of Tone Bands</label>
+                                <select class="form-select form-select-sm" id="hatchBands">
+                                    <option value="2">2 Bands (Light/Dark)</option>
+                                    <option value="3">3 Bands</option>
+                                    <option value="4" selected>4 Bands</option>
+                                    <option value="5">5 Bands</option>
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label mb-0">p - Sharpening</label>
+                                    <span class="param-value" id="hatchPValue">20</span>
+                                </div>
+                                <input type="range" class="form-range" id="hatchP" min="5" max="100" step="1" value="20">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label mb-0">φ - Mask Sharpness</label>
+                                    <span class="param-value" id="hatchPhiValue">100</span>
+                                </div>
+                                <input type="range" class="form-range" id="hatchPhi" min="10" max="200" step="5" value="100">
+                            </div>
+                            
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" type="checkbox" id="hatchUseTexture" checked>
+                                <label class="form-check-label" for="hatchUseTexture">Use Procedural Hatching Texture</label>
+                            </div>
+                            
+                            <div id="hatchTextureParams">
+                                <div class="mb-3">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <label class="form-label mb-0">Line Spacing</label>
+                                        <span class="param-value" id="hatchSpacingValue">8</span>
+                                    </div>
+                                    <input type="range" class="form-range" id="hatchSpacing" min="3" max="20" step="1" value="8">
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <label class="form-label mb-0">Line Thickness</label>
+                                        <span class="param-value" id="hatchThicknessValue">2</span>
+                                    </div>
+                                    <input type="range" class="form-range" id="hatchThickness" min="1" max="6" step="1" value="2">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Color Retention Parameters -->
+                        <div class="extension-params collapsed" id="colorRetentionParams">
+                            <div class="section-title">Color Retention</div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Blend Mode</label>
+                                <select class="form-select form-select-sm" id="crBlendMode">
+                                    <option value="multiply" selected>Multiply</option>
+                                    <option value="overlay">Overlay</option>
+                                    <option value="softLight">Soft Light</option>
+                                    <option value="luminosity">Luminosity</option>
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label mb-0">Color Strength</label>
+                                    <span class="param-value" id="crStrengthValue">1.0</span>
+                                </div>
+                                <input type="range" class="form-range" id="crStrength" min="0" max="1" step="0.05" value="1.0">
+                            </div>
+                            
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" type="checkbox" id="crInvert" checked>
+                                <label class="form-check-label" for="crInvert">Invert Stylized (preserve color in white)</label>
+                            </div>
+                            
+                            <div class="section-title mt-3">Base Style</div>
+                            <div class="d-flex flex-wrap gap-2 mb-3">
+                                <button class="preset-btn active" data-cr-style="pencilShading">✏️ Pencil</button>
+                                <button class="preset-btn" data-cr-style="pastel">🎨 Pastel</button>
+                                <button class="preset-btn" data-cr-style="charcoal">🖤 Charcoal</button>
+                            </div>
+                        </div>
+                        
+                        <!-- Anti-Aliasing Parameters -->
+                        <div class="extension-params collapsed" id="antiAliasingParams">
+                            <div class="section-title">Anti-Aliasing (Line Integral Convolution)</div>
+                            
+                            <div class="d-flex flex-wrap gap-2 mb-3">
+                                <button class="preset-btn" data-aa-preset="subtle">Subtle</button>
+                                <button class="preset-btn active" data-aa-preset="standard">Standard</button>
+                                <button class="preset-btn" data-aa-preset="stylistic">Stylistic</button>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label mb-0">σ - Smoothing Sigma</label>
+                                    <span class="param-value" id="aaSigmaValue">1.0</span>
+                                </div>
+                                <input type="range" class="form-range" id="aaSigma" min="0.1" max="5" step="0.1" value="1.0">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label mb-0">Step Size</label>
+                                    <span class="param-value" id="aaStepValue">0.5</span>
+                                </div>
+                                <input type="range" class="form-range" id="aaStep" min="0.1" max="1" step="0.1" value="0.5">
+                            </div>
+                            
+                            <div class="p-2 rounded" style="background: rgba(0,0,0,0.2);">
+                                <small class="text-secondary">
+                                    Anti-aliasing uses flow-guided smoothing along edge tangent directions.
+                                    Requires computing an ETF (Edge Tangent Flow) from the image.
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <!-- Preprocessing -->
+                        <div class="accordion mt-4" id="advancedAccordion">
+                            <div class="accordion-item bg-transparent border-0">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#preprocessParams">
+                                        Preprocessing
+                                    </button>
+                                </h2>
+                                <div id="preprocessParams" class="accordion-collapse collapse">
+                                    <div class="accordion-body">
+                                        <div class="mb-3">
+                                            <label class="form-label">Preprocessing Mode</label>
+                                            <select class="form-select form-select-sm" id="preprocessMode">
+                                                <option value="none">None</option>
+                                                <option value="light">Light (clean images)</option>
+                                                <option value="standard" selected>Standard (most photos)</option>
+                                                <option value="heavy">Heavy (textured images)</option>
+                                                <option value="nature">Nature (landscapes)</option>
+                                                <option value="artistic">Artistic (painterly)</option>
+                                            </select>
+                                        </div>
+                                        <small class="text-secondary">
+                                            Preprocessing smooths textures while preserving edges, 
+                                            reducing noise in the final result.
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Info -->
+                        <div class="mt-4 p-3 rounded" style="background: rgba(196, 181, 253, 0.05); border: 1px solid rgba(196, 181, 253, 0.1);">
+                            <h6 class="accent-text mb-2">
+                                <i class="bi bi-lightbulb me-1"></i> About Extensions
+                            </h6>
+                            <small class="text-secondary d-block">
+                                Extensions are composable strategies that build on XDoG/FDoG processing.
+                                They can be combined in pipelines for complex artistic effects.
+                                Based on Sections 4-5 of the Winnemöller et al. (2012) paper.
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script type="module">
+        import { 
+            XDoG,
+            FDoG,
+            imageDataToGrayscale, 
+            grayscaleToImageData,
+            PreprocessingPresetsWebGL,
+            NaturalMediaStrategy,
+            MultiScaleStrategy,
+            HatchingStrategy,
+            ColorRetentionStrategy,
+            AntiAliasingStrategy,
+            EdgeTangentFlow,
+            imageDataToRGB,
+            rgbToImageData,
+        } from './dist/index.js';
+
+        // State
+        let currentExtension = 'naturalMedia';
+        let loadedImage = null;
+        let loadedImageData = null;
+
+        // DOM Elements
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const originalImage = document.getElementById('originalImage');
+        const originalPlaceholder = document.getElementById('originalPlaceholder');
+        const resultCanvas = document.getElementById('resultCanvas');
+        const processBtn = document.getElementById('processBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const processingOverlay = document.getElementById('processingOverlay');
+        const preprocessMode = document.getElementById('preprocessMode');
+
+        // Extension param panels
+        const extensionPanels = {
+            naturalMedia: document.getElementById('naturalMediaParams'),
+            multiScale: document.getElementById('multiScaleParams'),
+            hatching: document.getElementById('hatchingParams'),
+            colorRetention: document.getElementById('colorRetentionParams'),
+            antiAliasing: document.getElementById('antiAliasingParams'),
+        };
+
+        // Natural Media controls
+        const nmControls = {
+            sigma: document.getElementById('nmSigma'),
+            p: document.getElementById('nmP'),
+            phi: document.getElementById('nmPhi'),
+            useFlow: document.getElementById('nmUseFlow'),
+        };
+
+        // Multi-Scale controls
+        const msControls = {
+            blendMode: document.getElementById('msBlendMode'),
+        };
+
+        // Hatching controls
+        const hatchControls = {
+            bands: document.getElementById('hatchBands'),
+            p: document.getElementById('hatchP'),
+            phi: document.getElementById('hatchPhi'),
+            useTexture: document.getElementById('hatchUseTexture'),
+            spacing: document.getElementById('hatchSpacing'),
+            thickness: document.getElementById('hatchThickness'),
+        };
+
+        // Color Retention controls
+        const crControls = {
+            blendMode: document.getElementById('crBlendMode'),
+            strength: document.getElementById('crStrength'),
+            invert: document.getElementById('crInvert'),
+        };
+
+        // Anti-Aliasing controls
+        const aaControls = {
+            sigma: document.getElementById('aaSigma'),
+            step: document.getElementById('aaStep'),
+        };
+
+        // Natural Media presets from the library
+        const nmPresets = {
+            pencilShading: { sigma: 0.4, p: 20, phi: 0.01, useFlow: false },
+            pastel: { sigma: 2.0, p: 40, phi: 0.01, useFlow: true },
+            charcoal: { sigma: 7.0, p: 70, phi: 0.01, useFlow: true },
+            dryBrush: { sigma: 3.0, p: 50, phi: 0.01, useFlow: true },
+        };
+
+        // Multi-scale presets
+        let currentMSPreset = 'detailed';
+        
+        // Color retention style
+        let currentCRStyle = 'pencilShading';
+
+        // Anti-aliasing presets
+        const aaPresets = {
+            subtle: { sigma: 0.5, step: 0.5 },
+            standard: { sigma: 1.0, step: 0.5 },
+            stylistic: { sigma: 3.0, step: 0.5 },
+        };
+
+        // Initialize Bootstrap tooltips
+        const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+        const tooltipList = [...tooltipTriggerList].map(el => new bootstrap.Tooltip(el));
+
+        // Helper to wait for image load
+        function waitForImage(img) {
+            return new Promise((resolve, reject) => {
+                if (img.complete && img.naturalWidth > 0) {
+                    resolve(img);
+                } else {
+                    img.onload = () => resolve(img);
+                    img.onerror = reject;
+                }
+            });
+        }
+
+        // Update slider value displays
+        function updateSliderDisplays() {
+            // Natural Media
+            document.getElementById('nmSigmaValue').textContent = parseFloat(nmControls.sigma.value).toFixed(1);
+            document.getElementById('nmPValue').textContent = nmControls.p.value;
+            document.getElementById('nmPhiValue').textContent = parseFloat(nmControls.phi.value).toFixed(2);
+            
+            // Hatching
+            document.getElementById('hatchPValue').textContent = hatchControls.p.value;
+            document.getElementById('hatchPhiValue').textContent = hatchControls.phi.value;
+            document.getElementById('hatchSpacingValue').textContent = hatchControls.spacing.value;
+            document.getElementById('hatchThicknessValue').textContent = hatchControls.thickness.value;
+            
+            // Color Retention
+            document.getElementById('crStrengthValue').textContent = parseFloat(crControls.strength.value).toFixed(2);
+            
+            // Anti-Aliasing
+            document.getElementById('aaSigmaValue').textContent = parseFloat(aaControls.sigma.value).toFixed(1);
+            document.getElementById('aaStepValue').textContent = parseFloat(aaControls.step.value).toFixed(1);
+        }
+
+        // Apply Natural Media preset
+        function applyNMPreset(presetName) {
+            const preset = nmPresets[presetName];
+            if (!preset) return;
+            
+            nmControls.sigma.value = preset.sigma;
+            nmControls.p.value = preset.p;
+            nmControls.phi.value = preset.phi;
+            nmControls.useFlow.checked = preset.useFlow;
+            
+            updateSliderDisplays();
+        }
+
+        // Apply Anti-Aliasing preset
+        function applyAAPreset(presetName) {
+            const preset = aaPresets[presetName];
+            if (!preset) return;
+            
+            aaControls.sigma.value = preset.sigma;
+            aaControls.step.value = preset.step;
+            
+            updateSliderDisplays();
+        }
+
+        // Apply preprocessing
+        function applyPreprocessing(grayscale) {
+            const mode = preprocessMode.value;
+            if (mode === 'none') return grayscale;
+            
+            const preprocessFn = PreprocessingPresetsWebGL[mode];
+            if (preprocessFn) {
+                return preprocessFn(grayscale);
+            }
+            return grayscale;
+        }
+
+        // Get image data from loaded image
+        function getImageData() {
+            if (!loadedImage) return null;
+            
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCanvas.width = loadedImage.naturalWidth;
+            tempCanvas.height = loadedImage.naturalHeight;
+            tempCtx.drawImage(loadedImage, 0, 0);
+            
+            return tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+        }
+
+        // Process image with selected extension
+        async function processImage() {
+            if (!loadedImage) return;
+
+            processBtn.disabled = true;
+            processingOverlay.classList.remove('d-none');
+
+            // Small delay to let UI update
+            await new Promise(r => setTimeout(r, 50));
+
+            try {
+                const imageData = getImageData();
+                let grayscale = imageDataToGrayscale(imageData);
+                
+                // Apply preprocessing
+                grayscale = applyPreprocessing(grayscale);
+                
+                let result;
+                let resultImageData;
+                
+                switch (currentExtension) {
+                    case 'naturalMedia':
+                        result = await processNaturalMedia(grayscale);
+                        resultImageData = grayscaleToImageData(result);
+                        break;
+                        
+                    case 'multiScale':
+                        result = await processMultiScale(grayscale);
+                        resultImageData = grayscaleToImageData(result);
+                        break;
+                        
+                    case 'hatching':
+                        result = await processHatching(grayscale);
+                        resultImageData = grayscaleToImageData(result);
+                        break;
+                        
+                    case 'colorRetention':
+                        const rgbInput = imageDataToRGB(imageData);
+                        result = await processColorRetention(grayscale, rgbInput);
+                        resultImageData = rgbToImageData(result);
+                        break;
+                        
+                    case 'antiAliasing':
+                        result = await processAntiAliasing(grayscale);
+                        resultImageData = grayscaleToImageData(result);
+                        break;
+                }
+
+                // Display result
+                resultCanvas.width = resultImageData.width;
+                resultCanvas.height = resultImageData.height;
+                const ctx = resultCanvas.getContext('2d');
+                ctx.putImageData(resultImageData, 0, 0);
+
+                downloadBtn.disabled = false;
+            } catch (error) {
+                console.error('Processing error:', error);
+                alert('Error processing image: ' + error.message);
+            } finally {
+                processBtn.disabled = false;
+                processingOverlay.classList.add('d-none');
+            }
+        }
+
+        // Natural Media processing
+        async function processNaturalMedia(grayscale) {
+            const strategy = new NaturalMediaStrategy({
+                style: 'pencilShading', // Base style, we'll override params
+                sigma: parseFloat(nmControls.sigma.value),
+                p: parseFloat(nmControls.p.value),
+                phi: parseFloat(nmControls.phi.value),
+                useFlow: nmControls.useFlow.checked,
+            });
+            
+            return strategy.apply(grayscale);
+        }
+
+        // Multi-Scale processing
+        async function processMultiScale(grayscale) {
+            const strategy = MultiScaleStrategy.withPreset(currentMSPreset);
+            return strategy.apply(grayscale, { blendMode: msControls.blendMode.value });
+        }
+
+        // Hatching processing
+        async function processHatching(grayscale) {
+            const numBands = parseInt(hatchControls.bands.value);
+            const thresholdLevels = [];
+            for (let i = 1; i < numBands; i++) {
+                thresholdLevels.push(i / numBands);
+            }
+            
+            // First, get the sharpened image using XDoG
+            const xdog = new XDoG({
+                sigma: 1.0,
+                p: parseFloat(hatchControls.p.value),
+                phi: parseFloat(hatchControls.phi.value),
+            });
+            const sharpened = await xdog.processSharpened(grayscale);
+            
+            const config = {
+                thresholdLevels,
+                p: parseFloat(hatchControls.p.value),
+                phi: parseFloat(hatchControls.phi.value),
+            };
+            
+            // Add textures if enabled
+            if (hatchControls.useTexture.checked) {
+                const spacing = parseInt(hatchControls.spacing.value);
+                const thickness = parseInt(hatchControls.thickness.value);
+                
+                const textures = [];
+                for (let i = 0; i < numBands; i++) {
+                    // Rotate each band's hatching by different amount
+                    const rotation = (i * Math.PI) / numBands;
+                    textures.push(HatchingStrategy.generateHatchTexture(
+                        64, 64, spacing, thickness, rotation
+                    ));
+                }
+                config.textures = textures;
+            }
+            
+            const strategy = new HatchingStrategy(config);
+            return strategy.apply({ sharpened, original: grayscale });
+        }
+
+        // Color Retention processing
+        async function processColorRetention(grayscale, rgbInput) {
+            // First process with Natural Media to get stylized output
+            const nmStrategy = new NaturalMediaStrategy({ style: currentCRStyle });
+            const stylized = await nmStrategy.apply(grayscale);
+            
+            const strategy = new ColorRetentionStrategy({
+                blendMode: crControls.blendMode.value,
+                strength: parseFloat(crControls.strength.value),
+                invertStylized: crControls.invert.checked,
+            });
+            
+            return strategy.apply({ stylized, originalColor: rgbInput });
+        }
+
+        // Anti-Aliasing processing
+        async function processAntiAliasing(grayscale) {
+            // First, process with FDoG to get edge image and ETF
+            const fdog = new FDoG({
+                sigma: 1.4,
+                p: 20,
+                phi: 100,
+                sigmaC: 2.5,
+                sigmaM: 4.0,
+                sigmaA: 0, // We'll apply our own AA
+            });
+            
+            const fdogResult = await fdog.processDetailed(grayscale);
+            
+            const strategy = new AntiAliasingStrategy({
+                sigma: parseFloat(aaControls.sigma.value),
+                stepSize: parseFloat(aaControls.step.value),
+            });
+            
+            return strategy.apply({
+                image: fdogResult.thresholded,
+                etf: fdogResult.etf,
+            });
+        }
+
+        // Handle file selection
+        function handleFile(file) {
+            if (!file.type.startsWith('image/')) {
+                alert('Please select an image file');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                originalImage.src = e.target.result;
+                await waitForImage(originalImage);
+                originalImage.classList.remove('d-none');
+                originalPlaceholder.classList.add('d-none');
+                loadedImage = originalImage;
+                processBtn.disabled = false;
+                
+                // Auto-process
+                processImage();
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // Switch extension panel
+        function switchExtension(extension) {
+            currentExtension = extension;
+            
+            // Update button states
+            document.querySelectorAll('.extension-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.extension === extension);
+            });
+            
+            // Update panel visibility
+            Object.entries(extensionPanels).forEach(([key, panel]) => {
+                panel.classList.toggle('collapsed', key !== extension);
+            });
+        }
+
+        // Event Listeners
+        dropZone.addEventListener('click', () => fileInput.click());
+        
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+        
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('drag-over');
+        });
+        
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            const file = e.dataTransfer.files[0];
+            if (file) handleFile(file);
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) handleFile(file);
+        });
+
+        // Extension buttons
+        document.querySelectorAll('.extension-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                switchExtension(btn.dataset.extension);
+                if (loadedImage) processImage();
+            });
+        });
+
+        // Natural Media preset buttons
+        document.querySelectorAll('[data-style]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('[data-style]').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                applyNMPreset(btn.dataset.style);
+                if (loadedImage) processImage();
+            });
+        });
+
+        // Multi-Scale preset buttons
+        document.querySelectorAll('[data-ms-preset]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('[data-ms-preset]').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentMSPreset = btn.dataset.msPreset;
+                if (loadedImage) processImage();
+            });
+        });
+
+        // Color Retention style buttons
+        document.querySelectorAll('[data-cr-style]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('[data-cr-style]').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentCRStyle = btn.dataset.crStyle;
+                if (loadedImage) processImage();
+            });
+        });
+
+        // Anti-Aliasing preset buttons
+        document.querySelectorAll('[data-aa-preset]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('[data-aa-preset]').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                applyAAPreset(btn.dataset.aaPreset);
+                if (loadedImage) processImage();
+            });
+        });
+
+        // Natural Media sliders
+        Object.values(nmControls).forEach(control => {
+            if (control.type === 'range') {
+                control.addEventListener('input', updateSliderDisplays);
+                control.addEventListener('change', () => {
+                    if (loadedImage && currentExtension === 'naturalMedia') processImage();
+                });
+            } else if (control.type === 'checkbox') {
+                control.addEventListener('change', () => {
+                    if (loadedImage && currentExtension === 'naturalMedia') processImage();
+                });
+            }
+        });
+
+        // Multi-Scale blend mode
+        msControls.blendMode.addEventListener('change', () => {
+            if (loadedImage && currentExtension === 'multiScale') processImage();
+        });
+
+        // Hatching controls
+        hatchControls.bands.addEventListener('change', () => {
+            if (loadedImage && currentExtension === 'hatching') processImage();
+        });
+        hatchControls.useTexture.addEventListener('change', () => {
+            document.getElementById('hatchTextureParams').style.display = 
+                hatchControls.useTexture.checked ? 'block' : 'none';
+            if (loadedImage && currentExtension === 'hatching') processImage();
+        });
+        [hatchControls.p, hatchControls.phi, hatchControls.spacing, hatchControls.thickness].forEach(ctrl => {
+            ctrl.addEventListener('input', updateSliderDisplays);
+            ctrl.addEventListener('change', () => {
+                if (loadedImage && currentExtension === 'hatching') processImage();
+            });
+        });
+
+        // Color Retention controls
+        crControls.blendMode.addEventListener('change', () => {
+            if (loadedImage && currentExtension === 'colorRetention') processImage();
+        });
+        crControls.strength.addEventListener('input', updateSliderDisplays);
+        crControls.strength.addEventListener('change', () => {
+            if (loadedImage && currentExtension === 'colorRetention') processImage();
+        });
+        crControls.invert.addEventListener('change', () => {
+            if (loadedImage && currentExtension === 'colorRetention') processImage();
+        });
+
+        // Anti-Aliasing sliders
+        [aaControls.sigma, aaControls.step].forEach(ctrl => {
+            ctrl.addEventListener('input', updateSliderDisplays);
+            ctrl.addEventListener('change', () => {
+                if (loadedImage && currentExtension === 'antiAliasing') processImage();
+            });
+        });
+
+        // Preprocessing mode change
+        preprocessMode.addEventListener('change', () => {
+            if (loadedImage) processImage();
+        });
+
+        processBtn.addEventListener('click', processImage);
+
+        downloadBtn.addEventListener('click', () => {
+            const link = document.createElement('a');
+            link.download = `xdog-${currentExtension}.png`;
+            link.href = resultCanvas.toDataURL('image/png');
+            link.click();
+        });
+
+        // Initialize
+        updateSliderDisplays();
+        applyNMPreset('pencilShading');
+        applyAAPreset('standard');
+    </script>
+</body>
+</html>

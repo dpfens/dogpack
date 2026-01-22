@@ -8,8 +8,8 @@
  * Kang et al. (2007) "Coherent Line Drawing"
  */
 
-import { GrayscaleImage, FlowField, Vec2, ETFConfig, DEFAULT_ETF_CONFIG } from './types.js';
-import { createGrayscaleImage, getPixel, normalizeVec2, dotVec2, generateGaussianKernel } from './utils.js';
+import { GrayscaleImage, FlowField, Vec2, ETFConfig, DEFAULT_ETF_CONFIG } from '../types.js';
+import { createGrayscaleImage, normalizeVec2, dotVec2, generateGaussianKernel } from '../utils.js';
 
 /**
  * Structure tensor components at a pixel
