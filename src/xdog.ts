@@ -17,7 +17,8 @@ import {
   DEFAULT_FDOG_CONFIG,
   STYLE_PRESETS,
   FDOG_STYLE_PRESETS,
-  BlurStrategy
+  BlurStrategy,
+  DoGImplementation
 } from './types.js';
 import { DoGProcessor } from './dog.js';
 import { EdgeTangentFlow } from './etf/index.js';
@@ -44,7 +45,7 @@ export interface XDoGConfig extends DoGConfig {
  * This implements the reparameterized XDoG from Section 2.5 of the paper,
  * using Equation 7 for the sharpening computation.
  */
-export class XDoG {
+export class XDoG implements DoGImplementation {
   private processor: DoGProcessor;
   private config: XDoGConfig;
   
@@ -141,7 +142,7 @@ export class XDoG {
  * - σm: Flow-aligned smoothing (controls line coherence)
  * - σa: Anti-aliasing sigma (optional post-processing)
  */
-export class FDoG {
+export class FDoG implements DoGImplementation {
   private config: FDoGConfig;
   
   constructor(config: Partial<FDoGConfig> = {}) {
