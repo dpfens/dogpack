@@ -20,6 +20,7 @@
  */
 export { AntiAliasingStrategy } from './anti-alias.js';
 export { ColorRetentionBuilder, ColorRetentionStrategy, ColorTransforms, MaskTransforms, Presets, PostProcessors, BlendFunctions } from './color-retention.js';
+export { HatchingStrategy } from './hatching.js';
 export { NaturalMediaStrategy } from './natural-media.js';
 export { createGammaCorrectedBlend, createMixedBlend, createPercentileBlend, MultiScaleStrategy, BlendFunctions as ScaleBlendFunctions } from './multi-scale.js';
 export { imageDataToRGB, rgbToImageData, grayscaleToRGB } from './utils.js';

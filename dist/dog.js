@@ -77,6 +77,29 @@ export class DoGProcessor {
         return this.computeDoG(blur1, blur2);
     }
     /**
+     * Process and return all intermediate results in a single pass
+     *
+     * This is more efficient than calling process(), processNoThreshold(), and
+     * processRawDoG() separately as it only performs the blur operations once.
+     *
+     * @param input Grayscale input image (values in 0-1 range)
+     * @param overrides Optional parameter overrides for this call
+     * @returns Object containing result, sharpened, and rawDoG images
+     */
+    async processDetailed(input, overrides = {}) {
+        const params = { ...this.config, ...overrides };
+        // Step 1: Apply two Gaussian blurs (only once!)
+        const blur1 = await this.blurStrategy.blur(input, params.sigma);
+        const blur2 = await this.blurStrategy.blur(input, params.sigma * params.k);
+        // Step 2: Compute raw DoG
+        const rawDoG = this.computeDoG(blur1, blur2);
+        // Step 3: Compute sharpened image
+        const sharpened = this.computeSharpening(blur1, blur2, params.p);
+        // Step 4: Apply thresholding
+        const result = this.applyThreshold(sharpened, params.epsilon, params.phi);
+        return { result, sharpened, rawDoG };
+    }
+    /**
      * Get current configuration
      */
     getConfig() {

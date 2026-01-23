@@ -29,8 +29,7 @@ export class XDoG {
     constructor(config = {}) {
         const { kernelSizeMultiplier, ...dogConfig } = config;
         this.config = { ...DEFAULT_DOG_CONFIG, kernelSizeMultiplier: 6, ...config };
-        const blurCls = IsotropicBlur;
-        const blurStrategy = new blurCls({
+        const blurStrategy = new IsotropicBlur({
             kernelSizeMultiplier: this.config.kernelSizeMultiplier,
         });
         this.processor = new DoGProcessor(blurStrategy, dogConfig);
@@ -58,6 +57,20 @@ export class XDoG {
      */
     async processRawDoG(input, overrides = {}) {
         return this.processor.processRawDoG(input, overrides);
+    }
+    /**
+     * Process and return all intermediate results
+     *
+     * This is more efficient than calling process(), processSharpened(), and
+     * processRawDoG() separately as it only performs the blur operations once.
+     *
+     * Useful for:
+     * - Hatching strategies that need the sharpened image
+     * - Debugging and visualization
+     * - Custom post-processing pipelines
+     */
+    async processDetailed(input, overrides = {}) {
+        return this.processor.processDetailed(input, overrides);
     }
     /**
      * Convenience method to process ImageData directly (e.g., from a canvas)

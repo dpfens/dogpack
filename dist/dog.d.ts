@@ -8,7 +8,7 @@
  * "XDoG: An eXtended difference-of-Gaussians compendium including
  * advanced image stylization" by Winnemöller et al. (2012)
  */
-import { BlurStrategy, GrayscaleImage, DoGConfig } from './types.js';
+import { BlurStrategy, GrayscaleImage, DoGConfig, DoGProcessingResult } from './types.js';
 /**
  * Difference of Gaussians processor
  *
@@ -50,6 +50,17 @@ export declare class DoGProcessor {
      * Useful for visualization and debugging
      */
     processRawDoG(input: GrayscaleImage, overrides?: Partial<DoGConfig>): Promise<GrayscaleImage>;
+    /**
+     * Process and return all intermediate results in a single pass
+     *
+     * This is more efficient than calling process(), processNoThreshold(), and
+     * processRawDoG() separately as it only performs the blur operations once.
+     *
+     * @param input Grayscale input image (values in 0-1 range)
+     * @param overrides Optional parameter overrides for this call
+     * @returns Object containing result, sharpened, and rawDoG images
+     */
+    processDetailed(input: GrayscaleImage, overrides?: Partial<DoGConfig>): Promise<DoGProcessingResult>;
     /**
      * Get current configuration
      */

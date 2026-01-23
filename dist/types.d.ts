@@ -189,11 +189,21 @@ export interface FDoGConfig extends DoGConfig {
      */
     sigmaA: number;
 }
+export interface DoGProcessingResult {
+    /** Final thresholded output */
+    result: GrayscaleImage;
+    /** Sharpened image before thresholding */
+    sharpened: GrayscaleImage;
+    /** Raw DoG response (blur1 - blur2) */
+    rawDoG?: GrayscaleImage;
+}
 /**
  * Interface for DoG processors (XDoG or FDoG)
  */
 export interface DoGImplementation {
     process(input: GrayscaleImage, overrides?: Partial<DoGConfig>): Promise<GrayscaleImage>;
+    /** Process and return all intermediate results (avoids redundant blur operations) */
+    processDetailed(input: GrayscaleImage, overrides?: Partial<DoGConfig>): Promise<DoGProcessingResult>;
 }
 /**
  * Default DoG configuration values

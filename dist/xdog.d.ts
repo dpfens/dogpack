@@ -7,7 +7,7 @@
  * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
  * advanced image stylization" by Winnemöller et al. (2012)
  */
-import { GrayscaleImage, DoGConfig, FDoGConfig, STYLE_PRESETS, FDOG_STYLE_PRESETS, BlurStrategy, DoGImplementation } from './types.js';
+import { GrayscaleImage, DoGConfig, FDoGConfig, STYLE_PRESETS, FDOG_STYLE_PRESETS, BlurStrategy, DoGImplementation, DoGProcessingResult } from './types.js';
 import { EdgeTangentFlow } from './etf/index.js';
 /**
  * XDoG configuration combining DoG parameters with isotropic blur options
@@ -46,6 +46,18 @@ export declare class XDoG implements DoGImplementation {
      * Get raw DoG response for visualization
      */
     processRawDoG(input: GrayscaleImage, overrides?: Partial<DoGConfig>): Promise<GrayscaleImage>;
+    /**
+     * Process and return all intermediate results
+     *
+     * This is more efficient than calling process(), processSharpened(), and
+     * processRawDoG() separately as it only performs the blur operations once.
+     *
+     * Useful for:
+     * - Hatching strategies that need the sharpened image
+     * - Debugging and visualization
+     * - Custom post-processing pipelines
+     */
+    processDetailed(input: GrayscaleImage, overrides?: Partial<DoGConfig>): Promise<DoGProcessingResult>;
     /**
      * Convenience method to process ImageData directly (e.g., from a canvas)
      */

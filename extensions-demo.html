@@ -881,6 +881,7 @@
             imageDataToGrayscale, 
             grayscaleToImageData,
             PreprocessingPresetsWebGL,
+            HatchingStrategy,
             MultiScaleStrategy,
             NaturalMediaStrategy,
             ColorRetentionStrategy,
@@ -1201,13 +1202,13 @@
                 thresholdLevels.push(i / numBands);
             }
             
-            // First, get the sharpened image using XDoG
+            // Use processDetailed to get sharpened image efficiently
             const xdog = new XDoG({
                 sigma: 1.0,
                 p: parseFloat(hatchControls.p.value),
                 phi: parseFloat(hatchControls.phi.value),
             });
-            const sharpened = await xdog.processSharpened(grayscale);
+            const { sharpened } = await xdog.processDetailed(grayscale);
             
             const config = {
                 thresholdLevels,

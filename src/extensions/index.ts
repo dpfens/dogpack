@@ -27,6 +27,9 @@ export type { AntiAliasingConfig } from './anti-alias.js';
 export { ColorRetentionBuilder, ColorRetentionStrategy, ColorTransforms, MaskTransforms, Presets, PostProcessors, BlendFunctions } from './color-retention.js';
 export type { Color, ColorRetentionConfig, ColorTransformFn, MaskTransformFn, PostProcessFn } from './color-retention.js';
 
+export { HatchingStrategy } from './hatching.js';
+export type { HatchTexture, HatchingConfig } from './hatching.js';
+
 export { NaturalMediaStrategy } from './natural-media.js';
 export type { NaturalMediaConfig, NaturalMediaStyle } from './natural-media.js';
 

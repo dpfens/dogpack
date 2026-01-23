@@ -95,5 +95,5 @@ export { DEFAULT_DOG_CONFIG, DEFAULT_ETF_CONFIG, DEFAULT_FDOG_CONFIG, STYLE_PRES
 // Utilities
 export { createGrayscaleImage, cloneGrayscaleImage, imageDataToGrayscale, grayscaleToImageData, rgbToGrayscale, getPixel, getPixelBilinear, setPixel, normalizeVec2, dotVec2, perpendicular, generateGaussianKernel, computeKernelSize, clamp, lerp, } from './utils.js';
 // Extensions (composable strategies for advanced stylization)
-export { AntiAliasingStrategy, ColorRetentionStrategy, BlendFunctions, ColorTransforms, MaskTransforms, PostProcessors, MultiScaleStrategy, ScaleBlendFunctions, NaturalMediaStrategy, imageDataToRGB, rgbToImageData, grayscaleToRGB, } from './extensions/index.js';
+export { AntiAliasingStrategy, ColorRetentionStrategy, BlendFunctions, ColorTransforms, MaskTransforms, PostProcessors, HatchingStrategy, MultiScaleStrategy, ScaleBlendFunctions, NaturalMediaStrategy, imageDataToRGB, rgbToImageData, grayscaleToRGB, } from './extensions/index.js';
 //# sourceMappingURL=index.js.map
