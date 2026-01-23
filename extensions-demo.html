@@ -570,36 +570,223 @@
                         
                         <!-- Color Retention Parameters -->
                         <div class="extension-params collapsed" id="colorRetentionParams">
-                            <div class="section-title">Color Retention</div>
-                            
-                            <div class="mb-3">
-                                <label class="form-label">Blend Mode</label>
-                                <select class="form-select form-select-sm" id="crBlendMode">
-                                    <option value="multiply" selected>Multiply</option>
-                                    <option value="overlay">Overlay</option>
-                                    <option value="softLight">Soft Light</option>
-                                    <option value="luminosity">Luminosity</option>
-                                </select>
-                            </div>
-                            
-                            <div class="mb-3">
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <label class="form-label mb-0">Color Strength</label>
-                                    <span class="param-value" id="crStrengthValue">1.0</span>
-                                </div>
-                                <input type="range" class="form-range" id="crStrength" min="0" max="1" step="0.05" value="1.0">
-                            </div>
-                            
-                            <div class="form-check form-switch mb-3">
-                                <input class="form-check-input" type="checkbox" id="crInvert" checked>
-                                <label class="form-check-label" for="crInvert">Invert Stylized (preserve color in white)</label>
-                            </div>
-                            
-                            <div class="section-title mt-3">Base Style</div>
+                            <div class="section-title">Base Style</div>
                             <div class="d-flex flex-wrap gap-2 mb-3">
                                 <button class="preset-btn active" data-cr-style="pencilShading">✏️ Pencil</button>
                                 <button class="preset-btn" data-cr-style="pastel">🎨 Pastel</button>
                                 <button class="preset-btn" data-cr-style="charcoal">🖤 Charcoal</button>
+                            </div>
+                            
+                            <!-- Blend Function -->
+                            <div class="section-title mt-3">Blend Function</div>
+                            <div class="mb-3">
+                                <select class="form-select form-select-sm" id="crBlendMode">
+                                    <option value="multiply">Multiply</option>
+                                    <option value="screen">Screen</option>
+                                    <option value="overlay">Overlay</option>
+                                    <option value="softLight">Soft Light</option>
+                                    <option value="coloredEdges" selected>Colored Edges</option>
+                                    <option value="tintedLines">Tinted Lines</option>
+                                    <option value="luminosity">Luminosity (HSL)</option>
+                                    <option value="lerp">Linear Interpolation</option>
+                                    <option value="valueReplace">Value Replace (HSV)</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" type="checkbox" id="crInvertForColor" checked>
+                                <label class="form-check-label" for="crInvertForColor">Color in edges, white background</label>
+                                <small class="d-block text-secondary mt-1">When enabled, applies color to dark/edge areas instead of background</small>
+                            </div>
+                            
+                            <!-- Colored Edges params -->
+                            <div id="crColoredEdgesParams" class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label mb-0">Edge Strength</label>
+                                    <span class="param-value" id="crEdgeStrengthValue">1.0</span>
+                                </div>
+                                <input type="range" class="form-range" id="crEdgeStrength" min="0" max="1" step="0.05" value="1.0">
+                            </div>
+                            
+                            <!-- Tinted Lines params -->
+                            <div id="crTintedLinesParams" class="mb-3 d-none">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label mb-0">Darkness</label>
+                                    <span class="param-value" id="crTintDarknessValue">0.8</span>
+                                </div>
+                                <input type="range" class="form-range" id="crTintDarkness" min="0" max="1" step="0.05" value="0.8">
+                            </div>
+                            
+                            <!-- Lerp params -->
+                            <div id="crLerpParams" class="mb-3 d-none">
+                                <label class="form-label">Edge Color</label>
+                                <div class="color-picker-wrapper">
+                                    <input type="color" id="crLerpColor" value="#000000">
+                                    <span class="font-mono text-secondary" id="crLerpColorHex">#000000</span>
+                                </div>
+                            </div>
+                            
+                            <!-- Mask Transforms -->
+                            <div class="section-title mt-3">Mask Transforms</div>
+                            
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label mb-0">Gamma</label>
+                                    <span class="param-value" id="crMaskGammaValue">1.0</span>
+                                </div>
+                                <input type="range" class="form-range" id="crMaskGamma" min="0.2" max="3" step="0.05" value="1.0">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label mb-0">Contrast</label>
+                                    <span class="param-value" id="crMaskContrastValue">1.0</span>
+                                </div>
+                                <input type="range" class="form-range" id="crMaskContrast" min="0.5" max="2" step="0.05" value="1.0">
+                            </div>
+                            
+                            <div class="row g-2 mb-3">
+                                <div class="col-6">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <label class="form-label mb-0">Clamp Min</label>
+                                        <span class="param-value" id="crClampMinValue">0</span>
+                                    </div>
+                                    <input type="range" class="form-range" id="crClampMin" min="0" max="0.5" step="0.01" value="0">
+                                </div>
+                                <div class="col-6">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <label class="form-label mb-0">Clamp Max</label>
+                                        <span class="param-value" id="crClampMaxValue">1</span>
+                                    </div>
+                                    <input type="range" class="form-range" id="crClampMax" min="0.5" max="1" step="0.01" value="1">
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label mb-0">Blur Radius</label>
+                                    <span class="param-value" id="crMaskBlurValue">0</span>
+                                </div>
+                                <input type="range" class="form-range" id="crMaskBlur" min="0" max="5" step="1" value="0">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label mb-0">Quantize Levels</label>
+                                    <span class="param-value" id="crQuantizeValue">0</span>
+                                </div>
+                                <input type="range" class="form-range" id="crQuantize" min="0" max="16" step="1" value="0">
+                                <small class="text-secondary">0 = disabled</small>
+                            </div>
+                            
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" id="crMaskInvert">
+                                <label class="form-check-label" for="crMaskInvert">Invert Mask</label>
+                            </div>
+                            
+                            <!-- Color Transforms -->
+                            <div class="section-title mt-3">Color Transforms</div>
+                            
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label mb-0">Saturation</label>
+                                    <span class="param-value" id="crColorSatValue">1.0</span>
+                                </div>
+                                <input type="range" class="form-range" id="crColorSat" min="0" max="2" step="0.05" value="1.0">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label mb-0">Brightness</label>
+                                    <span class="param-value" id="crColorBrightValue">0</span>
+                                </div>
+                                <input type="range" class="form-range" id="crColorBright" min="-0.5" max="0.5" step="0.05" value="0">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label mb-0">Contrast</label>
+                                    <span class="param-value" id="crColorContrastValue">1.0</span>
+                                </div>
+                                <input type="range" class="form-range" id="crColorContrast" min="0.5" max="2" step="0.05" value="1.0">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label mb-0">Hue Shift</label>
+                                    <span class="param-value" id="crHueShiftValue">0°</span>
+                                </div>
+                                <input type="range" class="form-range" id="crHueShift" min="-180" max="180" step="5" value="0">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label mb-0">Sepia</label>
+                                    <span class="param-value" id="crSepiaValue">0</span>
+                                </div>
+                                <input type="range" class="form-range" id="crSepia" min="0" max="1" step="0.05" value="0">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label mb-0">Temperature</label>
+                                    <span class="param-value" id="crTempValue">0</span>
+                                </div>
+                                <input type="range" class="form-range" id="crTemp" min="-1" max="1" step="0.1" value="0">
+                                <small class="text-secondary">Negative = cool, Positive = warm</small>
+                            </div>
+                            
+                            <!-- Post Processors -->
+                            <div class="section-title mt-3">Post Processing</div>
+                            
+                            <div class="row g-2 mb-3">
+                                <div class="col-6">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <label class="form-label mb-0">Vignette</label>
+                                        <span class="param-value" id="crVignetteValue">0</span>
+                                    </div>
+                                    <input type="range" class="form-range" id="crVignette" min="0" max="1" step="0.05" value="0">
+                                </div>
+                                <div class="col-6">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <label class="form-label mb-0">Vig. Radius</label>
+                                        <span class="param-value" id="crVigRadiusValue">0.7</span>
+                                    </div>
+                                    <input type="range" class="form-range" id="crVigRadius" min="0.3" max="1" step="0.05" value="0.7">
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label mb-0">Film Grain</label>
+                                    <span class="param-value" id="crGrainValue">0</span>
+                                </div>
+                                <input type="range" class="form-range" id="crGrain" min="0" max="0.2" step="0.01" value="0">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label mb-0">Blend Original</label>
+                                    <span class="param-value" id="crBlendOrigValue">0</span>
+                                </div>
+                                <input type="range" class="form-range" id="crBlendOrig" min="0" max="1" step="0.05" value="0">
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label mb-0">Posterize Levels</label>
+                                    <span class="param-value" id="crPosterizeValue">0</span>
+                                </div>
+                                <input type="range" class="form-range" id="crPosterize" min="0" max="16" step="1" value="0">
+                                <small class="text-secondary">0 = disabled</small>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label mb-0">Edge Sharpen</label>
+                                    <span class="param-value" id="crSharpenValue">0</span>
+                                </div>
+                                <input type="range" class="form-range" id="crSharpen" min="0" max="1" step="0.05" value="0">
                             </div>
                         </div>
                         
@@ -694,14 +881,17 @@
             imageDataToGrayscale, 
             grayscaleToImageData,
             PreprocessingPresetsWebGL,
-            NaturalMediaStrategy,
             MultiScaleStrategy,
-            HatchingStrategy,
+            NaturalMediaStrategy,
             ColorRetentionStrategy,
+            BlendFunctions,
+            MaskTransforms,
+            ColorTransforms,
+            PostProcessors,
             AntiAliasingStrategy,
             EdgeTangentFlow,
             imageDataToRGB,
-            rgbToImageData,
+            rgbToImageData
         } from './dist/index.js';
 
         // State
@@ -754,9 +944,34 @@
 
         // Color Retention controls
         const crControls = {
+            // Blend
             blendMode: document.getElementById('crBlendMode'),
-            strength: document.getElementById('crStrength'),
-            invert: document.getElementById('crInvert'),
+            invertForColor: document.getElementById('crInvertForColor'),
+            edgeStrength: document.getElementById('crEdgeStrength'),
+            tintDarkness: document.getElementById('crTintDarkness'),
+            lerpColor: document.getElementById('crLerpColor'),
+            // Mask transforms
+            maskGamma: document.getElementById('crMaskGamma'),
+            maskContrast: document.getElementById('crMaskContrast'),
+            clampMin: document.getElementById('crClampMin'),
+            clampMax: document.getElementById('crClampMax'),
+            maskBlur: document.getElementById('crMaskBlur'),
+            quantize: document.getElementById('crQuantize'),
+            maskInvert: document.getElementById('crMaskInvert'),
+            // Color transforms
+            colorSat: document.getElementById('crColorSat'),
+            colorBright: document.getElementById('crColorBright'),
+            colorContrast: document.getElementById('crColorContrast'),
+            hueShift: document.getElementById('crHueShift'),
+            sepia: document.getElementById('crSepia'),
+            temp: document.getElementById('crTemp'),
+            // Post processing
+            vignette: document.getElementById('crVignette'),
+            vigRadius: document.getElementById('crVigRadius'),
+            grain: document.getElementById('crGrain'),
+            blendOrig: document.getElementById('crBlendOrig'),
+            posterize: document.getElementById('crPosterize'),
+            sharpen: document.getElementById('crSharpen'),
         };
 
         // Anti-Aliasing controls
@@ -767,10 +982,10 @@
 
         // Natural Media presets from the library
         const nmPresets = {
-            pencilShading: { sigma: 0.4, p: 20, phi: 0.01, useFlow: false },
-            pastel: { sigma: 2.0, p: 40, phi: 0.01, useFlow: true },
-            charcoal: { sigma: 7.0, p: 70, phi: 0.01, useFlow: true },
-            dryBrush: { sigma: 3.0, p: 50, phi: 0.01, useFlow: true },
+            pencilShading: NaturalMediaStrategy.PRESETS.pencilShading,
+            pastel: NaturalMediaStrategy.PRESETS.pastel,
+            charcoal: NaturalMediaStrategy.PRESETS.charcoal,
+            dryBrush: NaturalMediaStrategy.PRESETS.dryBrush,
         };
 
         // Multi-scale presets
@@ -815,8 +1030,31 @@
             document.getElementById('hatchSpacingValue').textContent = hatchControls.spacing.value;
             document.getElementById('hatchThicknessValue').textContent = hatchControls.thickness.value;
             
-            // Color Retention
-            document.getElementById('crStrengthValue').textContent = parseFloat(crControls.strength.value).toFixed(2);
+            // Color Retention - Blend
+            document.getElementById('crEdgeStrengthValue').textContent = parseFloat(crControls.edgeStrength.value).toFixed(2);
+            document.getElementById('crTintDarknessValue').textContent = parseFloat(crControls.tintDarkness.value).toFixed(2);
+            document.getElementById('crLerpColorHex').textContent = crControls.lerpColor.value;
+            // Color Retention - Mask transforms
+            document.getElementById('crMaskGammaValue').textContent = parseFloat(crControls.maskGamma.value).toFixed(2);
+            document.getElementById('crMaskContrastValue').textContent = parseFloat(crControls.maskContrast.value).toFixed(2);
+            document.getElementById('crClampMinValue').textContent = parseFloat(crControls.clampMin.value).toFixed(2);
+            document.getElementById('crClampMaxValue').textContent = parseFloat(crControls.clampMax.value).toFixed(2);
+            document.getElementById('crMaskBlurValue').textContent = crControls.maskBlur.value;
+            document.getElementById('crQuantizeValue').textContent = crControls.quantize.value;
+            // Color Retention - Color transforms
+            document.getElementById('crColorSatValue').textContent = parseFloat(crControls.colorSat.value).toFixed(2);
+            document.getElementById('crColorBrightValue').textContent = parseFloat(crControls.colorBright.value).toFixed(2);
+            document.getElementById('crColorContrastValue').textContent = parseFloat(crControls.colorContrast.value).toFixed(2);
+            document.getElementById('crHueShiftValue').textContent = crControls.hueShift.value + '°';
+            document.getElementById('crSepiaValue').textContent = parseFloat(crControls.sepia.value).toFixed(2);
+            document.getElementById('crTempValue').textContent = parseFloat(crControls.temp.value).toFixed(1);
+            // Color Retention - Post processing
+            document.getElementById('crVignetteValue').textContent = parseFloat(crControls.vignette.value).toFixed(2);
+            document.getElementById('crVigRadiusValue').textContent = parseFloat(crControls.vigRadius.value).toFixed(2);
+            document.getElementById('crGrainValue').textContent = parseFloat(crControls.grain.value).toFixed(2);
+            document.getElementById('crBlendOrigValue').textContent = parseFloat(crControls.blendOrig.value).toFixed(2);
+            document.getElementById('crPosterizeValue').textContent = crControls.posterize.value;
+            document.getElementById('crSharpenValue').textContent = parseFloat(crControls.sharpen.value).toFixed(2);
             
             // Anti-Aliasing
             document.getElementById('aaSigmaValue').textContent = parseFloat(aaControls.sigma.value).toFixed(1);
@@ -1003,12 +1241,225 @@
             const nmStrategy = new NaturalMediaStrategy({ style: currentCRStyle });
             const stylized = await nmStrategy.apply(grayscale);
             
-            const strategy = new ColorRetentionStrategy({
-                blendMode: crControls.blendMode.value,
-                strength: parseFloat(crControls.strength.value),
-                invertStylized: crControls.invert.checked,
-            });
+            // Build blend function based on selection
+            const blendMode = crControls.blendMode.value;
+            const invertForColor = crControls.invertForColor.checked;
+            let blend;
             
+            // When "Color in edges" is enabled, we want:
+            // - Color in edge areas (where stylized is dark/0)
+            // - White in background areas (where stylized is white/1)
+            // Standard blends assume mask=1 means show color, so we need custom logic
+            
+            if (invertForColor) {
+                // Custom blends for "color in edges, white background"
+                switch (blendMode) {
+                    case 'multiply':
+                        // Inverted multiply: white where mask=1, color*darkness where mask=0
+                        blend = (color, mask) => [
+                            1 - (1 - color[0]) * (1 - mask),
+                            1 - (1 - color[1]) * (1 - mask),
+                            1 - (1 - color[2]) * (1 - mask),
+                        ];
+                        break;
+                    case 'screen':
+                        blend = (color, mask) => [
+                            color[0] * (1 - mask) + mask,
+                            color[1] * (1 - mask) + mask,
+                            color[2] * (1 - mask) + mask,
+                        ];
+                        break;
+                    case 'coloredEdges':
+                        const edgeStr = parseFloat(crControls.edgeStrength.value);
+                        // Color in dark areas, white in light areas
+                        blend = (color, mask) => [
+                            color[0] * (1 - mask) * edgeStr + mask + (1 - mask) * (1 - edgeStr),
+                            color[1] * (1 - mask) * edgeStr + mask + (1 - mask) * (1 - edgeStr),
+                            color[2] * (1 - mask) * edgeStr + mask + (1 - mask) * (1 - edgeStr),
+                        ];
+                        break;
+                    case 'tintedLines':
+                        const darkness = parseFloat(crControls.tintDarkness.value);
+                        blend = (color, mask) => {
+                            const edgeBrightness = 1 - darkness;
+                            return [
+                                (color[0] * edgeBrightness + (color[0] - color[0] * edgeBrightness) * (1 - mask)) * (1 - mask) + mask,
+                                (color[1] * edgeBrightness + (color[1] - color[1] * edgeBrightness) * (1 - mask)) * (1 - mask) + mask,
+                                (color[2] * edgeBrightness + (color[2] - color[2] * edgeBrightness) * (1 - mask)) * (1 - mask) + mask,
+                            ];
+                        };
+                        break;
+                    case 'lerp':
+                    default:
+                        // Lerp from white (mask=1) to color (mask=0)
+                        blend = (color, mask) => [
+                            color[0] * (1 - mask) + mask,
+                            color[1] * (1 - mask) + mask,
+                            color[2] * (1 - mask) + mask,
+                        ];
+                        break;
+                    case 'overlay':
+                    case 'softLight':
+                    case 'luminosity':
+                    case 'valueReplace':
+                        // For complex blends, just use lerp to white
+                        blend = (color, mask) => [
+                            color[0] * (1 - mask) + mask,
+                            color[1] * (1 - mask) + mask,
+                            color[2] * (1 - mask) + mask,
+                        ];
+                        break;
+                }
+            } else {
+                // Standard blends (color in background, dark edges)
+                switch (blendMode) {
+                    case 'multiply':
+                        blend = BlendFunctions.multiply;
+                        break;
+                    case 'screen':
+                        blend = BlendFunctions.screen;
+                        break;
+                    case 'overlay':
+                        blend = BlendFunctions.overlay;
+                        break;
+                    case 'softLight':
+                        blend = BlendFunctions.softLight;
+                        break;
+                    case 'coloredEdges':
+                        blend = BlendFunctions.coloredEdges(parseFloat(crControls.edgeStrength.value));
+                        break;
+                    case 'tintedLines':
+                        blend = BlendFunctions.tintedLines(parseFloat(crControls.tintDarkness.value));
+                        break;
+                    case 'luminosity':
+                        blend = BlendFunctions.luminosity;
+                        break;
+                    case 'lerp':
+                        const hex = crControls.lerpColor.value;
+                        const r = parseInt(hex.slice(1, 3), 16) / 255;
+                        const g = parseInt(hex.slice(3, 5), 16) / 255;
+                        const b = parseInt(hex.slice(5, 7), 16) / 255;
+                        blend = BlendFunctions.lerp([r, g, b]);
+                        break;
+                    case 'valueReplace':
+                        blend = BlendFunctions.valueReplace;
+                        break;
+                    default:
+                        blend = BlendFunctions.coloredEdges(1.0);
+                }
+            }
+            
+            // Build mask transform chain
+            const maskTransformChain = [];
+            
+            const maskGamma = parseFloat(crControls.maskGamma.value);
+            if (maskGamma !== 1.0) {
+                maskTransformChain.push(MaskTransforms.gamma(maskGamma));
+            }
+            
+            const maskContrast = parseFloat(crControls.maskContrast.value);
+            if (maskContrast !== 1.0) {
+                maskTransformChain.push(MaskTransforms.contrast(maskContrast));
+            }
+            
+            const clampMin = parseFloat(crControls.clampMin.value);
+            const clampMax = parseFloat(crControls.clampMax.value);
+            if (clampMin > 0 || clampMax < 1) {
+                maskTransformChain.push(MaskTransforms.clamp(clampMin, clampMax));
+            }
+            
+            const maskBlur = parseInt(crControls.maskBlur.value);
+            if (maskBlur > 0) {
+                maskTransformChain.push(MaskTransforms.blur(maskBlur));
+            }
+            
+            const quantize = parseInt(crControls.quantize.value);
+            if (quantize > 0) {
+                maskTransformChain.push(MaskTransforms.quantize(quantize));
+            }
+            
+            if (crControls.maskInvert.checked) {
+                maskTransformChain.push(MaskTransforms.invert());
+            }
+            
+            // Build color transform chain
+            const colorTransformChain = [];
+            
+            const colorSat = parseFloat(crControls.colorSat.value);
+            if (colorSat !== 1.0) {
+                colorTransformChain.push(ColorTransforms.saturation(colorSat));
+            }
+            
+            const colorBright = parseFloat(crControls.colorBright.value);
+            if (colorBright !== 0) {
+                colorTransformChain.push(ColorTransforms.brightness(colorBright));
+            }
+            
+            const colorContrast = parseFloat(crControls.colorContrast.value);
+            if (colorContrast !== 1.0) {
+                colorTransformChain.push(ColorTransforms.contrast(colorContrast));
+            }
+            
+            const hueShift = parseFloat(crControls.hueShift.value);
+            if (hueShift !== 0) {
+                colorTransformChain.push(ColorTransforms.hueShift(hueShift));
+            }
+            
+            const sepia = parseFloat(crControls.sepia.value);
+            if (sepia > 0) {
+                colorTransformChain.push(ColorTransforms.sepia(sepia));
+            }
+            
+            const temp = parseFloat(crControls.temp.value);
+            if (temp !== 0) {
+                colorTransformChain.push(ColorTransforms.temperature(temp));
+            }
+            
+            // Build post process chain
+            const postProcessChain = [];
+            
+            const vignette = parseFloat(crControls.vignette.value);
+            const vigRadius = parseFloat(crControls.vigRadius.value);
+            if (vignette > 0) {
+                postProcessChain.push(PostProcessors.vignette(vignette, vigRadius));
+            }
+            
+            const grain = parseFloat(crControls.grain.value);
+            if (grain > 0) {
+                postProcessChain.push(PostProcessors.grain(grain));
+            }
+            
+            const blendOrig = parseFloat(crControls.blendOrig.value);
+            if (blendOrig > 0) {
+                postProcessChain.push(PostProcessors.blendOriginal(blendOrig));
+            }
+            
+            const posterize = parseInt(crControls.posterize.value);
+            if (posterize > 0) {
+                postProcessChain.push(PostProcessors.posterize(posterize));
+            }
+            
+            const sharpen = parseFloat(crControls.sharpen.value);
+            if (sharpen > 0) {
+                postProcessChain.push(PostProcessors.sharpenEdges(sharpen));
+            }
+            
+            // Always clamp output
+            postProcessChain.push(PostProcessors.clampOutput());
+            
+            // Build config
+            const config = { blend };
+            if (maskTransformChain.length > 0) {
+                config.maskTransformChain = maskTransformChain;
+            }
+            if (colorTransformChain.length > 0) {
+                config.colorTransformChain = colorTransformChain;
+            }
+            if (postProcessChain.length > 0) {
+                config.postProcessChain = postProcessChain;
+            }
+            
+            const strategy = new ColorRetentionStrategy(config);
             return strategy.apply({ stylized, originalColor: rgbInput });
         }
 
@@ -1183,13 +1634,43 @@
 
         // Color Retention controls
         crControls.blendMode.addEventListener('change', () => {
+            // Show/hide blend-specific params
+            document.getElementById('crColoredEdgesParams').classList.toggle('d-none', crControls.blendMode.value !== 'coloredEdges');
+            document.getElementById('crTintedLinesParams').classList.toggle('d-none', crControls.blendMode.value !== 'tintedLines');
+            document.getElementById('crLerpParams').classList.toggle('d-none', crControls.blendMode.value !== 'lerp');
             if (loadedImage && currentExtension === 'colorRetention') processImage();
         });
-        crControls.strength.addEventListener('input', updateSliderDisplays);
-        crControls.strength.addEventListener('change', () => {
+        
+        // All CR sliders
+        const crSliders = [
+            crControls.edgeStrength, crControls.tintDarkness,
+            crControls.maskGamma, crControls.maskContrast, crControls.clampMin, crControls.clampMax,
+            crControls.maskBlur, crControls.quantize,
+            crControls.colorSat, crControls.colorBright, crControls.colorContrast,
+            crControls.hueShift, crControls.sepia, crControls.temp,
+            crControls.vignette, crControls.vigRadius, crControls.grain, crControls.blendOrig,
+            crControls.posterize, crControls.sharpen
+        ];
+        crSliders.forEach(ctrl => {
+            ctrl.addEventListener('input', updateSliderDisplays);
+            ctrl.addEventListener('change', () => {
+                if (loadedImage && currentExtension === 'colorRetention') processImage();
+            });
+        });
+        
+        // CR color picker
+        crControls.lerpColor.addEventListener('input', () => {
+            updateSliderDisplays();
             if (loadedImage && currentExtension === 'colorRetention') processImage();
         });
-        crControls.invert.addEventListener('change', () => {
+        
+        // CR checkbox
+        crControls.maskInvert.addEventListener('change', () => {
+            if (loadedImage && currentExtension === 'colorRetention') processImage();
+        });
+        
+        // CR invert for color toggle
+        crControls.invertForColor.addEventListener('change', () => {
             if (loadedImage && currentExtension === 'colorRetention') processImage();
         });
 

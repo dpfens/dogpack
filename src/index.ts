@@ -160,26 +160,32 @@ export {
   lerp,
 } from './utils.js';
 // Extensions (composable strategies for advanced stylization)
+
 export {
   AntiAliasingStrategy,
-  HatchingStrategy,
-  NaturalMediaStrategy,
   ColorRetentionStrategy,
+  BlendFunctions,
+  ColorTransforms,
+  MaskTransforms,
+  PostProcessors,
   MultiScaleStrategy,
-  ExtensionPipeline,
+  ScaleBlendFunctions,
+  NaturalMediaStrategy,
   imageDataToRGB,
   rgbToImageData,
   grayscaleToRGB,
-} from './extensions.js';
+} from './extensions/index.js';
 export type {
   ExtensionStrategy,
   DoGResult,
   AntiAliasingConfig,
-  HatchTexture,
-  HatchingConfig,
-  NaturalMediaStyle,
-  NaturalMediaConfig,
   ColorRetentionConfig,
+  ColorTransformFn,
+  MaskTransformFn,
+  PostProcessFn,
+  BlendFunction,
   MultiScaleLayer,
   MultiScaleConfig,
-} from './extensions.js';
+  NaturalMediaConfig,
+  NaturalMediaStyle
+} from './extensions/index.js';

@@ -93,6 +93,6 @@ export { PreprocessingPresetsWebGL, PreprocessorWebGL } from './preprocess-webgl
 export type { Vec2, GrayscaleImage, RGBImage, FlowField, DoGConfig, ETFConfig, FDoGConfig, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from './types.js';
 export { DEFAULT_DOG_CONFIG, DEFAULT_ETF_CONFIG, DEFAULT_FDOG_CONFIG, STYLE_PRESETS, FDOG_STYLE_PRESETS, tauToP, pToTau } from './types.js';
 export { createGrayscaleImage, cloneGrayscaleImage, imageDataToGrayscale, grayscaleToImageData, rgbToGrayscale, getPixel, getPixelBilinear, setPixel, normalizeVec2, dotVec2, perpendicular, generateGaussianKernel, computeKernelSize, clamp, lerp, } from './utils.js';
-export { AntiAliasingStrategy, HatchingStrategy, NaturalMediaStrategy, ColorRetentionStrategy, MultiScaleStrategy, ExtensionPipeline, imageDataToRGB, rgbToImageData, grayscaleToRGB, } from './extensions.js';
-export type { ExtensionStrategy, DoGResult, AntiAliasingConfig, HatchTexture, HatchingConfig, NaturalMediaStyle, NaturalMediaConfig, ColorRetentionConfig, MultiScaleLayer, MultiScaleConfig, } from './extensions.js';
+export { AntiAliasingStrategy, ColorRetentionStrategy, BlendFunctions, ColorTransforms, MaskTransforms, PostProcessors, MultiScaleStrategy, ScaleBlendFunctions, NaturalMediaStrategy, imageDataToRGB, rgbToImageData, grayscaleToRGB, } from './extensions/index.js';
+export type { ExtensionStrategy, DoGResult, AntiAliasingConfig, ColorRetentionConfig, ColorTransformFn, MaskTransformFn, PostProcessFn, BlendFunction, MultiScaleLayer, MultiScaleConfig, NaturalMediaConfig, NaturalMediaStyle } from './extensions/index.js';
 //# sourceMappingURL=index.d.ts.map

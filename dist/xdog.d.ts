@@ -7,7 +7,7 @@
  * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
  * advanced image stylization" by Winnemöller et al. (2012)
  */
-import { GrayscaleImage, DoGConfig, FDoGConfig, STYLE_PRESETS, FDOG_STYLE_PRESETS, BlurStrategy } from './types.js';
+import { GrayscaleImage, DoGConfig, FDoGConfig, STYLE_PRESETS, FDOG_STYLE_PRESETS, BlurStrategy, DoGImplementation } from './types.js';
 import { EdgeTangentFlow } from './etf/index.js';
 /**
  * XDoG configuration combining DoG parameters with isotropic blur options
@@ -26,7 +26,7 @@ export interface XDoGConfig extends DoGConfig {
  * This implements the reparameterized XDoG from Section 2.5 of the paper,
  * using Equation 7 for the sharpening computation.
  */
-export declare class XDoG {
+export declare class XDoG implements DoGImplementation {
     private processor;
     private config;
     constructor(config?: Partial<XDoGConfig>);
@@ -78,7 +78,7 @@ export declare class XDoG {
  * - σm: Flow-aligned smoothing (controls line coherence)
  * - σa: Anti-aliasing sigma (optional post-processing)
  */
-export declare class FDoG {
+export declare class FDoG implements DoGImplementation {
     private config;
     constructor(config?: Partial<FDoGConfig>);
     /**

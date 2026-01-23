@@ -190,6 +190,12 @@ export interface FDoGConfig extends DoGConfig {
     sigmaA: number;
 }
 /**
+ * Interface for DoG processors (XDoG or FDoG)
+ */
+export interface DoGImplementation {
+    process(input: GrayscaleImage, overrides?: Partial<DoGConfig>): Promise<GrayscaleImage>;
+}
+/**
  * Default DoG configuration values
  * Based on paper's recommendations and Appendix A parameter ranges
  */
