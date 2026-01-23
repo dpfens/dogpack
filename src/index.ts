@@ -168,6 +168,7 @@ export {
   ColorTransforms,
   MaskTransforms,
   PostProcessors,
+  HatchingStrategy,
   MultiScaleStrategy,
   ScaleBlendFunctions,
   NaturalMediaStrategy,
@@ -187,5 +188,7 @@ export type {
   MultiScaleLayer,
   MultiScaleConfig,
   NaturalMediaConfig,
-  NaturalMediaStyle
+  NaturalMediaStyle,
+  HatchingConfig,
+  HatchTexture
 } from './extensions/index.js';

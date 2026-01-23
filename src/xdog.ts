@@ -18,7 +18,8 @@ import {
   STYLE_PRESETS,
   FDOG_STYLE_PRESETS,
   BlurStrategy,
-  DoGImplementation
+  DoGImplementation,
+  DoGProcessingResult
 } from './types.js';
 import { DoGProcessor } from './dog.js';
 import { EdgeTangentFlow } from './etf/index.js';
@@ -54,8 +55,7 @@ export class XDoG implements DoGImplementation {
     
     this.config = { ...DEFAULT_DOG_CONFIG, kernelSizeMultiplier: 6, ...config };
 
-    const blurCls = IsotropicBlur;
-    const blurStrategy = new blurCls({
+    const blurStrategy = new IsotropicBlur({
       kernelSizeMultiplier: this.config.kernelSizeMultiplier,
     });
     
@@ -88,6 +88,21 @@ export class XDoG implements DoGImplementation {
    */
   async processRawDoG(input: GrayscaleImage, overrides: Partial<DoGConfig> = {}): Promise<GrayscaleImage> {
     return this.processor.processRawDoG(input, overrides);
+  }
+
+  /**
+   * Process and return all intermediate results
+   * 
+   * This is more efficient than calling process(), processSharpened(), and 
+   * processRawDoG() separately as it only performs the blur operations once.
+   * 
+   * Useful for:
+   * - Hatching strategies that need the sharpened image
+   * - Debugging and visualization
+   * - Custom post-processing pipelines
+   */
+  async processDetailed(input: GrayscaleImage, overrides: Partial<DoGConfig> = {}): Promise<DoGProcessingResult> {
+    return this.processor.processDetailed(input, overrides);
   }
   
   /**
