@@ -13,6 +13,13 @@ There are two main algorithms:
 * FDoG is the quality option. It does everything XDoG does, but first computes a "flow field" that tracks the direction of edges throughout the image. Then it blurs along those edges instead of uniformly in all directions. The result is smoother, more coherent lines (like an illustrator would draw) but it takes 3-5x longer to process.
 Both algorithms share the same parameter space for controlling line thickness, contrast, and threshold sharpness. The only difference is whether the blur respects edge direction.
 
+![A picture of a nice car parked on a road with a body of water as a backdrop](/images/car/demo.webp)
+
+![An XDoG transformation of the nice car above, made to look like a line art sketch of the car](/images/car/xdog.png)
+
+![An FDoG transformation of the nice car above, a sketch of the darkened car where the hading follows the gradient of the hape of the car](/images/car/fdog.png)
+
+
 ## Installation
 
 ```bash
@@ -374,6 +381,12 @@ const { result, etf, sharpened, thresholded, smoothed } =
 // - smoothed: after flow-aligned smoothing
 // - result: final output after anti-aliasing
 ```
+
+### Advanced Layering of XDoG/FDoG
+
+![An adult black lab laying in leaves on an autumn day.](/images/lab/black-lab.jpg)
+
+![A multi-scale structural tensor blend of XDoG and FDog transformations of the black lab image, layered together to capture both the high-level and detailed aspects in the form of a sketch.](/images/lab/xdog-multiscale.png)
 
 ## Performance Considerations
 
