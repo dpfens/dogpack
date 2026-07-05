@@ -2,12 +2,12 @@
  * Image utility functions
  */
 
-import { GrayscaleImage, RGBImage, Vec2 } from './types.js';
+import { ChannelImage, RGBImage, Vec2 } from './types.js';
 
 /**
  * Create a new grayscale image with given dimensions
  */
-export function createGrayscaleImage(width: number, height: number): GrayscaleImage {
+export function createChannelImage(width: number, height: number): ChannelImage {
   return {
     data: new Float32Array(width * height),
     width,
@@ -18,7 +18,7 @@ export function createGrayscaleImage(width: number, height: number): GrayscaleIm
 /**
  * Clone a grayscale image
  */
-export function cloneGrayscaleImage(image: GrayscaleImage): GrayscaleImage {
+export function cloneChannelImage(image: ChannelImage): ChannelImage {
   return {
     data: new Float32Array(image.data),
     width: image.width,
@@ -29,7 +29,7 @@ export function cloneGrayscaleImage(image: GrayscaleImage): GrayscaleImage {
 /**
  * Get pixel value with bounds checking (clamps to edge)
  */
-export function getPixel(image: GrayscaleImage, x: number, y: number): number {
+export function getPixel(image: ChannelImage, x: number, y: number): number {
   const clampedX = Math.max(0, Math.min(image.width - 1, Math.floor(x)));
   const clampedY = Math.max(0, Math.min(image.height - 1, Math.floor(y)));
   return image.data[clampedY * image.width + clampedX];
@@ -38,7 +38,7 @@ export function getPixel(image: GrayscaleImage, x: number, y: number): number {
 /**
  * Get pixel value with bilinear interpolation for sub-pixel sampling
  */
-export function getPixelBilinear(image: GrayscaleImage, x: number, y: number): number {
+export function getPixelBilinear(image: ChannelImage, x: number, y: number): number {
   const x0 = Math.floor(x);
   const y0 = Math.floor(y);
   const x1 = x0 + 1;
@@ -63,7 +63,7 @@ export function getPixelBilinear(image: GrayscaleImage, x: number, y: number): n
 /**
  * Set pixel value
  */
-export function setPixel(image: GrayscaleImage, x: number, y: number, value: number): void {
+export function setPixel(image: ChannelImage, x: number, y: number, value: number): void {
   if (x >= 0 && x < image.width && y >= 0 && y < image.height) {
     image.data[y * image.width + x] = value;
   }
@@ -79,8 +79,8 @@ export function getIndex(width: number, x: number, y: number): number {
 /**
  * Convert RGB image to grayscale using luminance formula
  */
-export function rgbToGrayscale(rgb: RGBImage): GrayscaleImage {
-  const gray = createGrayscaleImage(rgb.width, rgb.height);
+export function rgbToGrayscale(rgb: RGBImage): ChannelImage {
+  const gray = createChannelImage(rgb.width, rgb.height);
   const pixelCount = rgb.width * rgb.height;
   
   for (let i = 0; i < pixelCount; i++) {
@@ -98,8 +98,8 @@ export function rgbToGrayscale(rgb: RGBImage): GrayscaleImage {
  * Convert ImageData (from canvas) to grayscale image
  * Assumes values are in 0-255 range, normalizes to 0-1
  */
-export function imageDataToGrayscale(imageData: ImageData): GrayscaleImage {
-  const gray = createGrayscaleImage(imageData.width, imageData.height);
+export function imageDataToLuminance(imageData: ImageData): ChannelImage {
+  const gray = createChannelImage(imageData.width, imageData.height);
   const pixelCount = imageData.width * imageData.height;
   
   for (let i = 0; i < pixelCount; i++) {
@@ -116,7 +116,7 @@ export function imageDataToGrayscale(imageData: ImageData): GrayscaleImage {
  * Convert grayscale image to ImageData (for canvas display)
  * Assumes input is in 0-1 range
  */
-export function grayscaleToImageData(gray: GrayscaleImage): ImageData {
+export function luminanceToImageData(gray: ChannelImage): ImageData {
   const imageData = new ImageData(gray.width, gray.height);
   const pixelCount = gray.width * gray.height;
   

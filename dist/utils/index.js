@@ -4,7 +4,7 @@
 /**
  * Create a new grayscale image with given dimensions
  */
-export function createGrayscaleImage(width, height) {
+export function createChannelImage(width, height) {
     return {
         data: new Float32Array(width * height),
         width,
@@ -14,7 +14,7 @@ export function createGrayscaleImage(width, height) {
 /**
  * Clone a grayscale image
  */
-export function cloneGrayscaleImage(image) {
+export function cloneChannelImage(image) {
     return {
         data: new Float32Array(image.data),
         width: image.width,
@@ -66,7 +66,7 @@ export function getIndex(width, x, y) {
  * Convert RGB image to grayscale using luminance formula
  */
 export function rgbToGrayscale(rgb) {
-    const gray = createGrayscaleImage(rgb.width, rgb.height);
+    const gray = createChannelImage(rgb.width, rgb.height);
     const pixelCount = rgb.width * rgb.height;
     for (let i = 0; i < pixelCount; i++) {
         const r = rgb.data[i * 3];
@@ -81,8 +81,8 @@ export function rgbToGrayscale(rgb) {
  * Convert ImageData (from canvas) to grayscale image
  * Assumes values are in 0-255 range, normalizes to 0-1
  */
-export function imageDataToGrayscale(imageData) {
-    const gray = createGrayscaleImage(imageData.width, imageData.height);
+export function imageDataToLuminance(imageData) {
+    const gray = createChannelImage(imageData.width, imageData.height);
     const pixelCount = imageData.width * imageData.height;
     for (let i = 0; i < pixelCount; i++) {
         const r = imageData.data[i * 4] / 255;

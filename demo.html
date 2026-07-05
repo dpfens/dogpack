@@ -580,6 +580,14 @@
                                 </div>
                             </div>
                         </div>
+
+                        <!-- Output -->
+                        <div class="mt-4">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" role="switch" id="useColorToggle">
+                                <label class="form-check-label" for="useColorToggle">Color</label>
+                            </div>
+                        </div>
                         
                         <!-- Info -->
                         <div class="mt-4 p-3 rounded" style="background: rgba(110, 231, 183, 0.05); border: 1px solid rgba(110, 231, 183, 0.1);">
@@ -609,8 +617,9 @@
             FDoG,
             STYLE_PRESETS,
             FDOG_STYLE_PRESETS,
-            imageDataToGrayscale, 
-            grayscaleToImageData,
+            createChannelImage,
+            imageDataToLuminance, 
+            luminanceToImageData,
             PreprocessingPresetsWebGL,
             tauToP
         } from './dist/index.js';
@@ -632,6 +641,11 @@
         const fdogPresets = document.getElementById('fdogPresets');
         const fdogParamsSection = document.getElementById('fdogParamsSection');
         const preprocessMode = document.getElementById('preprocessMode');
+        const useColorToggle = document.getElementById('useColorToggle');
+
+        useColorToggle.addEventListener('change', function() {
+            processImage();
+        })
 
         // Core parameter sliders
         const sliders = {
@@ -760,23 +774,74 @@
                 tempCanvas.width = loadedImage.naturalWidth;
                 tempCanvas.height = loadedImage.naturalHeight;
                 tempCtx.drawImage(loadedImage, 0, 0);
-                
+
                 const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-                let grayscale = imageDataToGrayscale(imageData);
-                
-                // Apply preprocessing
-                grayscale = applyPreprocessing(grayscale);
+                const useColor = useColorToggle?.checked ?? false;
 
                 let result;
-                if (currentMode === 'xdog') {
-                    const xdog = new XDoG(params);
-                    result = await xdog.process(grayscale);
+
+                if (useColor) {
+                    // Color-aware processing
+                    const width = imageData.width;
+                    const height = imageData.height;
+                    
+                    // Extract RGB channels
+                    const channels = {
+                        r: createChannelImage(width, height),
+                        g: createChannelImage(width, height),
+                        b: createChannelImage(width, height),
+                    };
+                    
+                    for (let i = 0; i < imageData.data.length; i += 4) {
+                        const pixelIdx = i / 4;
+                        channels.r.data[pixelIdx] = imageData.data[i] / 255;
+                        channels.g.data[pixelIdx] = imageData.data[i + 1] / 255;
+                        channels.b.data[pixelIdx] = imageData.data[i + 2] / 255;
+                    }
+                    
+                    // Process each channel independently
+                    let processor;
+                    if (currentMode === 'xdog') {
+                        processor = new XDoG(params);
+                    } else {
+                        processor = new FDoG(params);
+                    }
+                    
+                    const [resultR, resultG, resultB] = await Promise.all([
+                        processor.process(channels.r),
+                        processor.process(channels.g),
+                        processor.process(channels.b),
+                    ]);
+                    
+                    // Reconstruct as colored ImageData
+                    const outputImageData = new ImageData(width, height);
+                    for (let i = 0; i < width * height; i++) {
+                        outputImageData.data[i * 4] = Math.round(resultR.data[i] * 255);      // Red
+                        outputImageData.data[i * 4 + 1] = Math.round(resultG.data[i] * 255);  // Green
+                        outputImageData.data[i * 4 + 2] = Math.round(resultB.data[i] * 255);  // Blue
+                        outputImageData.data[i * 4 + 3] = 255;                                 // Alpha
+                    }
+                    result = outputImageData;
                 } else {
-                    const fdog = new FDoG(params);
-                    result = await fdog.process(grayscale);
+                    // Original grayscale approach
+                    let grayscale = imageDataToLuminance(imageData);
+                    
+                    // Apply preprocessing
+                    grayscale = applyPreprocessing(grayscale);
+
+                    let processedResult;
+                    if (currentMode === 'xdog') {
+                        const xdog = new XDoG(params);
+                        processedResult = await xdog.process(grayscale);
+                    } else {
+                        const fdog = new FDoG(params);
+                        processedResult = await fdog.process(grayscale);
+                    }
+
+                    result = luminanceToImageData(processedResult);
                 }
 
-                const outputImageData = grayscaleToImageData(result);
+                const outputImageData = result;
 
                 // Display result
                 resultCanvas.width = outputImageData.width;

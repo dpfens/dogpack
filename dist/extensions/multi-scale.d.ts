@@ -5,7 +5,7 @@
  * 1. Use the provided blend functions (average, min, max, multiply)
  * 2. Supply their own custom blend function
  */
-import { GrayscaleImage, DoGImplementation } from '../types.js';
+import { ChannelImage, DoGImplementation } from '../types.js';
 import { ExtensionStrategy } from './base.js';
 /**
  * Context provided to blend functions for each pixel
@@ -246,10 +246,10 @@ export interface MultiScaleConfig {
  * };
  * ```
  */
-export declare class MultiScaleStrategy implements ExtensionStrategy<MultiScaleConfig, GrayscaleImage, GrayscaleImage> {
+export declare class MultiScaleStrategy implements ExtensionStrategy<MultiScaleConfig, ChannelImage, ChannelImage> {
     private config;
     constructor(config: MultiScaleConfig);
-    apply(input: GrayscaleImage, configOverride?: Partial<Pick<MultiScaleConfig, 'blend'>>): Promise<GrayscaleImage>;
+    apply(input: ChannelImage, configOverride?: Partial<Pick<MultiScaleConfig, 'blend'>>): Promise<ChannelImage>;
     private blendLayers;
     /**
      * Create a preset multi-scale configuration

@@ -1,4 +1,4 @@
-import { FDoGConfig, GrayscaleImage } from "../types.js";
+import { FDoGConfig, ChannelImage } from "../types.js";
 import { ExtensionStrategy } from "./base.js";
 /**
  * Natural media style presets
@@ -41,7 +41,7 @@ export interface NaturalMediaConfig {
  * const result = await naturalMedia.apply(input);
  * ```
  */
-export declare class NaturalMediaStrategy implements ExtensionStrategy<NaturalMediaConfig, GrayscaleImage, GrayscaleImage> {
+export declare class NaturalMediaStrategy implements ExtensionStrategy<NaturalMediaConfig, ChannelImage, ChannelImage> {
     private config;
     /**
      * Style presets from Section 5.2 and Table A.1
@@ -62,7 +62,7 @@ export declare class NaturalMediaStrategy implements ExtensionStrategy<NaturalMe
     getResolvedConfig(): Partial<FDoGConfig> & {
         useFlow: boolean;
     };
-    apply(input: GrayscaleImage, configOverride?: Partial<NaturalMediaConfig>): Promise<GrayscaleImage>;
+    apply(input: ChannelImage, configOverride?: Partial<NaturalMediaConfig>): Promise<ChannelImage>;
     /**
      * Create strategy for a specific style
      */

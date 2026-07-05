@@ -5,7 +5,7 @@
  * gradient computation, structure tensor building/smoothing, and
  * tangent extraction on the GPU.
  */
-import { GrayscaleImage, FlowField, Vec2, ETFConfig } from '../types.js';
+import { ChannelImage, FlowField, Vec2, ETFConfig } from '../types.js';
 /**
  * WebGL-accelerated ETF implementation
  */
@@ -29,11 +29,11 @@ export declare class EdgeTangentFlowWebGL implements FlowField {
     /**
      * Compute ETF using WebGL
      */
-    static compute(input: GrayscaleImage, config?: Partial<ETFConfig>, sigmaC?: number): EdgeTangentFlowWebGL;
+    static compute(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number): EdgeTangentFlowWebGL;
     /**
      * Visualize the flow field as a grayscale image
      */
-    visualize(): GrayscaleImage;
+    visualize(): ChannelImage;
     /**
      * Cleanup WebGL resources (call when done with all ETF computations)
      */

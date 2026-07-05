@@ -3,8 +3,10 @@
  *
  * Provides both isotropic (standard) and anisotropic (flow-guided) blur
  * implementations for use in XDoG and FDoG pipelines.
+ *
+ * FIXED: WebGPUIsotropicBlur now supports parallel/concurrent blur operations
  */
-import { BlurStrategy, GrayscaleImage } from '../types.js';
+import { BlurStrategy, ChannelImage } from '../types.js';
 import { BaseCPUBlur, BaseWebGLBlur, BaseWebGPUBlur } from './base.js';
 /**
  * Configuration for isotropic Gaussian blur
@@ -37,7 +39,7 @@ export interface FlowGuidedBlurConfig {
 export declare class CPUIsotropicBlur extends BaseCPUBlur implements BlurStrategy {
     private config;
     constructor(config?: Partial<BaseIsotropicBlurConfig>);
-    blur(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage>;
+    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
 }
 /**
  * Configuration for WebGL blur
@@ -60,32 +62,26 @@ export declare class WebGLIsotropicBlur extends BaseWebGLBlur implements BlurStr
     private framebuffer;
     private textures;
     constructor(config?: Partial<WebGLBlurConfig>);
-    /**
-     * Initialize WebGL2 resources lazily
-     */
     private initResources;
-    /**
-     * Ensure textures are the right size, recreate if needed
-     */
-    private ensureTextureSize;
-    /**
-     * Apply Gaussian blur to the input image
-     */
-    blur(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage>;
+    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
+    private blurPass;
     dispose(): void;
 }
 /**
- * Configuration for WebGPU blur
+ * WebGPU configuration
  */
 export interface WebGPUBlurConfig {
     /** Kernel size multiplier relative to sigma (default: 6) */
     kernelSizeMultiplier: number;
-    /** Maximum kernel size (default: 127) */
+    /** Maximum kernel size (default: 63) */
     maxKernelSize: number;
 }
 /**
  * WebGPU-accelerated isotropic Gaussian blur
  * Uses compute shaders with separable convolution
+ *
+ * FIXED: Now supports concurrent/parallel blur calls by creating
+ * separate staging buffers for each operation instead of reusing one.
  */
 export declare class WebGPUIsotropicBlur extends BaseWebGPUBlur implements BlurStrategy {
     private config;
@@ -96,7 +92,6 @@ export declare class WebGPUIsotropicBlur extends BaseWebGPUBlur implements BlurS
     private inputBuffer;
     private tempBuffer;
     private outputBuffer;
-    private stagingBuffer;
     private currentBufferSize;
     private currentKernelSize;
     constructor(config?: Partial<WebGPUBlurConfig>);
@@ -109,9 +104,13 @@ export declare class WebGPUIsotropicBlur extends BaseWebGPUBlur implements BlurS
      */
     private ensureBuffers;
     /**
-     * Blur implementation - must be called with await
+     * Blur implementation - supports concurrent/parallel calls
+     *
+     * KEY FIX: Creates a new staging buffer for each operation instead of
+     * reusing a single one. This prevents "Buffer already has an outstanding
+     * map pending" errors when blur() is called in parallel.
      */
-    blur(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage>;
+    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
     /**
      * Clean up GPU resources
      */
@@ -121,6 +120,6 @@ export type IsotropicBlurConfig = BaseIsotropicBlurConfig | WebGLBlurConfig | We
 export declare class IsotropicBlur implements BlurStrategy {
     instance: BlurStrategy;
     constructor(config: Partial<IsotropicBlurConfig>);
-    blur(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage>;
+    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
 }
 //# sourceMappingURL=isotropic.d.ts.map

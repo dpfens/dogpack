@@ -1,4 +1,4 @@
-import { ETFConfig, FlowField, GrayscaleImage, Vec2 } from "../types";
+import { ETFConfig, FlowField, ChannelImage, Vec2 } from "../types";
 /**
  * Unified Edge Tangent Flow that automatically selects the best implementation
  */
@@ -9,7 +9,7 @@ export declare class EdgeTangentFlow implements FlowField {
     private constructor();
     getTangent(x: number, y: number): Vec2;
     getTangentArray(): Float32Array;
-    visualize(): GrayscaleImage;
+    visualize(): ChannelImage;
     /**
      * Check if WebGL acceleration is available
      */
@@ -22,7 +22,7 @@ export declare class EdgeTangentFlow implements FlowField {
      * @param sigmaC Structure tensor smoothing sigma
      * @param forceImpl Force a specific implementation ('cpu' | 'webgl' | 'auto')
      */
-    static compute(input: GrayscaleImage, config?: Partial<ETFConfig>, sigmaC?: number, forceImpl?: 'cpu' | 'webgl' | 'auto'): EdgeTangentFlow;
+    static compute(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number, forceImpl?: 'cpu' | 'webgl' | 'auto'): EdgeTangentFlow;
     /**
      * Cleanup WebGL resources
      */

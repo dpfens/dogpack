@@ -13,13 +13,15 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "devDependencies": {
-    "@webgpu/types": "^0.1.69",
+    "@webgpu/types": "^0.1.71",
     "typescript": "^5.9.3"
   }
 }

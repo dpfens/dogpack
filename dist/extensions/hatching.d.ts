@@ -1,11 +1,11 @@
-import { GrayscaleImage } from "../types.js";
+import { ChannelImage } from "../types.js";
 import { ExtensionStrategy } from "./base.js";
 /**
  * Hatching texture specification
  */
 export interface HatchTexture {
     /** Grayscale texture data (tiled as needed) */
-    data: GrayscaleImage;
+    data: ChannelImage;
     /** Rotation angle in radians (0 = horizontal) */
     rotation: number;
 }
@@ -30,7 +30,7 @@ export interface HatchingConfig {
     /**
      * Background/paper texture (optional)
      */
-    paperTexture?: GrayscaleImage;
+    paperTexture?: ChannelImage;
     /**
      * Sharpening strength for threshold masks (default: 20)
      */
@@ -61,7 +61,7 @@ export interface HatchingConfig {
  * @example
  * ```typescript
  * const xdog = new XDoG({ p: 20 });
- * const sharpened = await xdog.processSharpened(input);
+ * const { sharpened } = await xdog.processDetailed(input);
  *
  * const hatching = new HatchingStrategy({
  *   thresholdLevels: [0.25, 0.5, 0.75],
@@ -71,9 +71,9 @@ export interface HatchingConfig {
  * ```
  */
 export declare class HatchingStrategy implements ExtensionStrategy<HatchingConfig, {
-    sharpened: GrayscaleImage;
-    original?: GrayscaleImage;
-}, GrayscaleImage> {
+    sharpened: ChannelImage;
+    original?: ChannelImage;
+}, ChannelImage> {
     private config;
     constructor(config?: Partial<HatchingConfig>);
     /**
@@ -87,11 +87,11 @@ export declare class HatchingStrategy implements ExtensionStrategy<HatchingConfi
      * Each darker mask is a SUBSET of the lighter masks, creating the
      * cumulative effect where dark areas have more hatching.
      */
-    generateMasks(sharpened: GrayscaleImage, configOverride?: Partial<HatchingConfig>): GrayscaleImage[];
+    generateMasks(sharpened: ChannelImage, configOverride?: Partial<HatchingConfig>): ChannelImage[];
     apply(input: {
-        sharpened: GrayscaleImage;
-        original?: GrayscaleImage;
-    }, configOverride?: Partial<HatchingConfig>): Promise<GrayscaleImage>;
+        sharpened: ChannelImage;
+        original?: ChannelImage;
+    }, configOverride?: Partial<HatchingConfig>): Promise<ChannelImage>;
     /**
      * Sample a texture with tiling and rotation
      */

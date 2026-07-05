@@ -6,7 +6,7 @@
  * tangent extraction on the GPU.
  */
 import { DEFAULT_ETF_CONFIG } from '../types.js';
-import { createGrayscaleImage } from '../utils.js';
+import { createChannelImage } from '../utils.js';
 /**
  * Shader source code
  */
@@ -438,7 +438,7 @@ export class EdgeTangentFlowWebGL {
      * Visualize the flow field as a grayscale image
      */
     visualize() {
-        const output = createGrayscaleImage(this.width, this.height);
+        const output = createChannelImage(this.width, this.height);
         for (let y = 0; y < this.height; y++) {
             for (let x = 0; x < this.width; x++) {
                 const idx = y * this.width + x;

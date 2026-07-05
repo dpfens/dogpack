@@ -22,16 +22,29 @@ const programCache = new Map();
 // Reusable geometry buffers
 let quadVAO = null;
 /**
+ * Check if running in a WebWorker context
+ */
+function isWorkerContext() {
+    return typeof document === 'undefined';
+}
+/**
  * Initialize or get WebGL context
  */
 function getGL() {
     if (gl)
         return gl;
     try {
-        canvas = document.createElement('canvas');
-        canvas.width = 1;
-        canvas.height = 1;
-        gl = canvas.getContext('webgl2', {
+        let glCanvas;
+        // Use OffscreenCanvas in WebWorker, HTMLCanvasElement in main thread
+        if (isWorkerContext()) {
+            glCanvas = new OffscreenCanvas(1, 1);
+        }
+        else {
+            glCanvas = document.createElement('canvas');
+        }
+        glCanvas.width = 1;
+        glCanvas.height = 1;
+        gl = glCanvas.getContext('webgl2', {
             alpha: false,
             antialias: false,
             depth: false,
@@ -49,6 +62,7 @@ function getGL() {
         if (!ext1) {
             console.warn('EXT_color_buffer_float not available, some features may be limited');
         }
+        canvas = glCanvas;
         // Setup reusable quad geometry
         setupQuadGeometry();
         return gl;

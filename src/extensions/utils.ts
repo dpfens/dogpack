@@ -2,8 +2,8 @@
 // Utility Functions
 // =============================================================================
 
-import { GrayscaleImage } from "../types.js";
-import { createGrayscaleImage } from "../utils.js";
+import { ChannelImage } from "../types.js";
+import { createChannelImage } from "../utils.js";
 import { RGBImage } from "./base.js";
 
 /**
@@ -51,7 +51,7 @@ export function rgbToImageData(rgb: RGBImage): ImageData {
 /**
  * Convert grayscale to RGB (same value in all channels)
  */
-export function grayscaleToRGB(gray: GrayscaleImage): RGBImage {
+export function grayscaleToRGB(gray: ChannelImage): RGBImage {
   return {
     r: new Float32Array(gray.data),
     g: new Float32Array(gray.data),
@@ -64,9 +64,9 @@ export function grayscaleToRGB(gray: GrayscaleImage): RGBImage {
 /**
  * Convert RGB to grayscale using luminance formula
  */
-export function rgbToGrayscale(rgb: RGBImage): GrayscaleImage {
+export function rgbToGrayscale(rgb: RGBImage): ChannelImage {
   const { width, height } = rgb;
-  const gray = createGrayscaleImage(width, height);
+  const gray = createChannelImage(width, height);
   
   for (let i = 0; i < width * height; i++) {
     gray.data[i] = 0.299 * rgb.r[i] + 0.587 * rgb.g[i] + 0.114 * rgb.b[i];

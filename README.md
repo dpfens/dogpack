@@ -17,7 +17,7 @@ Both algorithms share the same parameter space for controlling line thickness, c
 
 ![An XDoG transformation of the nice car above, made to look like a line art sketch of the car](/images/car/xdog.png)
 
-![An FDoG transformation of the nice car above, a sketch of the darkened car where the hading follows the gradient of the hape of the car](/images/car/fdog.png)
+![An FDoG transformation of the nice car above, a sketch of the darkened car where the shading follows the gradient of the shape of the car](/images/car/fdog.png)
 
 
 ## Installation
@@ -43,7 +43,7 @@ const canvas = document.getElementById('myCanvas') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
 const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
-const result = await xdog.processImageData(imageData);
+const result = await xdog.processGrayscaleImageData(imageData);
 ctx.putImageData(result, 0, 0);
 ```
 
@@ -79,7 +79,7 @@ const fdog = new FDoG({
   phi: 10,         // Threshold sharpness
 });
 
-const result = await fdog.processImageData(imageData);
+const result = await fdog.processGrayscaleImageData(imageData);
 
 // Or use a preset tuned for specific effects
 const fdog2 = FDoG.withPreset('standard');
@@ -121,6 +121,98 @@ From a neurobiological perspective, this center-surround mechanism mirrors how c
 | `p` | 20.0 | 0–150+ | The sharpening strength parameter from the reparameterized formulation. At p ≈ 0, the filter produces no edge enhancement (just a blurred image). At p ≈ 20, edges are strongly emphasized and suitable for most stylization. Values of 100+ create extreme emphasis for woodcut-style effects. |
 | `epsilon` | 0.5 | 0–1 | The threshold value controlling the transition between white and black regions. Values above ε become white, while values below follow the soft threshold function. For normalized images, this should typically be in the 0.5–0.8 range. |
 | `phi` | 10.0 | 0.01–200 | Controls the steepness of the tanh soft threshold function. Very low values (≈ 0.01) produce soft, gradual transitions suitable for pencil shading and pastel effects. High values (100+) approach a step function, producing hard black/white edges suitable for thresholding and woodcut styles. |
+
+### Pluggable Threshold Strategies
+
+The library provides multiple thresholding strategies to handle different image characteristics and artistic preferences. You can plug in different strategies via the `thresholdStrategy` parameter in the DoG config:
+
+#### Soft Threshold (Default)
+
+The classic approach using a soft tanh function: `T_ε,φ(u) = 1 + tanh(φ · (u - ε))`
+
+```typescript
+import { XDoG, SoftThresholdStrategy } from 'xdog';
+
+const xdog = new XDoG({
+  sigma: 1.4,
+  thresholdStrategy: new SoftThresholdStrategy(),
+});
+```
+
+**Use when:** You want smooth, gradual transitions between black and white—ideal for pencil and pastel styles.
+
+#### Adaptive Threshold
+
+Varies the threshold spatially based on local image contrast: `ε(x,y) = ε_base + LocalContrast(x,y)`
+
+```typescript
+import { XDoG, AdaptiveThresholdStrategy } from 'xdog';
+
+const xdog = new XDoG({
+  sigma: 1.4,
+  thresholdStrategy: new AdaptiveThresholdStrategy(),
+  // Additional config for adaptive threshold:
+  localContrastRadius: 5,  // Radius for local contrast computation
+});
+```
+
+**Benefits:**
+- Reduces threshold artifacts in low-contrast regions
+- Automatically adapts to local image statistics
+- Better handling of images with uneven lighting or texture
+
+**Use when:** Processing photographs with variable lighting, or when you have regions of very different contrast levels.
+
+#### Bilateral Soft Threshold
+
+Considers neighborhood similarity before thresholding to improve edge connectivity and reduce isolated artifacts:
+
+```typescript
+import { XDoG, BilateralThresholdStrategy } from 'xdog';
+
+const xdog = new XDoG({
+  sigma: 1.4,
+  thresholdStrategy: new BilateralThresholdStrategy(),
+  // Additional config for bilateral filtering:
+  bilateralRadius: 3,           // Neighborhood radius
+  bilateralSigmaIntensity: 0.2, // Intensity similarity weight
+});
+```
+
+**Benefits:**
+- Preserves edge sharpness while reducing noise
+- Better edge connectivity and fewer floating fragments
+- Excellent for noisy or textured source images
+
+**Use when:** Your source images have noise or compression artifacts that create scattered pixels.
+
+#### Hysteresis Threshold (Canny-style)
+
+Uses two thresholds to produce connected edge traces, inspired by Canny edge detection:
+
+```typescript
+import { XDoG, HysteresisThresholdStrategy } from 'xdog';
+
+const xdog = new XDoG({
+  sigma: 1.4,
+  epsilon: 0.5,         // Low threshold for weak edges
+  epsilonHigh: 0.75,    // High threshold for strong edges
+  thresholdStrategy: new HysteresisThresholdStrategy(),
+});
+```
+
+**How it works:**
+1. Strong edges (above `epsilonHigh`) are always kept
+2. Weak edges (between `epsilon` and `epsilonHigh`) are retained only if connected to strong edges
+3. Values below `epsilon` are discarded
+
+**Benefits:**
+- Produces clean, connected edge traces
+- Eliminates floating fragments
+- Less sensitive to threshold parameter tuning
+- Produces results similar to professional line art
+
+**Use when:** You want guaranteed connected edges and clean, professional-looking line art.
 
 ### FDoG-Specific Parameters
 
@@ -169,6 +261,154 @@ These presets combine the core DoG parameters with flow-specific settings for di
 | `standard` | Coherent line drawing with smooth, connected edges. The balanced σc and σm values produce clean flow-aligned results suitable for most portrait and figure work. | σc=2.28, σm=4.4, σa=1.0 |
 | `pastel` | Flow-aligned smoothing with noticeable turbulence. The minimal structure tensor smoothing combined with large flow smoothing creates visible brush-stroke-like texture along edges. | σc=0.1, σm=20, σa=7.2 |
 | `woodcut` | Aggressive flow distortion for dramatic carved effects. The larger σc creates very smooth flow fields, while the moderate σm maintains some edge definition. | σc=5.84, σm=3.2, σa=0.75 |
+
+## Color-Aware Stylization
+
+While the standard XDoG/FDoG algorithms operate on grayscale images, color information can be leveraged to produce stylizations that better respect color boundaries and perceptual edges. The library provides utilities and patterns for color-aware processing:
+
+### Approach 1: Independent RGB Channel Processing
+
+Process each color channel independently and combine the edge responses using maximum (most aggressive detection):
+
+```typescript
+import { XDoG, createChannelImage, luminanceToImageData } from 'xdog';
+
+async function xdogColorAware(imageData: ImageData): Promise<ImageData> {
+  const width = imageData.width;
+  const height = imageData.height;
+  
+  // Extract R, G, B channels separately
+  const channels = {
+    r: createChannelImage(width, height),
+    g: createChannelImage(width, height),
+    b: createChannelImage(width, height),
+  };
+  
+  for (let i = 0; i < imageData.data.length; i += 4) {
+    const pixelIdx = i / 4;
+    channels.r.data[pixelIdx] = imageData.data[i] / 255;
+    channels.g.data[pixelIdx] = imageData.data[i + 1] / 255;
+    channels.b.data[pixelIdx] = imageData.data[i + 2] / 255;
+  }
+  
+  // Process each channel
+  const xdog = new XDoG();
+  const [resultR, resultG, resultB] = await Promise.all([
+    xdog.process(channels.r),
+    xdog.process(channels.g),
+    xdog.process(channels.b),
+  ]);
+  
+  // Combine: take maximum (most aggressive edge detection)
+  const combined = createChannelImage(width, height);
+  for (let i = 0; i < width * height; i++) {
+    combined.data[i] = Math.max(resultR.data[i], resultG.data[i], resultB.data[i]);
+  }
+  
+  return luminanceToImageData(combined);
+}
+```
+
+**Formula:** `E_color = max(E_R, E_G, E_B)`
+
+**Advantages:**
+- Detects edges that are prominent in any color channel
+- Preserves color boundaries even when individual channels have weak edges
+- Simple to implement and understand
+- No color space conversion needed
+
+**Use cases:**
+- Photography with varied color distribution
+- When color transitions should produce visible edges
+- Images where different colors carry different edge information
+
+### Approach 2: Perceptually-Weighted Lab Color Space
+
+Convert to Lab color space and apply weighted combination, with higher weight on luminance (L) which aligns with human perception:
+
+```typescript
+import { XDoG, createChannelImage, luminanceToImageData } from 'xdog';
+
+async function xdogPerceptual(imageData: ImageData): Promise<ImageData> {
+  const width = imageData.width;
+  const height = imageData.height;
+  
+  // Convert RGB to Lab color space
+  const lab = rgbToLab(imageData);
+  
+  // Extract L (luminance) and a/b (chrominance) channels
+  const L = lab.l;
+  const ab = createChannelImage(width, height);
+  
+  for (let i = 0; i < width * height; i++) {
+    // Combine a and b components as chroma
+    ab.data[i] = Math.sqrt(lab.a.data[i] ** 2 + lab.b.data[i] ** 2) / 255;
+  }
+  
+  // Process each component
+  const xdog = new XDoG();
+  const [resultL, resultAB] = await Promise.all([
+    xdog.process(L),
+    xdog.process(ab),
+  ]);
+  
+  // Combine with perceptual weighting
+  const combined = createChannelImage(width, height);
+  const wL = 0.8;   // 80% weight to luminance (human eyes are more sensitive)
+  const wAB = 0.2;  // 20% weight to color information
+  
+  for (let i = 0; i < width * height; i++) {
+    combined.data[i] = wL * resultL.data[i] + wAB * resultAB.data[i];
+  }
+  
+  return luminanceToImageData(combined);
+}
+
+function rgbToLab(imageData: ImageData): { l: ChannelImage; a: ChannelImage; b: ChannelImage } {
+  const width = imageData.width;
+  const height = imageData.height;
+  const l = createChannelImage(width, height);
+  const a = createChannelImage(width, height);
+  const b = createChannelImage(width, height);
+  
+  for (let i = 0; i < imageData.data.length; i += 4) {
+    const pixelIdx = i / 4;
+    const r = imageData.data[i] / 255;
+    const g = imageData.data[i + 1] / 255;
+    const b_val = imageData.data[i + 2] / 255;
+    
+    // RGB to XYZ using D65 illuminant
+    const x = r * 0.4124 + g * 0.3576 + b_val * 0.1805;
+    const y = r * 0.2126 + g * 0.7152 + b_val * 0.0722;
+    const z = r * 0.0193 + g * 0.1192 + b_val * 0.9505;
+    
+    // XYZ to Lab
+    const fx = x > 0.008856 ? Math.cbrt(x) : (7.787 * x + 16 / 116);
+    const fy = y > 0.008856 ? Math.cbrt(y) : (7.787 * y + 16 / 116);
+    const fz = z > 0.008856 ? Math.cbrt(z) : (7.787 * z + 16 / 116);
+    
+    l.data[pixelIdx] = (116 * fy - 16) / 100;  // Normalize to 0-1
+    a.data[pixelIdx] = (500 * (fx - fy) + 128) / 255;  // Normalize
+    b.data[pixelIdx] = (200 * (fy - fz) + 128) / 255;  // Normalize
+  }
+  
+  return { l, a, b };
+}
+```
+
+**Formula:** `E = w_L · E_L + w_ab · E_ab` where w_L ≈ 0.8, w_ab ≈ 0.2
+
+**Advantages:**
+- Aligns with human visual perception (eyes are ~5x more sensitive to luminance than color)
+- Stronger edges where human observers perceive them
+- Color information preserved but less prominent than structure
+- Better results for photographs of natural scenes
+
+**Use cases:**
+- Photographs with subtle color variations and strong luminance structure
+- When perceptual edge detection is more important than technical precision
+- Artistic stylization that respects color harmony and human perception
+- Scenes with mixed lighting conditions
 
 ## Preprocessing
 

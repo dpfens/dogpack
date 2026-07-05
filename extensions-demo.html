@@ -878,8 +878,8 @@
         import { 
             XDoG,
             FDoG,
-            imageDataToGrayscale, 
-            grayscaleToImageData,
+            imageDataToLuminance, 
+            luminanceToImageData,
             PreprocessingPresetsWebGL,
             HatchingStrategy,
             MultiScaleStrategy,
@@ -1087,15 +1087,15 @@
         }
 
         // Apply preprocessing
-        function applyPreprocessing(grayscale) {
+        function applyPreprocessing(luminance) {
             const mode = preprocessMode.value;
-            if (mode === 'none') return grayscale;
+            if (mode === 'none') return luminance;
             
             const preprocessFn = PreprocessingPresetsWebGL[mode];
             if (preprocessFn) {
-                return preprocessFn(grayscale);
+                return preprocessFn(luminance);
             }
-            return grayscale;
+            return luminance;
         }
 
         // Get image data from loaded image
@@ -1123,39 +1123,39 @@
 
             try {
                 const imageData = getImageData();
-                let grayscale = imageDataToGrayscale(imageData);
+                let luminance = imageDataToLuminance(imageData);
                 
                 // Apply preprocessing
-                grayscale = applyPreprocessing(grayscale);
+                luminance = applyPreprocessing(luminance);
                 
                 let result;
                 let resultImageData;
                 
                 switch (currentExtension) {
                     case 'naturalMedia':
-                        result = await processNaturalMedia(grayscale);
-                        resultImageData = grayscaleToImageData(result);
+                        result = await processNaturalMedia(luminance);
+                        resultImageData = luminanceToImageData(result);
                         break;
                         
                     case 'multiScale':
-                        result = await processMultiScale(grayscale);
-                        resultImageData = grayscaleToImageData(result);
+                        result = await processMultiScale(luminance);
+                        resultImageData = luminanceToImageData(result);
                         break;
                         
                     case 'hatching':
-                        result = await processHatching(grayscale);
-                        resultImageData = grayscaleToImageData(result);
+                        result = await processHatching(luminance);
+                        resultImageData = luminanceToImageData(result);
                         break;
                         
                     case 'colorRetention':
                         const rgbInput = imageDataToRGB(imageData);
-                        result = await processColorRetention(grayscale, rgbInput);
+                        result = await processColorRetention(luminance, rgbInput);
                         resultImageData = rgbToImageData(result);
                         break;
                         
                     case 'antiAliasing':
-                        result = await processAntiAliasing(grayscale);
-                        resultImageData = grayscaleToImageData(result);
+                        result = await processAntiAliasing(luminance);
+                        resultImageData = luminanceToImageData(result);
                         break;
                 }
 
@@ -1176,7 +1176,7 @@
         }
 
         // Natural Media processing
-        async function processNaturalMedia(grayscale) {
+        async function processNaturalMedia(luminance) {
             const strategy = new NaturalMediaStrategy({
                 style: 'pencilShading', // Base style, we'll override params
                 sigma: parseFloat(nmControls.sigma.value),
@@ -1185,17 +1185,17 @@
                 useFlow: nmControls.useFlow.checked,
             });
             
-            return strategy.apply(grayscale);
+            return strategy.apply(luminance);
         }
 
         // Multi-Scale processing
-        async function processMultiScale(grayscale) {
+        async function processMultiScale(luminance) {
             const strategy = MultiScaleStrategy.withPreset(currentMSPreset);
-            return strategy.apply(grayscale, { blendMode: msControls.blendMode.value });
+            return strategy.apply(luminance, { blendMode: msControls.blendMode.value });
         }
 
         // Hatching processing
-        async function processHatching(grayscale) {
+        async function processHatching(luminance) {
             const numBands = parseInt(hatchControls.bands.value);
             const thresholdLevels = [];
             for (let i = 1; i < numBands; i++) {
@@ -1208,7 +1208,7 @@
                 p: parseFloat(hatchControls.p.value),
                 phi: parseFloat(hatchControls.phi.value),
             });
-            const { sharpened } = await xdog.processDetailed(grayscale);
+            const { sharpened } = await xdog.processDetailed(luminance);
             
             const config = {
                 thresholdLevels,
@@ -1233,14 +1233,14 @@
             }
             
             const strategy = new HatchingStrategy(config);
-            return strategy.apply({ sharpened, original: grayscale });
+            return strategy.apply({ sharpened, original: luminance });
         }
 
         // Color Retention processing
-        async function processColorRetention(grayscale, rgbInput) {
+        async function processColorRetention(luminance, rgbInput) {
             // First process with Natural Media to get stylized output
             const nmStrategy = new NaturalMediaStrategy({ style: currentCRStyle });
-            const stylized = await nmStrategy.apply(grayscale);
+            const stylized = await nmStrategy.apply(luminance);
             
             // Build blend function based on selection
             const blendMode = crControls.blendMode.value;
@@ -1465,7 +1465,7 @@
         }
 
         // Anti-Aliasing processing
-        async function processAntiAliasing(grayscale) {
+        async function processAntiAliasing(luminance) {
             // First, process with FDoG to get edge image and ETF
             const fdog = new FDoG({
                 sigma: 1.4,
@@ -1476,7 +1476,7 @@
                 sigmaA: 0, // We'll apply our own AA
             });
             
-            const fdogResult = await fdog.processDetailed(grayscale);
+            const fdogResult = await fdog.processDetailed(luminance);
             
             const strategy = new AntiAliasingStrategy({
                 sigma: parseFloat(aaControls.sigma.value),

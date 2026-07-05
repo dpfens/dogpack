@@ -1,7 +1,7 @@
 // =============================================================================
 // Utility Functions
 // =============================================================================
-import { createGrayscaleImage } from "../utils.js";
+import { createChannelImage } from "../utils.js";
 /**
  * Convert ImageData to RGBImage
  */
@@ -54,7 +54,7 @@ export function grayscaleToRGB(gray) {
  */
 export function rgbToGrayscale(rgb) {
     const { width, height } = rgb;
-    const gray = createGrayscaleImage(width, height);
+    const gray = createChannelImage(width, height);
     for (let i = 0; i < width * height; i++) {
         gray.data[i] = 0.299 * rgb.r[i] + 0.587 * rgb.g[i] + 0.114 * rgb.b[i];
     }

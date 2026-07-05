@@ -7,7 +7,7 @@
  * Based on Section 2.6 of Winnemöller et al. (2012) and
  * Kang et al. (2007) "Coherent Line Drawing"
  */
-import { GrayscaleImage, FlowField, Vec2, ETFConfig } from '../types.js';
+import { ChannelImage, FlowField, Vec2, ETFConfig } from '../types.js';
 /**
  * Edge Tangent Flow field implementation
  */
@@ -28,12 +28,12 @@ export declare class EdgeTangentFlow implements FlowField {
      * @param config ETF configuration
      * @param sigmaC Structure tensor smoothing sigma (optional override)
      */
-    static compute(input: GrayscaleImage, config?: Partial<ETFConfig>, sigmaC?: number): EdgeTangentFlow;
+    static compute(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number): EdgeTangentFlow;
     /**
      * Visualize the flow field as a grayscale image
      * Encodes direction as intensity (useful for debugging)
      */
-    visualize(): GrayscaleImage;
+    visualize(): ChannelImage;
     /**
      * Visualize as a color image (HSV with direction as hue)
      */

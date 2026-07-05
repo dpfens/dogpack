@@ -7,7 +7,7 @@
  * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
  * advanced image stylization" by Winnemöller et al. (2012)
  */
-import { GrayscaleImage, DoGConfig, FDoGConfig, STYLE_PRESETS, FDOG_STYLE_PRESETS, BlurStrategy, DoGImplementation, DoGProcessingResult } from './types.js';
+import { ChannelImage, DoGConfig, FDoGConfig, STYLE_PRESETS, FDOG_STYLE_PRESETS, BlurStrategy, DoGImplementation, DoGProcessingResult } from './types.js';
 import { EdgeTangentFlow } from './etf/index.js';
 /**
  * XDoG configuration combining DoG parameters with isotropic blur options
@@ -37,15 +37,15 @@ export declare class XDoG implements DoGImplementation {
     /**
      * Process a grayscale image
      */
-    process(input: GrayscaleImage, overrides?: Partial<DoGConfig>): Promise<GrayscaleImage>;
+    process(input: ChannelImage, overrides?: Partial<DoGConfig>): Promise<ChannelImage>;
     /**
      * Process without thresholding (returns sharpened image)
      */
-    processSharpened(input: GrayscaleImage, overrides?: Partial<DoGConfig>): Promise<GrayscaleImage>;
+    processSharpened(input: ChannelImage, overrides?: Partial<DoGConfig>): Promise<ChannelImage>;
     /**
      * Get raw DoG response for visualization
      */
-    processRawDoG(input: GrayscaleImage, overrides?: Partial<DoGConfig>): Promise<GrayscaleImage>;
+    processRawDoG(input: ChannelImage, overrides?: Partial<DoGConfig>): Promise<ChannelImage>;
     /**
      * Process and return all intermediate results
      *
@@ -57,11 +57,11 @@ export declare class XDoG implements DoGImplementation {
      * - Debugging and visualization
      * - Custom post-processing pipelines
      */
-    processDetailed(input: GrayscaleImage, overrides?: Partial<DoGConfig>): Promise<DoGProcessingResult>;
+    processDetailed(input: ChannelImage, overrides?: Partial<DoGConfig>): Promise<DoGProcessingResult>;
     /**
      * Convenience method to process ImageData directly (e.g., from a canvas)
      */
-    processImageData(input: ImageData, overrides?: Partial<DoGConfig>): Promise<ImageData>;
+    processGrayscaleImageData(input: ImageData, overrides?: Partial<DoGConfig>): Promise<ImageData>;
     /**
      * Get current configuration
      */
@@ -103,38 +103,38 @@ export declare class FDoG implements DoGImplementation {
      * Unlike XDoG, FDoG computes a new flow field for each image,
      * so the full pipeline runs fresh each time.
      */
-    process(input: GrayscaleImage, overrides?: Partial<FDoGConfig>): Promise<GrayscaleImage>;
+    process(input: ChannelImage, overrides?: Partial<FDoGConfig>): Promise<ChannelImage>;
     /**
      * Process with more control over individual stages
      */
-    processDetailed(input: GrayscaleImage, overrides?: Partial<FDoGConfig>): Promise<{
-        result: GrayscaleImage;
+    processDetailed(input: ChannelImage, overrides?: Partial<FDoGConfig>): Promise<{
+        result: ChannelImage;
         etf: EdgeTangentFlow;
-        sharpened: GrayscaleImage;
-        thresholded: GrayscaleImage;
-        smoothed: GrayscaleImage;
+        sharpened: ChannelImage;
+        thresholded: ChannelImage;
+        smoothed: ChannelImage;
     }>;
     /**
      * Convenience method to process ImageData directly
      */
-    processImageData(input: ImageData, overrides?: Partial<FDoGConfig>): Promise<ImageData>;
+    processGrayscaleImageData(input: ImageData, overrides?: Partial<FDoGConfig>): Promise<ImageData>;
     /**
      * Process with a pre-computed ETF
      *
      * Useful when processing multiple frames of video where the ETF
      * can be computed once and reused, or interpolated between keyframes.
      */
-    processWithETF(input: GrayscaleImage, etf: EdgeTangentFlow, overrides?: Partial<FDoGConfig>): Promise<GrayscaleImage>;
+    processWithETF(input: ChannelImage, etf: EdgeTangentFlow, overrides?: Partial<FDoGConfig>): Promise<ChannelImage>;
     /**
      * Compute Edge Tangent Flow separately
      *
      * Useful for visualizing the flow field or reusing it across frames.
      */
-    computeETF(input: GrayscaleImage, sigmaC?: number): EdgeTangentFlow;
+    computeETF(input: ChannelImage, sigmaC?: number): EdgeTangentFlow;
     /**
      * Apply only the anti-aliasing pass to an already-processed image
      */
-    applyAntiAliasing(input: GrayscaleImage, etf: EdgeTangentFlow, sigmaA?: number): Promise<GrayscaleImage>;
+    applyAntiAliasing(input: ChannelImage, etf: EdgeTangentFlow, sigmaA?: number): Promise<ChannelImage>;
     /**
      * Get current configuration
      */
@@ -147,9 +147,9 @@ export declare class FDoG implements DoGImplementation {
 /**
  * Convenience function for one-shot XDoG processing
  */
-export declare function xdog(input: GrayscaleImage | ImageData, config?: Partial<XDoGConfig>): Promise<GrayscaleImage>;
+export declare function xdog(input: ChannelImage, config?: Partial<XDoGConfig>): Promise<ChannelImage>;
 /**
  * Convenience function for one-shot FDoG processing
  */
-export declare function fdog(input: GrayscaleImage | ImageData, config?: Partial<FDoGConfig>): Promise<GrayscaleImage>;
+export declare function fdog(input: ChannelImage, config?: Partial<FDoGConfig>): Promise<ChannelImage>;
 //# sourceMappingURL=xdog.d.ts.map

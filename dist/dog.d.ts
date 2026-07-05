@@ -8,7 +8,7 @@
  * "XDoG: An eXtended difference-of-Gaussians compendium including
  * advanced image stylization" by Winnemöller et al. (2012)
  */
-import { BlurStrategy, GrayscaleImage, DoGConfig, DoGProcessingResult } from './types.js';
+import { BlurStrategy, ChannelImage, DoGConfig, DoGProcessingResult } from './types.js';
 /**
  * Difference of Gaussians processor
  *
@@ -26,6 +26,7 @@ import { BlurStrategy, GrayscaleImage, DoGConfig, DoGProcessingResult } from './
 export declare class DoGProcessor {
     private config;
     private blurStrategy;
+    private thresholdStrategy;
     constructor(blurStrategy: BlurStrategy, config?: Partial<DoGConfig>);
     /**
      * Process an image through the DoG pipeline
@@ -39,17 +40,17 @@ export declare class DoGProcessor {
      * @param overrides Optional parameter overrides for this call
      * @returns Processed image with edges detected and stylized
      */
-    process(input: GrayscaleImage, overrides?: Partial<DoGConfig>): Promise<GrayscaleImage>;
+    process(input: ChannelImage, overrides?: Partial<DoGConfig>): Promise<ChannelImage>;
     /**
      * Process without thresholding - returns the sharpened image
      * Useful for debugging or custom post-processing
      */
-    processNoThreshold(input: GrayscaleImage, overrides?: Partial<DoGConfig>): Promise<GrayscaleImage>;
+    processNoThreshold(input: ChannelImage, overrides?: Partial<DoGConfig>): Promise<ChannelImage>;
     /**
      * Get the raw DoG response (without sharpening or thresholding)
      * Useful for visualization and debugging
      */
-    processRawDoG(input: GrayscaleImage, overrides?: Partial<DoGConfig>): Promise<GrayscaleImage>;
+    processRawDoG(input: ChannelImage, overrides?: Partial<DoGConfig>): Promise<ChannelImage>;
     /**
      * Process and return all intermediate results in a single pass
      *
@@ -60,7 +61,7 @@ export declare class DoGProcessor {
      * @param overrides Optional parameter overrides for this call
      * @returns Object containing result, sharpened, and rawDoG images
      */
-    processDetailed(input: GrayscaleImage, overrides?: Partial<DoGConfig>): Promise<DoGProcessingResult>;
+    processDetailed(input: ChannelImage, overrides?: Partial<DoGConfig>): Promise<DoGProcessingResult>;
     /**
      * Get current configuration
      */
@@ -99,6 +100,10 @@ export declare class DoGProcessor {
      *   1 + tanh(φ · (u - ε))       otherwise
      * }
      *
+     
+     */
+    /**
+     * Apply thresholding using the configured strategy
      * This creates the characteristic XDoG stylization:
      * - Values above ε become white (1)
      * - Values below ε get soft-thresholded with tanh
@@ -148,5 +153,5 @@ export declare const ThresholdModes: {
 /**
  * Apply a custom threshold function to a grayscale image
  */
-export declare function applyCustomThreshold(input: GrayscaleImage, thresholdFn: (value: number) => number): GrayscaleImage;
+export declare function applyCustomThreshold(input: ChannelImage, thresholdFn: (value: number) => number): ChannelImage;
 //# sourceMappingURL=dog.d.ts.map

@@ -69,12 +69,12 @@
  *
  * @example With preprocessing for noisy images
  * ```typescript
- * import { XDoG, Preprocessor, imageDataToGrayscale, grayscaleToImageData } from 'xdog';
+ * import { XDoG, Preprocessor, imageDataToLuminance, grayscaleToImageData } from 'xdog';
  *
  * const preprocessor = new Preprocessor()
  *   .bilateral({ sigmaSpatial: 4, sigmaRange: 0.1 });
  *
- * const gray = imageDataToGrayscale(imageData);
+ * const gray = imageDataToLuminance(imageData);
  * const cleaned = preprocessor.apply(gray);
  *
  * const xdog = new XDoG({ p: 20, phi: 100 });
@@ -91,9 +91,10 @@ export { EdgeTangentFlow } from './etf/index.js';
 // Preprocessing
 export { PreprocessingPresets, Preprocessor, bilateralFilter, medianFilter, kuwaharaFilter, gaussianBlur, enhanceContrast, quantize } from './preprocess.js';
 export { PreprocessingPresetsWebGL, PreprocessorWebGL } from './preprocess-webgl.js';
+export { AdaptiveThresholdStrategy, BilateralThresholdStrategy, HysteresisThresholdStrategy, SoftThresholdStrategy } from './threshold.js';
 export { DEFAULT_DOG_CONFIG, DEFAULT_ETF_CONFIG, DEFAULT_FDOG_CONFIG, STYLE_PRESETS, FDOG_STYLE_PRESETS, tauToP, pToTau } from './types.js';
 // Utilities
-export { createGrayscaleImage, cloneGrayscaleImage, imageDataToGrayscale, grayscaleToImageData, rgbToGrayscale, getPixel, getPixelBilinear, setPixel, normalizeVec2, dotVec2, perpendicular, generateGaussianKernel, computeKernelSize, clamp, lerp, } from './utils.js';
+export { createChannelImage, cloneChannelImage, imageDataToLuminance, luminanceToImageData, rgbToGrayscale, getPixel, getPixelBilinear, setPixel, normalizeVec2, dotVec2, perpendicular, generateGaussianKernel, computeKernelSize, clamp, lerp, } from './utils.js';
 // Extensions (composable strategies for advanced stylization)
 export { AntiAliasingStrategy, ColorRetentionStrategy, BlendFunctions, ColorTransforms, MaskTransforms, PostProcessors, HatchingStrategy, MultiScaleStrategy, ScaleBlendFunctions, NaturalMediaStrategy, imageDataToRGB, rgbToImageData, grayscaleToRGB, } from './extensions/index.js';
 //# sourceMappingURL=index.js.map

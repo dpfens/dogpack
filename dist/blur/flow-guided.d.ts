@@ -6,7 +6,7 @@
  * weighted by a Gaussian kernel. This produces blur that follows edge contours
  * rather than blurring across them.
  */
-import { BlurStrategy, GrayscaleImage, FlowField } from '../types.js';
+import { BlurStrategy, ChannelImage, FlowField } from '../types.js';
 import { BaseCPUBlur, BaseWebGLBlur, BaseWebGPUBlur } from './base.js';
 interface FlowGuidedBlurStrategy {
     setFlowField(flowField: FlowField): void;
@@ -33,7 +33,7 @@ export declare class CPUFlowGuidedBlur extends BaseCPUBlur implements BlurStrate
      * Update the flow field (e.g., when processing a new image)
      */
     setFlowField(flowField: FlowField): void;
-    blur(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage>;
+    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
     /**
      * Sample along the flow direction using line integral convolution
      *
@@ -71,7 +71,7 @@ export declare class WebGLFlowGuidedBlur extends BaseWebGLBlur implements BlurSt
      * Update the flow field (e.g., when processing a new image)
      */
     setFlowField(flowField: FlowField): void;
-    blur(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage>;
+    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
     dispose(): void;
 }
 /**
@@ -105,14 +105,14 @@ export declare class WebGPUFlowGuidedBlur extends BaseWebGPUBlur implements Blur
      * Update the flow field (e.g., when processing a new image)
      */
     setFlowField(flowField: FlowField): void;
-    blur(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage>;
+    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
     dispose(): void;
 }
 export type FlowGuidedBlurConfig = CPUFlowGuidedBlurConfig | GLGPUBlurConfig;
 export declare class FlowGuidedBlur implements BlurStrategy {
     instance: BlurStrategy & FlowGuidedBlurStrategy;
     constructor(flowField: FlowField, config?: Partial<FlowGuidedBlurConfig>);
-    blur(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage>;
+    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
     /**
      * Update the flow field (e.g., when processing a new image)
      */

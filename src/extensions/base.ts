@@ -1,5 +1,5 @@
 import { 
-  GrayscaleImage, 
+  ChannelImage, 
 } from '../types.js';
 import { EdgeTangentFlow } from '../etf/index.js';
 
@@ -30,13 +30,13 @@ export interface RGBImage {
  */
 export interface DoGResult {
   /** The final processed image */
-  image: GrayscaleImage;
+  image: ChannelImage;
   /** The sharpened image before thresholding (if available) */
-  sharpened?: GrayscaleImage;
+  sharpened?: ChannelImage;
   /** Edge tangent flow (only from FDoG) */
   etf?: EdgeTangentFlow;
   /** The original grayscale input */
-  originalGray?: GrayscaleImage;
+  originalGray?: ChannelImage;
   /** The original color input (if provided) */
   originalColor?: RGBImage;
 }

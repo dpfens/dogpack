@@ -1,27 +1,27 @@
 /**
  * Image utility functions
  */
-import { GrayscaleImage, RGBImage, Vec2 } from '../types.js';
+import { ChannelImage, RGBImage, Vec2 } from '../types.js';
 /**
  * Create a new grayscale image with given dimensions
  */
-export declare function createGrayscaleImage(width: number, height: number): GrayscaleImage;
+export declare function createChannelImage(width: number, height: number): ChannelImage;
 /**
  * Clone a grayscale image
  */
-export declare function cloneGrayscaleImage(image: GrayscaleImage): GrayscaleImage;
+export declare function cloneChannelImage(image: ChannelImage): ChannelImage;
 /**
  * Get pixel value with bounds checking (clamps to edge)
  */
-export declare function getPixel(image: GrayscaleImage, x: number, y: number): number;
+export declare function getPixel(image: ChannelImage, x: number, y: number): number;
 /**
  * Get pixel value with bilinear interpolation for sub-pixel sampling
  */
-export declare function getPixelBilinear(image: GrayscaleImage, x: number, y: number): number;
+export declare function getPixelBilinear(image: ChannelImage, x: number, y: number): number;
 /**
  * Set pixel value
  */
-export declare function setPixel(image: GrayscaleImage, x: number, y: number, value: number): void;
+export declare function setPixel(image: ChannelImage, x: number, y: number, value: number): void;
 /**
  * Get pixel index for coordinates
  */
@@ -29,17 +29,17 @@ export declare function getIndex(width: number, x: number, y: number): number;
 /**
  * Convert RGB image to grayscale using luminance formula
  */
-export declare function rgbToGrayscale(rgb: RGBImage): GrayscaleImage;
+export declare function rgbToGrayscale(rgb: RGBImage): ChannelImage;
 /**
  * Convert ImageData (from canvas) to grayscale image
  * Assumes values are in 0-255 range, normalizes to 0-1
  */
-export declare function imageDataToGrayscale(imageData: ImageData): GrayscaleImage;
+export declare function imageDataToLuminance(imageData: ImageData): ChannelImage;
 /**
  * Convert grayscale image to ImageData (for canvas display)
  * Assumes input is in 0-1 range
  */
-export declare function grayscaleToImageData(gray: GrayscaleImage): ImageData;
+export declare function grayscaleToImageData(gray: ChannelImage): ImageData;
 /**
  * Normalize a 2D vector
  */

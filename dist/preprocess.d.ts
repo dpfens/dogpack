@@ -8,7 +8,7 @@
  * preprocessing for "indication" - attenuating weak edges while
  * preserving strong edges.
  */
-import { GrayscaleImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from './types.js';
+import { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from './types.js';
 /**
  * Bilateral Filter
  *
@@ -22,14 +22,14 @@ import { GrayscaleImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilt
  * "prioritization mechanism" for indication - attenuating weak edges
  * while supporting strong edges.
  */
-export declare function bilateralFilter(input: GrayscaleImage, config?: Partial<BilateralFilterConfig>): GrayscaleImage;
+export declare function bilateralFilter(input: ChannelImage, config?: Partial<BilateralFilterConfig>): ChannelImage;
 /**
  * Median Filter
  *
  * Replaces each pixel with the median of its neighborhood.
  * Excellent for removing salt-and-pepper noise and small texture details.
  */
-export declare function medianFilter(input: GrayscaleImage, config?: Partial<MedianFilterConfig>): GrayscaleImage;
+export declare function medianFilter(input: ChannelImage, config?: Partial<MedianFilterConfig>): ChannelImage;
 /**
  * Kuwahara Filter
  *
@@ -38,28 +38,28 @@ export declare function medianFilter(input: GrayscaleImage, config?: Partial<Med
  * lowest variance, and uses its mean. Creates flat regions with
  * preserved edges - great for a more stylized look.
  */
-export declare function kuwaharaFilter(input: GrayscaleImage, config?: Partial<KuwaharaFilterConfig>): GrayscaleImage;
+export declare function kuwaharaFilter(input: ChannelImage, config?: Partial<KuwaharaFilterConfig>): ChannelImage;
 /**
  * Gaussian Blur
  *
  * Simple Gaussian smoothing. Less edge-preserving than bilateral,
  * but faster. Good for very noisy images or when used with small sigma.
  */
-export declare function gaussianBlur(input: GrayscaleImage, sigma?: number): GrayscaleImage;
+export declare function gaussianBlur(input: ChannelImage, sigma?: number): ChannelImage;
 /**
  * Contrast Enhancement
  *
  * Stretches the histogram to use the full 0-1 range.
  * Can help make edges more distinct before processing.
  */
-export declare function enhanceContrast(input: GrayscaleImage, blackPoint?: number, whitePoint?: number): GrayscaleImage;
+export declare function enhanceContrast(input: ChannelImage, blackPoint?: number, whitePoint?: number): ChannelImage;
 /**
  * Quantize to reduce color levels
  *
  * Reduces the number of intensity levels, creating a posterized effect.
  * Can help reduce noise by grouping similar intensities together.
  */
-export declare function quantize(input: GrayscaleImage, levels?: number): GrayscaleImage;
+export declare function quantize(input: ChannelImage, levels?: number): ChannelImage;
 /**
  * Preset preprocessing pipelines for common use cases
  */
@@ -68,27 +68,27 @@ export declare const PreprocessingPresets: {
      * Light preprocessing - minimal smoothing
      * Good for: Clean studio photos, illustrations
      */
-    light: (input: GrayscaleImage) => GrayscaleImage;
+    light: (input: ChannelImage) => ChannelImage;
     /**
      * Standard preprocessing - balanced smoothing
      * Good for: Most outdoor photos, portraits
      */
-    standard: (input: GrayscaleImage) => GrayscaleImage;
+    standard: (input: ChannelImage) => ChannelImage;
     /**
      * Heavy preprocessing - aggressive noise removal
      * Good for: Very textured images (grass, foliage, fabric)
      */
-    heavy: (input: GrayscaleImage) => GrayscaleImage;
+    heavy: (input: ChannelImage) => ChannelImage;
     /**
      * Artistic preprocessing - painterly smoothing
      * Good for: Stylized/artistic output
      */
-    artistic: (input: GrayscaleImage) => GrayscaleImage;
+    artistic: (input: ChannelImage) => ChannelImage;
     /**
      * Photo preprocessing - for photos with grass/nature
      * Good for: Landscape, outdoor scenes
      */
-    nature: (input: GrayscaleImage) => GrayscaleImage;
+    nature: (input: ChannelImage) => ChannelImage;
 };
 /**
  * Convenience class for chaining preprocessing operations
@@ -122,7 +122,7 @@ export declare class Preprocessor {
     /**
      * Apply all operations in sequence
      */
-    apply(input: GrayscaleImage): GrayscaleImage;
+    apply(input: ChannelImage): ChannelImage;
     /**
      * Clear all operations
      */

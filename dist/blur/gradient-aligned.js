@@ -1,4 +1,4 @@
-import { createGrayscaleImage, getPixelBilinear, generateGaussianKernel } from '../utils.js';
+import { createChannelImage, getPixelBilinear, generateGaussianKernel } from '../utils.js';
 import { BaseCPUBlur } from './base.js';
 const DEFAULT_FLOW_CONFIG = {
     kernelSizeMultiplier: 6,
@@ -23,7 +23,7 @@ export class CPUGradientAlignedBlur extends BaseCPUBlur {
                 height: input.height,
             };
         }
-        const output = createGrayscaleImage(input.width, input.height);
+        const output = createChannelImage(input.width, input.height);
         // Number of samples perpendicular to flow
         const halfSamples = Math.ceil(sigma * 2 / this.config.stepSize);
         const numSamples = halfSamples * 2 + 1;

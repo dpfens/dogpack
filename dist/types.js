@@ -4,6 +4,7 @@
  * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
  * advanced image stylization" by Winnemöller et al. (2012)
  */
+import { SoftThresholdStrategy } from "./threshold.js";
 /**
  * Default DoG configuration values
  * Based on paper's recommendations and Appendix A parameter ranges
@@ -13,7 +14,8 @@ export const DEFAULT_DOG_CONFIG = {
     k: 1.6,
     p: 20.0, // Strong edge emphasis suitable for most styles
     epsilon: 0.5, // Mid-tone threshold (normalized 0-1)
-    phi: 10.0, // Moderately sharp transitions
+    phi: 10.0, // Moderately sharp 
+    thresholdStrategy: new SoftThresholdStrategy()
 };
 /**
  * Default ETF configuration values

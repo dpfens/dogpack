@@ -6,7 +6,7 @@
  * 2. Smooth the result along edges (flow-aligned)
  */
 import { GradientAlignedBlur } from '..';
-import { BlurStrategy,  GrayscaleImage, FlowField } from '../types.js';
+import { BlurStrategy,  ChannelImage, FlowField } from '../types.js';
 import { FlowGuidedBlur, FlowGuidedBlurConfig } from './flow-guided.js';
 
 
@@ -52,7 +52,7 @@ export class FDoGBlur implements BlurStrategy {
    * @param input Source image
    * @param sigma Edge detection sigma (σe) - applied perpendicular to edges
    */
-  async blur(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage> {
+  async blur(input: ChannelImage, sigma: number): Promise<ChannelImage> {
     // Pass 1: Gradient-aligned blur (across edges)
     const gradientBlurred = await this.gradientBlur.blur(input, sigma);
     
@@ -65,14 +65,14 @@ export class FDoGBlur implements BlurStrategy {
   /**
    * Apply only gradient-aligned blur (for DoG computation)
    */
-  async blurGradientAligned(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage> {
+  async blurGradientAligned(input: ChannelImage, sigma: number): Promise<ChannelImage> {
     return this.gradientBlur.blur(input, sigma);
   }
   
   /**
    * Apply only flow-aligned blur (for post-processing/anti-aliasing)
    */
-  async blurFlowAligned(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage> {
+  async blurFlowAligned(input: ChannelImage, sigma: number): Promise<ChannelImage> {
     return this.flowBlur.blur(input, sigma);
   }
 }

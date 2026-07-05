@@ -5,8 +5,8 @@
  * Used for the DoG computation in FDoG, where we want to blur across
  * edges but not along them.
  */
-import { BlurStrategy, GrayscaleImage, FlowField } from '../types.js';
-import { createGrayscaleImage, getPixelBilinear, generateGaussianKernel } from '../utils.js';
+import { BlurStrategy, ChannelImage, FlowField } from '../types.js';
+import { createChannelImage, getPixelBilinear, generateGaussianKernel } from '../utils.js';
 import { BaseCPUBlur, BaseWebGLBlur } from './base.js';
 
 /**
@@ -45,7 +45,7 @@ export class CPUGradientAlignedBlur extends BaseCPUBlur implements BlurStrategy 
     this.flowField = flowField;
   }
   
-  async blur(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage> {
+  async blur(input: ChannelImage, sigma: number): Promise<ChannelImage> {
     if (sigma < 0.1) {
       return {
         data: new Float32Array(input.data),
@@ -54,7 +54,7 @@ export class CPUGradientAlignedBlur extends BaseCPUBlur implements BlurStrategy 
       };
     }
     
-    const output = createGrayscaleImage(input.width, input.height);
+    const output = createChannelImage(input.width, input.height);
     
     // Number of samples perpendicular to flow
     const halfSamples = Math.ceil(sigma * 2 / this.config.stepSize);
@@ -75,7 +75,7 @@ export class CPUGradientAlignedBlur extends BaseCPUBlur implements BlurStrategy 
    * Sample perpendicular to the flow direction
    */
   private sampleAcrossFlow(
-    input: GrayscaleImage,
+    input: ChannelImage,
     startX: number,
     startY: number,
     halfSamples: number,
@@ -135,7 +135,7 @@ export class GradientAlignedBlur implements BlurStrategy {
     this.instance = new CPUGradientAlignedBlur(flowField, config);
   }
   
-  async blur(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage> {
+  async blur(input: ChannelImage, sigma: number): Promise<ChannelImage> {
     return this.instance.blur(input, sigma);
   }
   

@@ -69,12 +69,12 @@
  * 
  * @example With preprocessing for noisy images
  * ```typescript
- * import { XDoG, Preprocessor, imageDataToGrayscale, grayscaleToImageData } from 'xdog';
+ * import { XDoG, Preprocessor, imageDataToLuminance, grayscaleToImageData } from 'xdog';
  * 
  * const preprocessor = new Preprocessor()
  *   .bilateral({ sigmaSpatial: 4, sigmaRange: 0.1 });
  * 
- * const gray = imageDataToGrayscale(imageData);
+ * const gray = imageDataToLuminance(imageData);
  * const cleaned = preprocessor.apply(gray);
  * 
  * const xdog = new XDoG({ p: 20, phi: 100 });
@@ -117,10 +117,21 @@ export {
 } from './preprocess.js';
 export {PreprocessingPresetsWebGL, PreprocessorWebGL} from './preprocess-webgl.js';
 
+export type {
+  ThresholdConfig,
+  ThresholdStrategy
+} from './threshold.js';
+export {
+  AdaptiveThresholdStrategy,
+  BilateralThresholdStrategy,
+  HysteresisThresholdStrategy,
+  SoftThresholdStrategy
+} from './threshold.js'
+
 // Types
 export type {
   Vec2,
-  GrayscaleImage,
+  ChannelImage,
   RGBImage,
   FlowField,
   DoGConfig,
@@ -143,10 +154,10 @@ export {
 
 // Utilities
 export {
-  createGrayscaleImage,
-  cloneGrayscaleImage,
-  imageDataToGrayscale,
-  grayscaleToImageData,
+  createChannelImage,
+  cloneChannelImage,
+  imageDataToLuminance,
+  luminanceToImageData,
   rgbToGrayscale,
   getPixel,
   getPixelBilinear,

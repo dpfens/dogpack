@@ -8,7 +8,7 @@
  * preprocessing for "indication" - attenuating weak edges while
  * preserving strong edges.
  */
-import { createGrayscaleImage, getPixel, generateGaussianKernel } from './utils.js';
+import { createChannelImage, getPixel, generateGaussianKernel } from './utils.js';
 const DEFAULT_BILATERAL_CONFIG = {
     sigmaSpatial: 3,
     sigmaRange: 0.1,
@@ -36,7 +36,7 @@ const DEFAULT_KUWAHARA_CONFIG = {
 export function bilateralFilter(input, config = {}) {
     const cfg = { ...DEFAULT_BILATERAL_CONFIG, ...config };
     const { width, height } = input;
-    const output = createGrayscaleImage(width, height);
+    const output = createChannelImage(width, height);
     const radius = Math.ceil(cfg.sigmaSpatial * (cfg.radiusMultiplier ?? 2));
     const sigmaSpatial2 = 2 * cfg.sigmaSpatial * cfg.sigmaSpatial;
     const sigmaRange2 = 2 * cfg.sigmaRange * cfg.sigmaRange;
@@ -83,7 +83,7 @@ export function bilateralFilter(input, config = {}) {
 export function medianFilter(input, config = {}) {
     const cfg = { ...DEFAULT_MEDIAN_CONFIG, ...config };
     const { width, height } = input;
-    const output = createGrayscaleImage(width, height);
+    const output = createChannelImage(width, height);
     const radius = cfg.radius;
     const kernelSize = (2 * radius + 1) * (2 * radius + 1);
     const values = new Array(kernelSize);
@@ -113,7 +113,7 @@ export function medianFilter(input, config = {}) {
 export function kuwaharaFilter(input, config = {}) {
     const cfg = { ...DEFAULT_KUWAHARA_CONFIG, ...config };
     const { width, height } = input;
-    const output = createGrayscaleImage(width, height);
+    const output = createChannelImage(width, height);
     const r = cfg.radius;
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
@@ -165,7 +165,7 @@ export function gaussianBlur(input, sigma = 1.0) {
     const kernelSize = radius * 2 + 1;
     const kernel = generateGaussianKernel(sigma, kernelSize);
     // Horizontal pass
-    const temp = createGrayscaleImage(width, height);
+    const temp = createChannelImage(width, height);
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
             let val = 0;
@@ -176,7 +176,7 @@ export function gaussianBlur(input, sigma = 1.0) {
         }
     }
     // Vertical pass
-    const output = createGrayscaleImage(width, height);
+    const output = createChannelImage(width, height);
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
             let val = 0;
@@ -196,7 +196,7 @@ export function gaussianBlur(input, sigma = 1.0) {
  */
 export function enhanceContrast(input, blackPoint = 0.01, whitePoint = 0.99) {
     const { width, height, data } = input;
-    const output = createGrayscaleImage(width, height);
+    const output = createChannelImage(width, height);
     const size = width * height;
     // Find histogram percentiles
     const sorted = new Float32Array(data).sort();
@@ -219,7 +219,7 @@ export function enhanceContrast(input, blackPoint = 0.01, whitePoint = 0.99) {
  */
 export function quantize(input, levels = 8) {
     const { width, height, data } = input;
-    const output = createGrayscaleImage(width, height);
+    const output = createChannelImage(width, height);
     const size = width * height;
     const step = 1 / (levels - 1);
     for (let i = 0; i < size; i++) {

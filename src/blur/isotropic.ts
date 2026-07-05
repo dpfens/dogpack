@@ -3,10 +3,12 @@
  * 
  * Provides both isotropic (standard) and anisotropic (flow-guided) blur
  * implementations for use in XDoG and FDoG pipelines.
+ * 
+ * FIXED: WebGPUIsotropicBlur now supports parallel/concurrent blur operations
  */
 
-import { BlurStrategy, GrayscaleImage } from '../types.js';
-import { createGrayscaleImage, getPixel,  generateGaussianKernel, computeKernelSize } from '../utils.js';
+import { BlurStrategy, ChannelImage } from '../types.js';
+import { createChannelImage, getPixel,  generateGaussianKernel, computeKernelSize } from '../utils.js';
 import { BaseCPUBlur, BaseWebGLBlur, BaseWebGPUBlur } from './base.js';
 
 /**
@@ -57,7 +59,7 @@ export class CPUIsotropicBlur extends BaseCPUBlur implements BlurStrategy {
     this.config = { ...DEFAULT_ISOTROPIC_CONFIG, ...config };
   }
   
-  async blur(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage> {
+  async blur(input: ChannelImage, sigma: number): Promise<ChannelImage> {
     if (sigma < 0.1) {
       // For very small sigma, just return a copy
       return {
@@ -73,7 +75,7 @@ export class CPUIsotropicBlur extends BaseCPUBlur implements BlurStrategy {
     const halfKernel = Math.floor(kernelSize / 2);
     
     // Separable convolution: horizontal pass
-    const temp = createGrayscaleImage(input.width, input.height);
+    const temp = createChannelImage(input.width, input.height);
     for (let y = 0; y < input.height; y++) {
       for (let x = 0; x < input.width; x++) {
         let sum = 0;
@@ -86,7 +88,7 @@ export class CPUIsotropicBlur extends BaseCPUBlur implements BlurStrategy {
     }
     
     // Separable convolution: vertical pass
-    const output = createGrayscaleImage(input.width, input.height);
+    const output = createChannelImage(input.width, input.height);
     for (let y = 0; y < input.height; y++) {
       for (let x = 0; x < input.width; x++) {
         let sum = 0;
@@ -279,93 +281,46 @@ export class WebGLIsotropicBlur extends BaseWebGLBlur implements BlurStrategy {
     this.config = { ...DEFAULT_WEBGL_CONFIG, ...config };
   }
   
-  /**
-   * Initialize WebGL2 resources lazily
-   */
-  private initResources(): WebGLResources {
-    if (this.resources) {
-      return this.resources;
-    }
+  private initResources(canvas: OffscreenCanvas | HTMLCanvasElement): WebGLResources {
+    if (this.resources) return this.resources;
     
-    let canvas: OffscreenCanvas | HTMLCanvasElement;
-    if (typeof OffscreenCanvas !== 'undefined') {
-      canvas = new OffscreenCanvas(1, 1);
-    } else {
-      canvas = document.createElement('canvas');
-    }
-    
-    const gl = canvas.getContext('webgl2') as WebGL2RenderingContext;
+    const gl = canvas.getContext('webgl2');
     if (!gl) {
-      throw new Error('WebGL2 is not supported');
+      throw new Error('WebGL2 not supported');
     }
+    
+    const quadBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]),
+      gl.STATIC_DRAW
+    );
+    
+    const texCoordBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]),
+      gl.STATIC_DRAW
+    );
     
     const horizontalBlurProgram = createProgram(gl, VERTEX_SHADER, HORIZONTAL_BLUR_SHADER);
     const verticalBlurProgram = createProgram(gl, VERTEX_SHADER, VERTICAL_BLUR_SHADER);
-    
-    const quadBuffer = gl.createBuffer()!;
-    gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-      -1, -1, 1, -1, -1, 1, 1, 1,
-    ]), gl.STATIC_DRAW);
-    
-    const texCoordBuffer = gl.createBuffer()!;
-    gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-      0, 0, 1, 0, 0, 1, 1, 1,
-    ]), gl.STATIC_DRAW);
     
     this.resources = {
       gl,
       canvas,
       horizontalBlurProgram,
       verticalBlurProgram,
-      quadBuffer,
-      texCoordBuffer,
+      quadBuffer: quadBuffer!,
+      texCoordBuffer: texCoordBuffer!,
     };
     
     return this.resources;
   }
   
-  /**
-   * Ensure textures are the right size, recreate if needed
-   */
-  private ensureTextureSize(gl: WebGL2RenderingContext, width: number, height: number): void {
-    if (this.currentWidth === width && this.currentHeight === height) {
-      return;
-    }
-    
-    for (const tex of this.textures) {
-      gl.deleteTexture(tex);
-    }
-    if (this.framebuffer) {
-      gl.deleteFramebuffer(this.framebuffer);
-    }
-    
-    this.textures = [];
-    for (let i = 0; i < 2; i++) {
-      const texture = gl.createTexture()!;
-      gl.bindTexture(gl.TEXTURE_2D, texture);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      this.textures.push(texture);
-    }
-    
-    this.framebuffer = gl.createFramebuffer();
-    this.currentWidth = width;
-    this.currentHeight = height;
-    
-    const { canvas } = this.resources!;
-    canvas.width = width;
-    canvas.height = height;
-  }
-  
-  /**
-   * Apply Gaussian blur to the input image
-   */
-  async blur(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage> {
+  async blur(input: ChannelImage, sigma: number): Promise<ChannelImage> {
     if (sigma < 0.1) {
       return {
         data: new Float32Array(input.data),
@@ -374,10 +329,10 @@ export class WebGLIsotropicBlur extends BaseWebGLBlur implements BlurStrategy {
       };
     }
     
-    const { gl, horizontalBlurProgram, verticalBlurProgram, quadBuffer, texCoordBuffer } = this.initResources();
+    const canvas = new OffscreenCanvas(1, 1);
+    const resources = this.initResources(canvas);
+    const { gl } = resources;
     const { width, height } = input;
-    
-    this.ensureTextureSize(gl, width, height);
     
     const kernelSize = Math.min(
       this.config.maxKernelSize,
@@ -385,126 +340,131 @@ export class WebGLIsotropicBlur extends BaseWebGLBlur implements BlurStrategy {
     );
     const kernel = generateGaussianKernel(sigma, kernelSize);
     
-    const paddedKernel = new Float32Array(64);
-    paddedKernel.set(kernel);
-    
-    const inputRGBA = new Uint8Array(width * height * 4);
-    for (let i = 0; i < input.data.length; i++) {
-      const value = Math.max(0, Math.min(255, Math.round(input.data[i] * 255)));
-      inputRGBA[i * 4] = value;
-      inputRGBA[i * 4 + 1] = value;
-      inputRGBA[i * 4 + 2] = value;
-      inputRGBA[i * 4 + 3] = 255;
+    // Create or reuse textures
+    if (this.currentWidth !== width || this.currentHeight !== height) {
+      this.textures.forEach(t => gl.deleteTexture(t));
+      this.textures = [];
+      
+      for (let i = 0; i < 3; i++) {
+        const texture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, width, height, 0, gl.RED, gl.FLOAT, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        this.textures.push(texture!);
+      }
+      
+      if (this.framebuffer) {
+        gl.deleteFramebuffer(this.framebuffer);
+      }
+      this.framebuffer = gl.createFramebuffer();
+      this.currentWidth = width;
+      this.currentHeight = height;
     }
     
+    // Upload input data
     gl.bindTexture(gl.TEXTURE_2D, this.textures[0]);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, inputRGBA);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RED, gl.FLOAT, input.data);
     
-    // Pass 1: Horizontal blur
+    // Horizontal blur
+    this.blurPass(resources, this.textures[0], this.textures[1], kernel, kernelSize, true);
+    
+    // Vertical blur
+    this.blurPass(resources, this.textures[1], this.textures[2], kernel, kernelSize, false);
+    
+    // Read back result
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.framebuffer);
+    gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.textures[2], 0);
+    const resultData = new Float32Array(width * height);
+    gl.readPixels(0, 0, width, height, gl.RED, gl.FLOAT, resultData);
+    
+    return {
+      data: resultData,
+      width,
+      height,
+    };
+  }
+  
+  private blurPass(
+    resources: WebGLResources,
+    inputTexture: WebGLTexture,
+    outputTexture: WebGLTexture,
+    kernel: Float32Array,
+    kernelSize: number,
+    isHorizontal: boolean
+  ): void {
+    const { gl, quadBuffer, texCoordBuffer } = resources;
+    const program = isHorizontal ? resources.horizontalBlurProgram : resources.verticalBlurProgram;
+    
+    gl.useProgram(program);
+    gl.viewport(0, 0, this.currentWidth, this.currentHeight);
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.textures[1], 0);
-    gl.viewport(0, 0, width, height);
-    
-    gl.useProgram(horizontalBlurProgram);
-    
-    const hPosLoc = gl.getAttribLocation(horizontalBlurProgram, 'a_position');
-    const hTexLoc = gl.getAttribLocation(horizontalBlurProgram, 'a_texCoord');
-    
-    gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
-    gl.enableVertexAttribArray(hPosLoc);
-    gl.vertexAttribPointer(hPosLoc, 2, gl.FLOAT, false, 0, 0);
-    
-    gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
-    gl.enableVertexAttribArray(hTexLoc);
-    gl.vertexAttribPointer(hTexLoc, 2, gl.FLOAT, false, 0, 0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, outputTexture, 0);
     
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.textures[0]);
-    gl.uniform1i(gl.getUniformLocation(horizontalBlurProgram, 'u_image'), 0);
-    gl.uniform2f(gl.getUniformLocation(horizontalBlurProgram, 'u_resolution'), width, height);
-    gl.uniform1fv(gl.getUniformLocation(horizontalBlurProgram, 'u_kernel'), paddedKernel);
-    gl.uniform1i(gl.getUniformLocation(horizontalBlurProgram, 'u_kernelSize'), kernel.length);
-    
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    
-    // Pass 2: Vertical blur
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.textures[0], 0);
-    
-    gl.useProgram(verticalBlurProgram);
-    
-    const vPosLoc = gl.getAttribLocation(verticalBlurProgram, 'a_position');
-    const vTexLoc = gl.getAttribLocation(verticalBlurProgram, 'a_texCoord');
+    gl.bindTexture(gl.TEXTURE_2D, inputTexture);
+    gl.uniform1i(gl.getUniformLocation(program, 'u_image'), 0);
+    gl.uniform2f(gl.getUniformLocation(program, 'u_resolution'), this.currentWidth, this.currentHeight);
+    gl.uniform1iv(gl.getUniformLocation(program, 'u_kernel'), Array.from(kernel));
+    gl.uniform1i(gl.getUniformLocation(program, 'u_kernelSize'), kernelSize);
     
     gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
-    gl.enableVertexAttribArray(vPosLoc);
-    gl.vertexAttribPointer(vPosLoc, 2, gl.FLOAT, false, 0, 0);
+    const posLocation = gl.getAttribLocation(program, 'a_position');
+    gl.vertexAttribPointer(posLocation, 2, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(posLocation);
     
     gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
-    gl.enableVertexAttribArray(vTexLoc);
-    gl.vertexAttribPointer(vTexLoc, 2, gl.FLOAT, false, 0, 0);
-    
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.textures[1]);
-    gl.uniform1i(gl.getUniformLocation(verticalBlurProgram, 'u_image'), 0);
-    gl.uniform2f(gl.getUniformLocation(verticalBlurProgram, 'u_resolution'), width, height);
-    gl.uniform1fv(gl.getUniformLocation(verticalBlurProgram, 'u_kernel'), paddedKernel);
-    gl.uniform1i(gl.getUniformLocation(verticalBlurProgram, 'u_kernelSize'), kernel.length);
+    const texCoordLocation = gl.getAttribLocation(program, 'a_texCoord');
+    gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(texCoordLocation);
     
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    
-    const outputRGBA = new Uint8Array(width * height * 4);
-    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, outputRGBA);
-    
-    const output = createGrayscaleImage(width, height);
-    for (let i = 0; i < output.data.length; i++) {
-      output.data[i] = outputRGBA[i * 4] / 255;
-    }
-    
-    return output;
   }
   
   dispose(): void {
-    if (!this.resources) return;
-    
-    const { gl } = this.resources;
-    
-    gl.deleteProgram(this.resources.horizontalBlurProgram);
-    gl.deleteProgram(this.resources.verticalBlurProgram);
-    gl.deleteBuffer(this.resources.quadBuffer);
-    gl.deleteBuffer(this.resources.texCoordBuffer);
-    
-    for (const tex of this.textures) {
-      gl.deleteTexture(tex);
+    if (this.resources) {
+      const { gl } = this.resources;
+      gl.deleteProgram(this.resources.horizontalBlurProgram);
+      gl.deleteProgram(this.resources.verticalBlurProgram);
+      gl.deleteBuffer(this.resources.quadBuffer);
+      gl.deleteBuffer(this.resources.texCoordBuffer);
     }
     
-    if (this.framebuffer) {
-      gl.deleteFramebuffer(this.framebuffer);
+    const { gl } = this.resources || { gl: null };
+    if (gl) {
+      this.textures.forEach(t => gl.deleteTexture(t));
+      if (this.framebuffer) {
+        gl.deleteFramebuffer(this.framebuffer);
+      }
     }
     
     this.resources = null;
     this.textures = [];
     this.framebuffer = null;
+    this.currentWidth = 0;
+    this.currentHeight = 0;
   }
 }
 
-
 /**
- * Configuration for WebGPU blur
+ * WebGPU configuration
  */
 export interface WebGPUBlurConfig {
   /** Kernel size multiplier relative to sigma (default: 6) */
   kernelSizeMultiplier: number;
-  /** Maximum kernel size (default: 127) */
+  /** Maximum kernel size (default: 63) */
   maxKernelSize: number;
 }
 
 const DEFAULT_WEBGPU_CONFIG: WebGPUBlurConfig = {
   kernelSizeMultiplier: 6,
-  maxKernelSize: 127,
+  maxKernelSize: 63,
 };
 
 /**
- * WebGPU resources for blur operations
+ * WebGPU resources
  */
 interface WebGPUResources {
   device: GPUDevice;
@@ -513,136 +473,110 @@ interface WebGPUResources {
   bindGroupLayout: GPUBindGroupLayout;
 }
 
-// Cache for WebGPU adapter/device (shared across instances)
-let cachedAdapter: GPUAdapter | null = null;
-let cachedDevice: GPUDevice | null = null;
-let devicePromise: Promise<GPUDevice | null> | null = null;
-
-/**
- * Get or create WebGPU device (shared)
- */
-async function getWebGPUDevice(): Promise<GPUDevice | null> {
-  if (cachedDevice) return cachedDevice;
-  
-  if (devicePromise) return devicePromise;
-  
-  devicePromise = (async () => {
-    try {
-      if (!navigator.gpu) return null;
-      
-      cachedAdapter = await navigator.gpu.requestAdapter();
-      if (!cachedAdapter) return null;
-      
-      cachedDevice = await cachedAdapter.requestDevice();
-      
-      // Handle device loss
-      cachedDevice.lost.then(() => {
-        cachedDevice = null;
-        cachedAdapter = null;
-        devicePromise = null;
-      });
-      
-      return cachedDevice;
-    } catch {
-      return null;
-    }
-  })();
-  
-  return devicePromise;
+const HORIZONTAL_BLUR_WGSL = `
+struct Params {
+  width: u32,
+  height: u32,
+  kernelSize: u32,
+  _pad: u32,
 }
 
-/**
- * WebGPU compute shader for horizontal Gaussian blur
- */
-const HORIZONTAL_BLUR_WGSL = `
-  struct Params {
-    width: u32,
-    height: u32,
-    kernelSize: u32,
-    _padding: u32,
+@group(0) @binding(0)
+var<uniform> params: Params;
+
+@group(0) @binding(1)
+var<storage, read> kernel: array<f32>;
+
+@group(0) @binding(2)
+var<storage, read> input: array<f32>;
+
+@group(0) @binding(3)
+var<storage, read_write> output: array<f32>;
+
+@compute @workgroup_size(16, 16)
+fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+  let x = global_id.x;
+  let y = global_id.y;
+  
+  if (x >= params.width || y >= params.height) {
+    return;
   }
   
-  @group(0) @binding(0) var<uniform> params: Params;
-  @group(0) @binding(1) var<storage, read> kernel: array<f32>;
-  @group(0) @binding(2) var<storage, read> input: array<f32>;
-  @group(0) @binding(3) var<storage, read_write> output: array<f32>;
+  let halfSize = i32(params.kernelSize) / 2;
+  var sum = 0.0;
   
-  @compute @workgroup_size(16, 16)
-  fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let x = global_id.x;
-    let y = global_id.y;
-    
-    if (x >= params.width || y >= params.height) {
-      return;
-    }
-    
-    let halfKernel = i32(params.kernelSize) / 2;
-    var sum: f32 = 0.0;
-    
-    for (var k: i32 = 0; k < i32(params.kernelSize); k++) {
-      let sampleX = clamp(i32(x) + k - halfKernel, 0, i32(params.width) - 1);
-      let idx = u32(sampleX) + y * params.width;
-      sum += input[idx] * kernel[k];
-    }
-    
-    output[x + y * params.width] = sum;
+  for (var k = 0; k < i32(params.kernelSize); k = k + 1) {
+    let sampleX = i32(x) + k - halfSize;
+    let clampedX = clamp(sampleX, 0, i32(params.width) - 1);
+    let sampleIdx = u32(clampedX) + y * params.width;
+    sum = sum + input[sampleIdx] * kernel[u32(k)];
   }
+  
+  output[x + y * params.width] = sum;
+}
 `;
 
-/**
- * WebGPU compute shader for vertical Gaussian blur
- */
 const VERTICAL_BLUR_WGSL = `
-  struct Params {
-    width: u32,
-    height: u32,
-    kernelSize: u32,
-    _padding: u32,
+struct Params {
+  width: u32,
+  height: u32,
+  kernelSize: u32,
+  _pad: u32,
+}
+
+@group(0) @binding(0)
+var<uniform> params: Params;
+
+@group(0) @binding(1)
+var<storage, read> kernel: array<f32>;
+
+@group(0) @binding(2)
+var<storage, read> input: array<f32>;
+
+@group(0) @binding(3)
+var<storage, read_write> output: array<f32>;
+
+@compute @workgroup_size(16, 16)
+fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+  let x = global_id.x;
+  let y = global_id.y;
+  
+  if (x >= params.width || y >= params.height) {
+    return;
   }
   
-  @group(0) @binding(0) var<uniform> params: Params;
-  @group(0) @binding(1) var<storage, read> kernel: array<f32>;
-  @group(0) @binding(2) var<storage, read> input: array<f32>;
-  @group(0) @binding(3) var<storage, read_write> output: array<f32>;
+  let halfSize = i32(params.kernelSize) / 2;
+  var sum = 0.0;
   
-  @compute @workgroup_size(16, 16)
-  fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let x = global_id.x;
-    let y = global_id.y;
-    
-    if (x >= params.width || y >= params.height) {
-      return;
-    }
-    
-    let halfKernel = i32(params.kernelSize) / 2;
-    var sum: f32 = 0.0;
-    
-    for (var k: i32 = 0; k < i32(params.kernelSize); k++) {
-      let sampleY = clamp(i32(y) + k - halfKernel, 0, i32(params.height) - 1);
-      let idx = x + u32(sampleY) * params.width;
-      sum += input[idx] * kernel[k];
-    }
-    
-    output[x + y * params.width] = sum;
+  for (var k = 0; k < i32(params.kernelSize); k = k + 1) {
+    let sampleY = i32(y) + k - halfSize;
+    let clampedY = clamp(sampleY, 0, i32(params.height) - 1);
+    let sampleIdx = x + u32(clampedY) * params.width;
+    sum = sum + input[sampleIdx] * kernel[u32(k)];
   }
+  
+  output[x + y * params.width] = sum;
+}
 `;
 
 /**
  * WebGPU-accelerated isotropic Gaussian blur
  * Uses compute shaders with separable convolution
+ * 
+ * FIXED: Now supports concurrent/parallel blur calls by creating
+ * separate staging buffers for each operation instead of reusing one.
  */
 export class WebGPUIsotropicBlur extends BaseWebGPUBlur implements BlurStrategy {
   private config: WebGPUBlurConfig;
   private resources: WebGPUResources | null = null;
   private initPromise: Promise<void> | null = null;
   
-  // Reusable buffers
+  // Reusable buffers for compute operations
   private paramsBuffer: GPUBuffer | null = null;
   private kernelBuffer: GPUBuffer | null = null;
   private inputBuffer: GPUBuffer | null = null;
   private tempBuffer: GPUBuffer | null = null;
   private outputBuffer: GPUBuffer | null = null;
-  private stagingBuffer: GPUBuffer | null = null;
   private currentBufferSize = 0;
   private currentKernelSize = 0;
   
@@ -714,7 +648,6 @@ export class WebGPUIsotropicBlur extends BaseWebGPUBlur implements BlurStrategy 
       this.inputBuffer?.destroy();
       this.tempBuffer?.destroy();
       this.outputBuffer?.destroy();
-      this.stagingBuffer?.destroy();
       
       this.inputBuffer = device.createBuffer({
         size: bufferSize,
@@ -729,11 +662,6 @@ export class WebGPUIsotropicBlur extends BaseWebGPUBlur implements BlurStrategy 
       this.outputBuffer = device.createBuffer({
         size: bufferSize,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-      });
-      
-      this.stagingBuffer = device.createBuffer({
-        size: bufferSize,
-        usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
       });
       
       this.currentBufferSize = bufferSize;
@@ -759,9 +687,13 @@ export class WebGPUIsotropicBlur extends BaseWebGPUBlur implements BlurStrategy 
   }
   
   /**
-   * Blur implementation - must be called with await
+   * Blur implementation - supports concurrent/parallel calls
+   * 
+   * KEY FIX: Creates a new staging buffer for each operation instead of
+   * reusing a single one. This prevents "Buffer already has an outstanding
+   * map pending" errors when blur() is called in parallel.
    */
-  async blur(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage> {
+  async blur(input: ChannelImage, sigma: number): Promise<ChannelImage> {
     if (sigma < 0.1) {
       return {
         data: new Float32Array(input.data),
@@ -784,7 +716,7 @@ export class WebGPUIsotropicBlur extends BaseWebGPUBlur implements BlurStrategy 
     // Ensure buffers
     this.ensureBuffers(device, pixelCount, kernelSize);
     
-    // Upload data (ensure we're using ArrayBuffer, not SharedArrayBuffer)
+    // Upload data
     device.queue.writeBuffer(this.paramsBuffer!, 0, new Uint32Array([width, height, kernelSize, 0]));
     device.queue.writeBuffer(this.kernelBuffer!, 0, new Float32Array(kernel));
     device.queue.writeBuffer(this.inputBuffer!, 0, new Float32Array(input.data));
@@ -828,21 +760,31 @@ export class WebGPUIsotropicBlur extends BaseWebGPUBlur implements BlurStrategy 
     verticalPass.dispatchWorkgroups(workgroupsX, workgroupsY);
     verticalPass.end();
     
-    // Copy to staging buffer
+    // FIX: Create a NEW staging buffer for this operation instead of reusing one.
+    // This prevents concurrent map() calls from conflicting.
+    const stagingBuffer = device.createBuffer({
+      size: pixelCount * 4,
+      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+    });
+    
+    // Copy result to the new staging buffer
     commandEncoder.copyBufferToBuffer(
       this.outputBuffer!,
       0,
-      this.stagingBuffer!,
+      stagingBuffer,
       0,
       pixelCount * 4
     );
     
     device.queue.submit([commandEncoder.finish()]);
     
-    // Read back result
-    await this.stagingBuffer!.mapAsync(GPUMapMode.READ);
-    const resultData = new Float32Array(this.stagingBuffer!.getMappedRange().slice(0));
-    this.stagingBuffer!.unmap();
+    // Read back result - safe because this stagingBuffer is unique to this call
+    await stagingBuffer.mapAsync(GPUMapMode.READ);
+    const resultData = new Float32Array(stagingBuffer.getMappedRange().slice(0));
+    stagingBuffer.unmap();
+    
+    // Clean up the staging buffer (it was created just for this operation)
+    stagingBuffer.destroy();
     
     return {
       data: resultData,
@@ -860,14 +802,12 @@ export class WebGPUIsotropicBlur extends BaseWebGPUBlur implements BlurStrategy 
     this.inputBuffer?.destroy();
     this.tempBuffer?.destroy();
     this.outputBuffer?.destroy();
-    this.stagingBuffer?.destroy();
     
     this.paramsBuffer = null;
     this.kernelBuffer = null;
     this.inputBuffer = null;
     this.tempBuffer = null;
     this.outputBuffer = null;
-    this.stagingBuffer = null;
     this.currentBufferSize = 0;
     this.currentKernelSize = 0;
     
@@ -893,7 +833,7 @@ export class IsotropicBlur implements BlurStrategy {
         }
     }
 
-    async blur(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage> {
+    async blur(input: ChannelImage, sigma: number): Promise<ChannelImage> {
         return this.instance.blur(input, sigma);
     }
 }

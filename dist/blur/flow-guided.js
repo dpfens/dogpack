@@ -1,4 +1,4 @@
-import { createGrayscaleImage, getPixelBilinear, generateGaussianKernel } from '../utils.js';
+import { createChannelImage, getPixelBilinear, generateGaussianKernel } from '../utils.js';
 import { createProgram } from '../utils/webgl.js';
 import { BaseCPUBlur, BaseWebGLBlur, BaseWebGPUBlur } from './base.js';
 const DEFAULT_FLOW_CONFIG = {
@@ -27,7 +27,7 @@ export class CPUFlowGuidedBlur extends BaseCPUBlur {
                 height: input.height,
             };
         }
-        const output = createGrayscaleImage(input.width, input.height);
+        const output = createChannelImage(input.width, input.height);
         // Number of samples along the flow line
         // Paper samples at 2× sigma in each direction
         const halfSamples = Math.ceil(sigma * 2 / this.config.stepSize);
@@ -318,7 +318,7 @@ export class WebGLFlowGuidedBlur extends BaseWebGLBlur {
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
         const outputRGBA = new Uint8Array(width * height * 4);
         gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, outputRGBA);
-        const output = createGrayscaleImage(width, height);
+        const output = createChannelImage(width, height);
         for (let i = 0; i < output.data.length; i++) {
             output.data[i] = outputRGBA[i * 4] / 255;
         }

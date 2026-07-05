@@ -8,7 +8,7 @@
  * Kang et al. (2007) "Coherent Line Drawing"
  */
 import { DEFAULT_ETF_CONFIG } from '../types.js';
-import { createGrayscaleImage, normalizeVec2, dotVec2, generateGaussianKernel } from '../utils.js';
+import { createChannelImage, normalizeVec2, dotVec2, generateGaussianKernel } from '../utils.js';
 /**
  * Edge Tangent Flow field implementation
  */
@@ -68,7 +68,7 @@ export class EdgeTangentFlow {
      * Encodes direction as intensity (useful for debugging)
      */
     visualize() {
-        const output = createGrayscaleImage(this.width, this.height);
+        const output = createChannelImage(this.width, this.height);
         for (let y = 0; y < this.height; y++) {
             for (let x = 0; x < this.width; x++) {
                 const idx = y * this.width + x;

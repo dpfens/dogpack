@@ -13,7 +13,7 @@
  *
  * Based on Section 5.2 of the XDoG paper.
  */
-import { GrayscaleImage } from '../types.js';
+import { ChannelImage } from '../types.js';
 import { RGBImage } from './base.js';
 /**
  * RGBA color tuple (values in 0-1 range)
@@ -148,7 +148,7 @@ export type PostProcessFn = (color: Color, originalColor: Color, mask: number, c
  * Global pre-processing hook (runs once before pixel iteration)
  * Useful for computing histograms, statistics, or initializing state
  */
-export type PreProcessHook = (stylized: GrayscaleImage, originalColor: RGBImage, state: Map<string, unknown>) => void;
+export type PreProcessHook = (stylized: ChannelImage, originalColor: RGBImage, state: Map<string, unknown>) => void;
 /**
  * Global post-processing hook (runs once after pixel iteration)
  * Useful for normalization, filtering, or multi-pass effects
@@ -249,7 +249,7 @@ export declare class ColorRetentionStrategy {
     private config;
     constructor(config: ColorRetentionConfig);
     apply(input: {
-        stylized: GrayscaleImage;
+        stylized: ChannelImage;
         originalColor: RGBImage;
     }, configOverride?: Partial<ColorRetentionConfig>): Promise<RGBImage>;
     private buildMaskTransformChain;

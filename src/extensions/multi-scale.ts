@@ -6,9 +6,9 @@
  * 2. Supply their own custom blend function
  */
 
-import { GrayscaleImage, DoGImplementation } from '../types.js';
-import { createGrayscaleImage } from '../utils.js';
-import { XDoG, FDoG } from '../xdog.js';
+import { FDoG, XDoG } from '../xdog.js';
+import { ChannelImage, DoGImplementation } from '../types.js';
+import { createChannelImage } from '../utils.js';
 import { ExtensionStrategy } from './base.js';
 
 // =============================================================================
@@ -424,8 +424,8 @@ export interface MultiScaleConfig {
  */
 export class MultiScaleStrategy implements ExtensionStrategy<
   MultiScaleConfig,
-  GrayscaleImage,
-  GrayscaleImage
+  ChannelImage,
+  ChannelImage
 > {
   private config: MultiScaleConfig;
   
@@ -434,32 +434,30 @@ export class MultiScaleStrategy implements ExtensionStrategy<
   }
   
   async apply(
-    input: GrayscaleImage,
+    input: ChannelImage,
     configOverride?: Partial<Pick<MultiScaleConfig, 'blend'>>
-  ): Promise<GrayscaleImage> {
+  ): Promise<ChannelImage> {
     const blend = configOverride?.blend ?? this.config.blend;
     const { width, height } = input;
     
     // Process each layer using its pre-configured processor
-    const layerResults: GrayscaleImage[] = [];
-    
-    for (const layer of this.config.layers) {
-      const result = await layer.processor.process(input);
-      layerResults.push(result);
-    }
-    
+    const layerResults: ChannelImage[] = await Promise.all(
+      this.config.layers
+      .map(layer => layer.processor.process(input))
+    );
+
     // Blend layers using the provided function
     return this.blendLayers(layerResults, this.config.layers, blend, width, height);
   }
   
   private blendLayers(
-    layers: GrayscaleImage[],
+    layers: ChannelImage[],
     layerConfigs: MultiScaleLayer[],
     blend: BlendFunction,
     width: number,
     height: number
-  ): GrayscaleImage {
-    const output = createGrayscaleImage(width, height);
+  ): ChannelImage {
+    const output = createChannelImage(width, height);
     
     // Pre-compute normalized weights
     const totalWeight = layerConfigs.reduce((sum, l) => sum + l.weight, 0);

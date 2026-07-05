@@ -1,4 +1,4 @@
-import { BlurStrategy, GrayscaleImage, FlowField } from '../types.js';
+import { BlurStrategy, ChannelImage, FlowField } from '../types.js';
 import { FlowGuidedBlurConfig } from './flow-guided.js';
 export declare class FDoGBlur implements BlurStrategy {
     private gradientBlur;
@@ -19,14 +19,14 @@ export declare class FDoGBlur implements BlurStrategy {
      * @param input Source image
      * @param sigma Edge detection sigma (σe) - applied perpendicular to edges
      */
-    blur(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage>;
+    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
     /**
      * Apply only gradient-aligned blur (for DoG computation)
      */
-    blurGradientAligned(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage>;
+    blurGradientAligned(input: ChannelImage, sigma: number): Promise<ChannelImage>;
     /**
      * Apply only flow-aligned blur (for post-processing/anti-aliasing)
      */
-    blurFlowAligned(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage>;
+    blurFlowAligned(input: ChannelImage, sigma: number): Promise<ChannelImage>;
 }
 //# sourceMappingURL=fdog.d.ts.map

@@ -10,7 +10,7 @@
 import { DEFAULT_DOG_CONFIG, DEFAULT_ETF_CONFIG, DEFAULT_FDOG_CONFIG, STYLE_PRESETS, FDOG_STYLE_PRESETS } from './types.js';
 import { DoGProcessor } from './dog.js';
 import { EdgeTangentFlow } from './etf/index.js';
-import { imageDataToGrayscale, grayscaleToImageData } from './utils.js';
+import { imageDataToLuminance, luminanceToImageData } from './utils.js';
 import { IsotropicBlur } from './blur/isotropic.js';
 import { GradientAlignedBlur } from './blur/gradient-aligned.js';
 import { FlowGuidedBlur } from './blur/flow-guided.js';
@@ -75,10 +75,10 @@ export class XDoG {
     /**
      * Convenience method to process ImageData directly (e.g., from a canvas)
      */
-    async processImageData(input, overrides = {}) {
-        const grayscale = imageDataToGrayscale(input);
+    async processGrayscaleImageData(input, overrides = {}) {
+        const grayscale = imageDataToLuminance(input);
         const result = await this.process(grayscale, overrides);
-        return grayscaleToImageData(result);
+        return luminanceToImageData(result);
     }
     /**
      * Get current configuration
@@ -175,8 +175,10 @@ export class FDoG {
         const gradientBlur = new GradientAlignedBlur(etf);
         const processor = new DoGProcessor(gradientBlur, params);
         // Get intermediate results
-        const sharpened = await processor.processNoThreshold(input);
-        const thresholded = await processor.process(input);
+        const [sharpened, thresholded] = await Promise.all([
+            processor.processNoThreshold(input),
+            processor.process(input)
+        ]);
         // Flow-aligned smoothing
         let smoothed = thresholded;
         if (params.sigmaM > 0) {
@@ -195,10 +197,10 @@ export class FDoG {
     /**
      * Convenience method to process ImageData directly
      */
-    async processImageData(input, overrides = {}) {
-        const grayscale = imageDataToGrayscale(input);
+    async processGrayscaleImageData(input, overrides = {}) {
+        const grayscale = imageDataToLuminance(input);
         const result = await this.process(grayscale, overrides);
-        return grayscaleToImageData(result);
+        return luminanceToImageData(result);
     }
     /**
      * Process with a pre-computed ETF
@@ -264,10 +266,6 @@ export class FDoG {
  */
 export async function xdog(input, config = {}) {
     const processor = new XDoG(config);
-    if ('data' in input && input.data instanceof Uint8ClampedArray) {
-        const grayscale = imageDataToGrayscale(input);
-        return processor.process(grayscale);
-    }
     return processor.process(input);
 }
 /**
@@ -275,10 +273,6 @@ export async function xdog(input, config = {}) {
  */
 export async function fdog(input, config = {}) {
     const processor = new FDoG(config);
-    if ('data' in input && input.data instanceof Uint8ClampedArray) {
-        const grayscale = imageDataToGrayscale(input);
-        return processor.process(grayscale);
-    }
     return processor.process(input);
 }
 //# sourceMappingURL=xdog.js.map

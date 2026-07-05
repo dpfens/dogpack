@@ -1,4 +1,4 @@
-import { ETFConfig, FlowField, GrayscaleImage, Vec2 } from "../types";
+import { ETFConfig, FlowField, ChannelImage, Vec2 } from "../types";
 import { EdgeTangentFlowWebGL } from "./webgl.js";
 import { EdgeTangentFlow as EdgeTangentFlowCPU } from "./cpu.js";
 
@@ -24,7 +24,7 @@ export class EdgeTangentFlow implements FlowField {
     return (this.impl as any).getTangentArray();
   }
   
-  visualize(): GrayscaleImage {
+  visualize(): ChannelImage {
     return (this.impl as any).visualize();
   }
   
@@ -44,7 +44,7 @@ export class EdgeTangentFlow implements FlowField {
    * @param forceImpl Force a specific implementation ('cpu' | 'webgl' | 'auto')
    */
   static compute(
-    input: GrayscaleImage,
+    input: ChannelImage,
     config: Partial<ETFConfig> = {},
     sigmaC?: number,
     forceImpl: 'cpu' | 'webgl' | 'auto' = 'auto'

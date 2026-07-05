@@ -1,4 +1,4 @@
-import { FlowField, GrayscaleImage } from "../types.js";
+import { FlowField, ChannelImage } from "../types.js";
 import { ExtensionStrategy } from "./base.js";
 /**
  * Anti-aliasing configuration
@@ -38,15 +38,15 @@ export interface AntiAliasingConfig {
  * ```
  */
 export declare class AntiAliasingStrategy implements ExtensionStrategy<AntiAliasingConfig, {
-    image: GrayscaleImage;
+    image: ChannelImage;
     etf: FlowField;
-}, GrayscaleImage> {
+}, ChannelImage> {
     private config;
     constructor(config?: Partial<AntiAliasingConfig>);
     apply(input: {
-        image: GrayscaleImage;
+        image: ChannelImage;
         etf: FlowField;
-    }, configOverride?: Partial<AntiAliasingConfig>): Promise<GrayscaleImage>;
+    }, configOverride?: Partial<AntiAliasingConfig>): Promise<ChannelImage>;
     /**
      * Create anti-aliasing with preset intensity
      */

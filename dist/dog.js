@@ -9,7 +9,8 @@
  * advanced image stylization" by Winnemöller et al. (2012)
  */
 import { DEFAULT_DOG_CONFIG } from './types.js';
-import { createGrayscaleImage } from './utils.js';
+import { createChannelImage } from './utils.js';
+import { SoftThresholdStrategy } from './threshold.js';
 /**
  * Difference of Gaussians processor
  *
@@ -27,9 +28,11 @@ import { createGrayscaleImage } from './utils.js';
 export class DoGProcessor {
     config;
     blurStrategy;
+    thresholdStrategy;
     constructor(blurStrategy, config = {}) {
         this.blurStrategy = blurStrategy;
         this.config = { ...DEFAULT_DOG_CONFIG, ...config };
+        this.thresholdStrategy = config.thresholdStrategy ?? new SoftThresholdStrategy();
     }
     /**
      * Process an image through the DoG pipeline
@@ -47,8 +50,10 @@ export class DoGProcessor {
         const params = { ...this.config, ...overrides };
         // Step 1: Apply two Gaussian blurs with different sigma values
         // G_σ * I and G_kσ * I
-        const blur1 = await this.blurStrategy.blur(input, params.sigma);
-        const blur2 = await this.blurStrategy.blur(input, params.sigma * params.k);
+        const [blur1, blur2] = await Promise.all([
+            this.blurStrategy.blur(input, params.sigma),
+            this.blurStrategy.blur(input, params.sigma * params.k)
+        ]);
         // Step 2: Compute sharpened image using Equation 7
         // S = (1 + p) * G_σ * I - p * G_kσ * I
         const sharpened = this.computeSharpening(blur1, blur2, params.p);
@@ -62,8 +67,10 @@ export class DoGProcessor {
      */
     async processNoThreshold(input, overrides = {}) {
         const params = { ...this.config, ...overrides };
-        const blur1 = await this.blurStrategy.blur(input, params.sigma);
-        const blur2 = await this.blurStrategy.blur(input, params.sigma * params.k);
+        const [blur1, blur2] = await Promise.all([
+            this.blurStrategy.blur(input, params.sigma),
+            this.blurStrategy.blur(input, params.sigma * params.k)
+        ]);
         return this.computeSharpening(blur1, blur2, params.p);
     }
     /**
@@ -72,8 +79,10 @@ export class DoGProcessor {
      */
     async processRawDoG(input, overrides = {}) {
         const params = { ...this.config, ...overrides };
-        const blur1 = await this.blurStrategy.blur(input, params.sigma);
-        const blur2 = await this.blurStrategy.blur(input, params.sigma * params.k);
+        const [blur1, blur2] = await Promise.all([
+            this.blurStrategy.blur(input, params.sigma),
+            this.blurStrategy.blur(input, params.sigma * params.k)
+        ]);
         return this.computeDoG(blur1, blur2);
     }
     /**
@@ -89,8 +98,10 @@ export class DoGProcessor {
     async processDetailed(input, overrides = {}) {
         const params = { ...this.config, ...overrides };
         // Step 1: Apply two Gaussian blurs (only once!)
-        const blur1 = await this.blurStrategy.blur(input, params.sigma);
-        const blur2 = await this.blurStrategy.blur(input, params.sigma * params.k);
+        const [blur1, blur2] = await Promise.all([
+            this.blurStrategy.blur(input, params.sigma),
+            this.blurStrategy.blur(input, params.sigma * params.k)
+        ]);
         // Step 2: Compute raw DoG
         const rawDoG = this.computeDoG(blur1, blur2);
         // Step 3: Compute sharpened image
@@ -122,7 +133,7 @@ export class DoGProcessor {
      * This is the standard DoG without any weighting
      */
     computeDoG(blur1, blur2) {
-        const output = createGrayscaleImage(blur1.width, blur1.height);
+        const output = createChannelImage(blur1.width, blur1.height);
         const size = blur1.width * blur1.height;
         for (let i = 0; i < size; i++) {
             output.data[i] = blur1.data[i] - blur2.data[i];
@@ -142,7 +153,7 @@ export class DoGProcessor {
      * @param p Sharpening strength (p ≈ 20 typical, p ≈ 100 for woodcut)
      */
     computeSharpening(blur1, blur2, p) {
-        const output = createGrayscaleImage(blur1.width, blur1.height);
+        const output = createChannelImage(blur1.width, blur1.height);
         const size = blur1.width * blur1.height;
         // S = (1 + p) * blur1 - p * blur2
         // This is equivalent to: blur1 + p * (blur1 - blur2)
@@ -162,6 +173,10 @@ export class DoGProcessor {
      *   1 + tanh(φ · (u - ε))       otherwise
      * }
      *
+     
+     */
+    /**
+     * Apply thresholding using the configured strategy
      * This creates the characteristic XDoG stylization:
      * - Values above ε become white (1)
      * - Values below ε get soft-thresholded with tanh
@@ -172,20 +187,8 @@ export class DoGProcessor {
      * @param phi Threshold sharpness (0.01 = soft, 100 = near step function)
      */
     applyThreshold(sharpened, epsilon, phi) {
-        const output = createGrayscaleImage(sharpened.width, sharpened.height);
-        const size = sharpened.width * sharpened.height;
-        for (let i = 0; i < size; i++) {
-            const u = sharpened.data[i];
-            if (u >= epsilon) {
-                output.data[i] = 1.0;
-            }
-            else {
-                // Soft threshold with tanh
-                // This creates a smooth transition to darker values below epsilon
-                output.data[i] = 1.0 + Math.tanh(phi * (u - epsilon));
-            }
-        }
-        return output;
+        const config = { epsilon, phi };
+        return this.thresholdStrategy.threshold(sharpened, config);
     }
 }
 /**
@@ -249,7 +252,7 @@ export const ThresholdModes = {
  * Apply a custom threshold function to a grayscale image
  */
 export function applyCustomThreshold(input, thresholdFn) {
-    const output = createGrayscaleImage(input.width, input.height);
+    const output = createChannelImage(input.width, input.height);
     const size = input.width * input.height;
     for (let i = 0; i < size; i++) {
         output.data[i] = thresholdFn(input.data[i]);

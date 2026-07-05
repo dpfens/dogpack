@@ -1,4 +1,4 @@
-import { GrayscaleImage } from "../types.js";
+import { ChannelImage } from "../types.js";
 import { RGBImage } from "./base.js";
 /**
  * Convert ImageData to RGBImage
@@ -11,9 +11,9 @@ export declare function rgbToImageData(rgb: RGBImage): ImageData;
 /**
  * Convert grayscale to RGB (same value in all channels)
  */
-export declare function grayscaleToRGB(gray: GrayscaleImage): RGBImage;
+export declare function grayscaleToRGB(gray: ChannelImage): RGBImage;
 /**
  * Convert RGB to grayscale using luminance formula
  */
-export declare function rgbToGrayscale(rgb: RGBImage): GrayscaleImage;
+export declare function rgbToGrayscale(rgb: RGBImage): ChannelImage;
 //# sourceMappingURL=utils.d.ts.map

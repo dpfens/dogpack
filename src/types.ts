@@ -5,6 +5,8 @@
  * advanced image stylization" by Winnemöller et al. (2012)
  */
 
+import { SoftThresholdStrategy, ThresholdStrategy } from "./threshold.js";
+
 /**
  * Simple 2D vector
  */
@@ -18,7 +20,7 @@ export interface Vec2 {
  * Using a flat Float32Array for performance and future GPU compatibility
  * Values are normalized to 0-1 range
  */
-export interface GrayscaleImage {
+export interface ChannelImage {
   data: Float32Array;
   width: number;
   height: number;
@@ -44,7 +46,7 @@ export interface BlurStrategy {
    * @param sigma Blur radius (standard deviation)
    * @returns Blurred image
    */
-  blur(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage>;
+  blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
 }
 
 /**
@@ -154,6 +156,8 @@ export interface DoGConfig {
    * - φ >> 10: Hard black/white threshold (approaches step function)
    */
   phi: number;
+
+  thresholdStrategy: ThresholdStrategy;
 }
 
 /**
@@ -218,21 +222,21 @@ export interface FDoGConfig extends DoGConfig {
 
 export interface DoGProcessingResult {
   /** Final thresholded output */
-  result: GrayscaleImage;
+  result: ChannelImage;
   /** Sharpened image before thresholding */
-  sharpened: GrayscaleImage;
+  sharpened: ChannelImage;
   /** Raw DoG response (blur1 - blur2) */
-  rawDoG?: GrayscaleImage;
+  rawDoG?: ChannelImage;
 }
 
 /**
  * Interface for DoG processors (XDoG or FDoG)
  */
 export interface DoGImplementation {
-  process(input: GrayscaleImage, overrides?: Partial<DoGConfig>): Promise<GrayscaleImage>;
+  process(input: ChannelImage, overrides?: Partial<DoGConfig>): Promise<ChannelImage>;
 
   /** Process and return all intermediate results (avoids redundant blur operations) */
-  processDetailed(input: GrayscaleImage, overrides?: Partial<DoGConfig>): Promise<DoGProcessingResult>;
+  processDetailed(input: ChannelImage, overrides?: Partial<DoGConfig>): Promise<DoGProcessingResult>;
 }
 
 /**
@@ -244,7 +248,8 @@ export const DEFAULT_DOG_CONFIG: DoGConfig = {
   k: 1.6,
   p: 20.0,       // Strong edge emphasis suitable for most styles
   epsilon: 0.5,  // Mid-tone threshold (normalized 0-1)
-  phi: 10.0,     // Moderately sharp transitions
+  phi: 10.0,     // Moderately sharp 
+  thresholdStrategy: new SoftThresholdStrategy()
 };
 
 /**

@@ -5,7 +5,7 @@
  * Used for the DoG computation in FDoG, where we want to blur across
  * edges but not along them.
  */
-import { BlurStrategy, GrayscaleImage, FlowField } from '../types.js';
+import { BlurStrategy, ChannelImage, FlowField } from '../types.js';
 import { BaseCPUBlur } from './base.js';
 /**
  * Configuration for flow-guided blur
@@ -26,7 +26,7 @@ export declare class CPUGradientAlignedBlur extends BaseCPUBlur implements BlurS
     private config;
     constructor(flowField: FlowField, config?: Partial<GradientAlignedBlurConfig>);
     setFlowField(flowField: FlowField): void;
-    blur(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage>;
+    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
     /**
      * Sample perpendicular to the flow direction
      */
@@ -35,7 +35,7 @@ export declare class CPUGradientAlignedBlur extends BaseCPUBlur implements BlurS
 export declare class GradientAlignedBlur implements BlurStrategy {
     private instance;
     constructor(flowField: FlowField, config?: Partial<GradientAlignedBlurConfig>);
-    blur(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage>;
+    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
     setFlowField(flowField: FlowField): void;
     dispose(): void;
 }
