@@ -14,7 +14,7 @@
  * Based on Section 5.2 of the XDoG paper.
  */
 
-import { GrayscaleImage } from '../types.js';
+import { ChannelImage } from '../types.js';
 import { RGBImage } from './base.js'
 
 // =============================================================================
@@ -174,7 +174,7 @@ export type PostProcessFn = (
  * Useful for computing histograms, statistics, or initializing state
  */
 export type PreProcessHook = (
-  stylized: GrayscaleImage,
+  stylized: ChannelImage,
   originalColor: RGBImage,
   state: Map<string, unknown>
 ) => void;
@@ -304,7 +304,7 @@ export class ColorRetentionStrategy {
   }
   
   async apply(
-    input: { stylized: GrayscaleImage; originalColor: RGBImage },
+    input: { stylized: ChannelImage; originalColor: RGBImage },
     configOverride?: Partial<ColorRetentionConfig>
   ): Promise<RGBImage> {
     const cfg = { ...this.config, ...configOverride };
@@ -414,7 +414,7 @@ export class ColorRetentionStrategy {
     index: number,
     width: number,
     height: number,
-    stylized: GrayscaleImage,
+    stylized: ChannelImage,
     originalColor: RGBImage,
     state: Map<string, unknown>
   ): PixelContext {

@@ -6,8 +6,8 @@
  * tangent extraction on the GPU.
  */
 
-import { GrayscaleImage, FlowField, Vec2, ETFConfig, DEFAULT_ETF_CONFIG } from '../types.js';
-import { createGrayscaleImage} from '../utils.js';
+import { ChannelImage, FlowField, Vec2, ETFConfig, DEFAULT_ETF_CONFIG } from '../types.js';
+import { createChannelImage} from '../utils.js';
 
 /**
  * WebGL context and resources for ETF computation
@@ -381,7 +381,7 @@ export class EdgeTangentFlowWebGL implements FlowField {
    * Compute ETF using WebGL
    */
   static compute(
-    input: GrayscaleImage,
+    input: ChannelImage,
     config: Partial<ETFConfig> = {},
     sigmaC?: number
   ): EdgeTangentFlowWebGL {
@@ -505,8 +505,8 @@ export class EdgeTangentFlowWebGL implements FlowField {
   /**
    * Visualize the flow field as a grayscale image
    */
-  visualize(): GrayscaleImage {
-    const output = createGrayscaleImage(this.width, this.height);
+  visualize(): ChannelImage {
+    const output = createChannelImage(this.width, this.height);
     
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {

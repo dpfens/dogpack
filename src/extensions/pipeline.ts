@@ -15,11 +15,11 @@ export type PipelineStep<TIn, TOut> = {
  * @example
  * ```typescript
  * const pipeline = new ExtensionPipeline()
- *   .addStep('naturalMedia', async (input: GrayscaleImage) => {
+ *   .addStep('naturalMedia', async (input: ChannelImage) => {
  *     const nm = new NaturalMediaStrategy({ style: 'pastel' });
  *     return nm.apply(input);
  *   })
- *   .addStep('antiAlias', async (image: GrayscaleImage) => {
+ *   .addStep('antiAlias', async (image: ChannelImage) => {
  *     const etf = EdgeTangentFlow.compute(originalInput);
  *     const aa = new AntiAliasingStrategy({ sigma: 1.5 });
  *     return aa.apply({ image, etf });

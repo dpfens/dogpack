@@ -10,8 +10,8 @@
  */
 
 
-import { GrayscaleImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from './types.js';
-import { createGrayscaleImage, getPixel, generateGaussianKernel } from './utils.js';
+import { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from './types.js';
+import { createChannelImage, getPixel, generateGaussianKernel } from './utils.js';
 
 
 const DEFAULT_BILATERAL_CONFIG: BilateralFilterConfig = {
@@ -43,12 +43,12 @@ const DEFAULT_KUWAHARA_CONFIG: KuwaharaFilterConfig = {
  * while supporting strong edges.
  */
 export function bilateralFilter(
-  input: GrayscaleImage,
+  input: ChannelImage,
   config: Partial<BilateralFilterConfig> = {}
-): GrayscaleImage {
+): ChannelImage {
   const cfg = { ...DEFAULT_BILATERAL_CONFIG, ...config };
   const { width, height } = input;
-  const output = createGrayscaleImage(width, height);
+  const output = createChannelImage(width, height);
   
   const radius = Math.ceil(cfg.sigmaSpatial * (cfg.radiusMultiplier ?? 2));
   const sigmaSpatial2 = 2 * cfg.sigmaSpatial * cfg.sigmaSpatial;
@@ -104,12 +104,12 @@ export function bilateralFilter(
  * Excellent for removing salt-and-pepper noise and small texture details.
  */
 export function medianFilter(
-  input: GrayscaleImage,
+  input: ChannelImage,
   config: Partial<MedianFilterConfig> = {}
-): GrayscaleImage {
+): ChannelImage {
   const cfg = { ...DEFAULT_MEDIAN_CONFIG, ...config };
   const { width, height } = input;
-  const output = createGrayscaleImage(width, height);
+  const output = createChannelImage(width, height);
   
   const radius = cfg.radius;
   const kernelSize = (2 * radius + 1) * (2 * radius + 1);
@@ -143,12 +143,12 @@ export function medianFilter(
  * preserved edges - great for a more stylized look.
  */
 export function kuwaharaFilter(
-  input: GrayscaleImage,
+  input: ChannelImage,
   config: Partial<KuwaharaFilterConfig> = {}
-): GrayscaleImage {
+): ChannelImage {
   const cfg = { ...DEFAULT_KUWAHARA_CONFIG, ...config };
   const { width, height } = input;
-  const output = createGrayscaleImage(width, height);
+  const output = createChannelImage(width, height);
   
   const r = cfg.radius;
   
@@ -202,9 +202,9 @@ export function kuwaharaFilter(
  * but faster. Good for very noisy images or when used with small sigma.
  */
 export function gaussianBlur(
-  input: GrayscaleImage,
+  input: ChannelImage,
   sigma: number = 1.0
-): GrayscaleImage {
+): ChannelImage {
   const { width, height } = input;
   
   if (sigma < 0.1) {
@@ -216,7 +216,7 @@ export function gaussianBlur(
   const kernel = generateGaussianKernel(sigma, kernelSize);
   
   // Horizontal pass
-  const temp = createGrayscaleImage(width, height);
+  const temp = createChannelImage(width, height);
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       let val = 0;
@@ -228,7 +228,7 @@ export function gaussianBlur(
   }
   
   // Vertical pass
-  const output = createGrayscaleImage(width, height);
+  const output = createChannelImage(width, height);
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       let val = 0;
@@ -249,12 +249,12 @@ export function gaussianBlur(
  * Can help make edges more distinct before processing.
  */
 export function enhanceContrast(
-  input: GrayscaleImage,
+  input: ChannelImage,
   blackPoint: number = 0.01,
   whitePoint: number = 0.99
-): GrayscaleImage {
+): ChannelImage {
   const { width, height, data } = input;
-  const output = createGrayscaleImage(width, height);
+  const output = createChannelImage(width, height);
   const size = width * height;
   
   // Find histogram percentiles
@@ -281,11 +281,11 @@ export function enhanceContrast(
  * Can help reduce noise by grouping similar intensities together.
  */
 export function quantize(
-  input: GrayscaleImage,
+  input: ChannelImage,
   levels: number = 8
-): GrayscaleImage {
+): ChannelImage {
   const { width, height, data } = input;
-  const output = createGrayscaleImage(width, height);
+  const output = createChannelImage(width, height);
   const size = width * height;
   
   const step = 1 / (levels - 1);
@@ -305,7 +305,7 @@ export const PreprocessingPresets = {
    * Light preprocessing - minimal smoothing
    * Good for: Clean studio photos, illustrations
    */
-  light: (input: GrayscaleImage): GrayscaleImage => {
+  light: (input: ChannelImage): ChannelImage => {
     return bilateralFilter(input, { sigmaSpatial: 2, sigmaRange: 0.08 });
   },
   
@@ -313,7 +313,7 @@ export const PreprocessingPresets = {
    * Standard preprocessing - balanced smoothing
    * Good for: Most outdoor photos, portraits
    */
-  standard: (input: GrayscaleImage): GrayscaleImage => {
+  standard: (input: ChannelImage): ChannelImage => {
     return bilateralFilter(input, { sigmaSpatial: 4, sigmaRange: 0.1 });
   },
   
@@ -321,7 +321,7 @@ export const PreprocessingPresets = {
    * Heavy preprocessing - aggressive noise removal
    * Good for: Very textured images (grass, foliage, fabric)
    */
-  heavy: (input: GrayscaleImage): GrayscaleImage => {
+  heavy: (input: ChannelImage): ChannelImage => {
     let result = bilateralFilter(input, { sigmaSpatial: 5, sigmaRange: 0.12 });
     result = bilateralFilter(result, { sigmaSpatial: 3, sigmaRange: 0.1 });
     return result;
@@ -331,7 +331,7 @@ export const PreprocessingPresets = {
    * Artistic preprocessing - painterly smoothing
    * Good for: Stylized/artistic output
    */
-  artistic: (input: GrayscaleImage): GrayscaleImage => {
+  artistic: (input: ChannelImage): ChannelImage => {
     let result = kuwaharaFilter(input, { radius: 4 });
     result = bilateralFilter(result, { sigmaSpatial: 2, sigmaRange: 0.08 });
     return result;
@@ -341,7 +341,7 @@ export const PreprocessingPresets = {
    * Photo preprocessing - for photos with grass/nature
    * Good for: Landscape, outdoor scenes
    */
-  nature: (input: GrayscaleImage): GrayscaleImage => {
+  nature: (input: ChannelImage): ChannelImage => {
     // First pass: aggressive bilateral to smooth texture
     let result = bilateralFilter(input, { sigmaSpatial: 6, sigmaRange: 0.15 });
     // Second pass: lighter bilateral to clean up
@@ -354,7 +354,7 @@ export const PreprocessingPresets = {
  * Convenience class for chaining preprocessing operations
  */
 export class Preprocessor {
-  private operations: Array<(img: GrayscaleImage) => GrayscaleImage> = [];
+  private operations: Array<(img: ChannelImage) => ChannelImage> = [];
   
   /**
    * Add bilateral filter to the pipeline
@@ -407,7 +407,7 @@ export class Preprocessor {
   /**
    * Apply all operations in sequence
    */
-  apply(input: GrayscaleImage): GrayscaleImage {
+  apply(input: ChannelImage): ChannelImage {
     let result = input;
     for (const op of this.operations) {
       result = op(result);

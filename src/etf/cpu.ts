@@ -8,8 +8,8 @@
  * Kang et al. (2007) "Coherent Line Drawing"
  */
 
-import { GrayscaleImage, FlowField, Vec2, ETFConfig, DEFAULT_ETF_CONFIG } from '../types.js';
-import { createGrayscaleImage, normalizeVec2, dotVec2, generateGaussianKernel } from '../utils.js';
+import { ChannelImage, FlowField, Vec2, ETFConfig, DEFAULT_ETF_CONFIG } from '../types.js';
+import { createChannelImage, normalizeVec2, dotVec2, generateGaussianKernel } from '../utils.js';
 
 /**
  * Structure tensor components at a pixel
@@ -72,7 +72,7 @@ export class EdgeTangentFlow implements FlowField {
    * @param sigmaC Structure tensor smoothing sigma (optional override)
    */
   static compute(
-    input: GrayscaleImage, 
+    input: ChannelImage, 
     config: Partial<ETFConfig> = {},
     sigmaC?: number
   ): EdgeTangentFlow {
@@ -107,8 +107,8 @@ export class EdgeTangentFlow implements FlowField {
    * Visualize the flow field as a grayscale image
    * Encodes direction as intensity (useful for debugging)
    */
-  visualize(): GrayscaleImage {
-    const output = createGrayscaleImage(this.width, this.height);
+  visualize(): ChannelImage {
+    const output = createChannelImage(this.width, this.height);
     
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
@@ -185,7 +185,7 @@ function hsvToRgb(h: number, s: number, v: number): [number, number, number] {
  * Compute image gradients using Sobel operator
  */
 // In etf.ts - Optimize gradient computation
-function computeGradients(input: GrayscaleImage): Gradients {
+function computeGradients(input: ChannelImage): Gradients {
   const { width, height } = input;
   const size = width * height;
   

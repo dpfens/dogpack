@@ -17,14 +17,14 @@
 // Types
 // ============================================================================
 
-import { GrayscaleImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from './types.js';
+import { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from './types.js';
 
 // ============================================================================
 // WebGL Context Management
 // ============================================================================
 
 let gl: WebGL2RenderingContext | null = null;
-let canvas: HTMLCanvasElement | null = null;
+let canvas: HTMLCanvasElement | OffscreenCanvas | null = null;
 
 // Shader program cache
 const programCache = new Map<string, WebGLProgram>();
@@ -32,6 +32,14 @@ const programCache = new Map<string, WebGLProgram>();
 // Reusable geometry buffers
 let quadVAO: WebGLVertexArrayObject | null = null;
 
+
+/**
+ * Check if running in a WebWorker context
+ */
+function isWorkerContext(): boolean {
+  return typeof document === 'undefined';
+}
+ 
 /**
  * Initialize or get WebGL context
  */
@@ -39,18 +47,26 @@ function getGL(): WebGL2RenderingContext | null {
   if (gl) return gl;
   
   try {
-    canvas = document.createElement('canvas');
-    canvas.width = 1;
-    canvas.height = 1;
+    let glCanvas: HTMLCanvasElement | OffscreenCanvas;
+ 
+    // Use OffscreenCanvas in WebWorker, HTMLCanvasElement in main thread
+    if (isWorkerContext()) {
+      glCanvas = new OffscreenCanvas(1, 1);
+    } else {
+      glCanvas = document.createElement('canvas');
+    }
     
-    gl = canvas.getContext('webgl2', {
+    glCanvas.width = 1;
+    glCanvas.height = 1;
+    
+    gl = glCanvas.getContext('webgl2', {
       alpha: false,
       antialias: false,
       depth: false,
       stencil: false,
       powerPreference: 'high-performance',
       preserveDrawingBuffer: false,
-    });
+    }) as WebGL2RenderingContext;
     
     if (!gl) {
       console.warn('WebGL 2.0 not available');
@@ -64,6 +80,8 @@ function getGL(): WebGL2RenderingContext | null {
     if (!ext1) {
       console.warn('EXT_color_buffer_float not available, some features may be limited');
     }
+    
+    canvas = glCanvas;
     
     // Setup reusable quad geometry
     setupQuadGeometry();
@@ -343,9 +361,9 @@ void main() {
 `;
 
 export function bilateralFilterWebGL(
-  input: GrayscaleImage,
+  input: ChannelImage,
   config: BilateralFilterConfig
-): GrayscaleImage {
+): ChannelImage {
   const gl = getGL();
   if (!gl) {
     console.warn('WebGL not available, using CPU fallback');
@@ -454,7 +472,7 @@ void main() {
 }
 `;
 
-export function gaussianBlurWebGL(input: GrayscaleImage, sigma: number = 1.0): GrayscaleImage {
+export function gaussianBlurWebGL(input: ChannelImage, sigma: number = 1.0): ChannelImage {
   if (sigma < 0.1) {
     return { data: new Float32Array(input.data), width: input.width, height: input.height };
   }
@@ -620,7 +638,7 @@ void main() {
 }
 `;
 
-export function medianFilterWebGL(input: GrayscaleImage, config: MedianFilterConfig): GrayscaleImage {
+export function medianFilterWebGL(input: ChannelImage, config: MedianFilterConfig): ChannelImage {
   const gl = getGL();
   if (!gl) {
     console.warn('WebGL not available, using CPU fallback');
@@ -723,7 +741,7 @@ void main() {
 }
 `;
 
-export function kuwaharaFilterWebGL(input: GrayscaleImage, config: KuwaharaFilterConfig): GrayscaleImage {
+export function kuwaharaFilterWebGL(input: ChannelImage, config: KuwaharaFilterConfig): ChannelImage {
   const gl = getGL();
   if (!gl) {
     console.warn('WebGL not available, using CPU fallback');
@@ -792,10 +810,10 @@ void main() {
 `;
 
 export function enhanceContrastWebGL(
-  input: GrayscaleImage,
+  input: ChannelImage,
   blackPoint: number = 0.01,
   whitePoint: number = 0.99
-): GrayscaleImage {
+): ChannelImage {
   const gl = getGL();
   const { width, height, data } = input;
   
@@ -884,7 +902,7 @@ void main() {
 }
 `;
 
-export function quantizeWebGL(input: GrayscaleImage, levels: number = 8): GrayscaleImage {
+export function quantizeWebGL(input: ChannelImage, levels: number = 8): ChannelImage {
   const gl = getGL();
   if (!gl) {
     // CPU fallback
@@ -945,13 +963,13 @@ export function quantizeWebGL(input: GrayscaleImage, levels: number = 8): Graysc
 // CPU FALLBACKS (for when WebGL is unavailable)
 // ============================================================================
 
-function getPixelClamped(img: GrayscaleImage, x: number, y: number): number {
+function getPixelClamped(img: ChannelImage, x: number, y: number): number {
   x = Math.max(0, Math.min(img.width - 1, x));
   y = Math.max(0, Math.min(img.height - 1, y));
   return img.data[y * img.width + x];
 }
 
-function bilateralFilterCPU(input: GrayscaleImage, config: BilateralFilterConfig): GrayscaleImage {
+function bilateralFilterCPU(input: ChannelImage, config: BilateralFilterConfig): ChannelImage {
   const { width, height, data } = input;
   const result = new Float32Array(width * height);
   
@@ -1000,7 +1018,7 @@ function bilateralFilterCPU(input: GrayscaleImage, config: BilateralFilterConfig
   return { data: result, width, height };
 }
 
-function gaussianBlurCPU(input: GrayscaleImage, sigma: number): GrayscaleImage {
+function gaussianBlurCPU(input: ChannelImage, sigma: number): ChannelImage {
   if (sigma < 0.1) {
     return { data: new Float32Array(input.data), width: input.width, height: input.height };
   }
@@ -1047,7 +1065,7 @@ function gaussianBlurCPU(input: GrayscaleImage, sigma: number): GrayscaleImage {
   return { data: result, width, height };
 }
 
-function medianFilterCPU(input: GrayscaleImage, config: MedianFilterConfig): GrayscaleImage {
+function medianFilterCPU(input: ChannelImage, config: MedianFilterConfig): ChannelImage {
   const { width, height } = input;
   const result = new Float32Array(width * height);
   const radius = config.radius;
@@ -1070,7 +1088,7 @@ function medianFilterCPU(input: GrayscaleImage, config: MedianFilterConfig): Gra
   return { data: result, width, height };
 }
 
-function kuwaharaFilterCPU(input: GrayscaleImage, config: KuwaharaFilterConfig): GrayscaleImage {
+function kuwaharaFilterCPU(input: ChannelImage, config: KuwaharaFilterConfig): ChannelImage {
   const { width, height } = input;
   const result = new Float32Array(width * height);
   const r = config.radius;
@@ -1122,27 +1140,27 @@ function kuwaharaFilterCPU(input: GrayscaleImage, config: KuwaharaFilterConfig):
 // ============================================================================
 
 export const PreprocessingPresetsWebGL = {
-  light: (input: GrayscaleImage): GrayscaleImage => {
+  light: (input: ChannelImage): ChannelImage => {
     return bilateralFilterWebGL(input, { sigmaSpatial: 2, sigmaRange: 0.08 });
   },
   
-  standard: (input: GrayscaleImage): GrayscaleImage => {
+  standard: (input: ChannelImage): ChannelImage => {
     return bilateralFilterWebGL(input, { sigmaSpatial: 4, sigmaRange: 0.1 });
   },
   
-  heavy: (input: GrayscaleImage): GrayscaleImage => {
+  heavy: (input: ChannelImage): ChannelImage => {
     let result = bilateralFilterWebGL(input, { sigmaSpatial: 5, sigmaRange: 0.12 });
     result = bilateralFilterWebGL(result, { sigmaSpatial: 3, sigmaRange: 0.1 });
     return result;
   },
   
-  artistic: (input: GrayscaleImage): GrayscaleImage => {
+  artistic: (input: ChannelImage): ChannelImage => {
     let result = kuwaharaFilterWebGL(input, { radius: 4 });
     result = bilateralFilterWebGL(result, { sigmaSpatial: 2, sigmaRange: 0.08 });
     return result;
   },
   
-  nature: (input: GrayscaleImage): GrayscaleImage => {
+  nature: (input: ChannelImage): ChannelImage => {
     let result = bilateralFilterWebGL(input, { sigmaSpatial: 6, sigmaRange: 0.15 });
     result = bilateralFilterWebGL(result, { sigmaSpatial: 3, sigmaRange: 0.08 });
     return result;
@@ -1154,7 +1172,7 @@ export const PreprocessingPresetsWebGL = {
 // ============================================================================
 
 export class PreprocessorWebGL {
-  private operations: Array<(img: GrayscaleImage) => GrayscaleImage> = [];
+  private operations: Array<(img: ChannelImage) => ChannelImage> = [];
   
   bilateral(config?: Partial<BilateralFilterConfig>): this {
     const cfg = { sigmaSpatial: 3, sigmaRange: 0.1, ...config };
@@ -1189,7 +1207,7 @@ export class PreprocessorWebGL {
     return this;
   }
   
-  apply(input: GrayscaleImage): GrayscaleImage {
+  apply(input: ChannelImage): ChannelImage {
     let result = input;
     for (const op of this.operations) {
       result = op(result);

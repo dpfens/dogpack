@@ -9,7 +9,7 @@
  */
 
 import { 
-  GrayscaleImage, 
+  ChannelImage, 
   DoGConfig, 
   FDoGConfig,
   DEFAULT_DOG_CONFIG, 
@@ -23,7 +23,7 @@ import {
 } from './types.js';
 import { DoGProcessor } from './dog.js';
 import { EdgeTangentFlow } from './etf/index.js';
-import { imageDataToGrayscale, grayscaleToImageData } from './utils.js';
+import { imageDataToLuminance, luminanceToImageData } from './utils.js';
 import { IsotropicBlur } from './blur/isotropic.js';
 import { GradientAlignedBlur } from './blur/gradient-aligned.js';
 import { FlowGuidedBlur } from './blur/flow-guided.js';
@@ -72,21 +72,21 @@ export class XDoG implements DoGImplementation {
   /**
    * Process a grayscale image
    */
-  async process(input: GrayscaleImage, overrides: Partial<DoGConfig> = {}): Promise<GrayscaleImage> {
+  async process(input: ChannelImage, overrides: Partial<DoGConfig> = {}): Promise<ChannelImage> {
     return this.processor.process(input, overrides);
   }
   
   /**
    * Process without thresholding (returns sharpened image)
    */
-  async processSharpened(input: GrayscaleImage, overrides: Partial<DoGConfig> = {}): Promise<GrayscaleImage> {
+  async processSharpened(input: ChannelImage, overrides: Partial<DoGConfig> = {}): Promise<ChannelImage> {
     return this.processor.processNoThreshold(input, overrides);
   }
   
   /**
    * Get raw DoG response for visualization
    */
-  async processRawDoG(input: GrayscaleImage, overrides: Partial<DoGConfig> = {}): Promise<GrayscaleImage> {
+  async processRawDoG(input: ChannelImage, overrides: Partial<DoGConfig> = {}): Promise<ChannelImage> {
     return this.processor.processRawDoG(input, overrides);
   }
 
@@ -101,17 +101,17 @@ export class XDoG implements DoGImplementation {
    * - Debugging and visualization
    * - Custom post-processing pipelines
    */
-  async processDetailed(input: GrayscaleImage, overrides: Partial<DoGConfig> = {}): Promise<DoGProcessingResult> {
+  async processDetailed(input: ChannelImage, overrides: Partial<DoGConfig> = {}): Promise<DoGProcessingResult> {
     return this.processor.processDetailed(input, overrides);
   }
   
   /**
    * Convenience method to process ImageData directly (e.g., from a canvas)
    */
-  async processImageData(input: ImageData, overrides: Partial<DoGConfig> = {}): Promise<ImageData> {
-    const grayscale = imageDataToGrayscale(input);
+  async processGrayscaleImageData(input: ImageData, overrides: Partial<DoGConfig> = {}): Promise<ImageData> {
+    const grayscale = imageDataToLuminance(input);
     const result = await this.process(grayscale, overrides);
-    return grayscaleToImageData(result);
+    return luminanceToImageData(result);
   }
   
   /**
@@ -180,7 +180,7 @@ export class FDoG implements DoGImplementation {
    * Unlike XDoG, FDoG computes a new flow field for each image,
    * so the full pipeline runs fresh each time.
    */
-  async process(input: GrayscaleImage, overrides: Partial<FDoGConfig> = {}): Promise<GrayscaleImage> {
+  async process(input: ChannelImage, overrides: Partial<FDoGConfig> = {}): Promise<ChannelImage> {
     const params = { ...this.config, ...overrides };
     
     // Step 1: Compute Edge Tangent Flow
@@ -212,14 +212,14 @@ export class FDoG implements DoGImplementation {
    * Process with more control over individual stages
    */
   async processDetailed(
-    input: GrayscaleImage, 
+    input: ChannelImage, 
     overrides: Partial<FDoGConfig> = {}
   ): Promise<{
-    result: GrayscaleImage;
+    result: ChannelImage;
     etf: EdgeTangentFlow;
-    sharpened: GrayscaleImage;
-    thresholded: GrayscaleImage;
-    smoothed: GrayscaleImage;
+    sharpened: ChannelImage;
+    thresholded: ChannelImage;
+    smoothed: ChannelImage;
   }> {
     const params = { ...this.config, ...overrides };
     
@@ -234,8 +234,10 @@ export class FDoG implements DoGImplementation {
     const processor = new DoGProcessor(gradientBlur, params);
     
     // Get intermediate results
-    const sharpened = await processor.processNoThreshold(input);
-    const thresholded = await processor.process(input);
+    const [sharpened, thresholded] = await Promise.all([
+      processor.processNoThreshold(input),
+      processor.process(input)
+    ]);
     
     // Flow-aligned smoothing
     let smoothed = thresholded;
@@ -258,10 +260,10 @@ export class FDoG implements DoGImplementation {
   /**
    * Convenience method to process ImageData directly
    */
-  async processImageData(input: ImageData, overrides: Partial<FDoGConfig> = {}): Promise<ImageData> {
-    const grayscale = imageDataToGrayscale(input);
+  async processGrayscaleImageData(input: ImageData, overrides: Partial<FDoGConfig> = {}): Promise<ImageData> {
+    const grayscale = imageDataToLuminance(input);
     const result = await this.process(grayscale, overrides);
-    return grayscaleToImageData(result);
+    return luminanceToImageData(result);
   }
   
   /**
@@ -271,10 +273,10 @@ export class FDoG implements DoGImplementation {
    * can be computed once and reused, or interpolated between keyframes.
    */
   async processWithETF(
-    input: GrayscaleImage,
+    input: ChannelImage,
     etf: EdgeTangentFlow,
     overrides: Partial<FDoGConfig> = {}
-  ): Promise<GrayscaleImage> {
+  ): Promise<ChannelImage> {
     const params = { ...this.config, ...overrides };
     
     const gradientBlur = new GradientAlignedBlur(etf);
@@ -301,7 +303,7 @@ export class FDoG implements DoGImplementation {
    * 
    * Useful for visualizing the flow field or reusing it across frames.
    */
-  computeETF(input: GrayscaleImage, sigmaC?: number): EdgeTangentFlow {
+  computeETF(input: ChannelImage, sigmaC?: number): EdgeTangentFlow {
     const sigma = sigmaC ?? this.config.sigmaC;
     return EdgeTangentFlow.compute(input, {
       iterations: DEFAULT_ETF_CONFIG.iterations,
@@ -313,10 +315,10 @@ export class FDoG implements DoGImplementation {
    * Apply only the anti-aliasing pass to an already-processed image
    */
   async applyAntiAliasing(
-    input: GrayscaleImage,
+    input: ChannelImage,
     etf: EdgeTangentFlow,
     sigmaA?: number
-  ): Promise<GrayscaleImage> {
+  ): Promise<ChannelImage> {
     const sigma = sigmaA ?? this.config.sigmaA;
     if (sigma <= 0) {
       return { data: new Float32Array(input.data), width: input.width, height: input.height };
@@ -346,32 +348,20 @@ export class FDoG implements DoGImplementation {
  * Convenience function for one-shot XDoG processing
  */
 export async function xdog(
-  input: GrayscaleImage | ImageData,
+  input: ChannelImage,
   config: Partial<XDoGConfig> = {}
-): Promise<GrayscaleImage> {
+): Promise<ChannelImage> {
   const processor = new XDoG(config);
-  
-  if ('data' in input && input.data instanceof Uint8ClampedArray) {
-    const grayscale = imageDataToGrayscale(input as ImageData);
-    return processor.process(grayscale);
-  }
-  
-  return processor.process(input as GrayscaleImage);
+  return processor.process(input);
 }
 
 /**
  * Convenience function for one-shot FDoG processing
  */
 export async function fdog(
-  input: GrayscaleImage | ImageData,
+  input: ChannelImage,
   config: Partial<FDoGConfig> = {}
-): Promise<GrayscaleImage> {
+): Promise<ChannelImage> {
   const processor = new FDoG(config);
-  
-  if ('data' in input && input.data instanceof Uint8ClampedArray) {
-    const grayscale = imageDataToGrayscale(input as ImageData);
-    return processor.process(grayscale);
-  }
-  
-  return processor.process(input as GrayscaleImage);
+  return processor.process(input);
 }

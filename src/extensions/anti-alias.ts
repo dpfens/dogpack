@@ -1,5 +1,5 @@
 import { FlowGuidedBlur } from "../blur/index.js";
-import { FlowField, GrayscaleImage } from "../types.js";
+import { FlowField, ChannelImage } from "../types.js";
 import { ExtensionStrategy } from "./base.js";
 
 /**
@@ -48,8 +48,8 @@ const DEFAULT_AA_CONFIG: AntiAliasingConfig = {
  */
 export class AntiAliasingStrategy implements ExtensionStrategy<
   AntiAliasingConfig,
-  { image: GrayscaleImage; etf: FlowField },
-  GrayscaleImage
+  { image: ChannelImage; etf: FlowField },
+  ChannelImage
 > {
   private config: AntiAliasingConfig;
   
@@ -58,9 +58,9 @@ export class AntiAliasingStrategy implements ExtensionStrategy<
   }
   
   async apply(
-    input: { image: GrayscaleImage; etf: FlowField },
+    input: { image: ChannelImage; etf: FlowField },
     configOverride?: Partial<AntiAliasingConfig>
-  ): Promise<GrayscaleImage> {
+  ): Promise<ChannelImage> {
     const cfg = { ...this.config, ...configOverride };
     const { image, etf } = input;
     

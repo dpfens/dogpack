@@ -1,4 +1,4 @@
-import { FDoGConfig, GrayscaleImage } from "../types.js";
+import { FDoGConfig, ChannelImage } from "../types.js";
 import { FDoG, XDoG } from "../xdog.js";
 import { ExtensionStrategy } from "./base.js";
 
@@ -55,8 +55,8 @@ export interface NaturalMediaConfig {
  */
 export class NaturalMediaStrategy implements ExtensionStrategy<
   NaturalMediaConfig,
-  GrayscaleImage,
-  GrayscaleImage
+  ChannelImage,
+  ChannelImage
 > {
   private config: NaturalMediaConfig;
   
@@ -166,9 +166,9 @@ export class NaturalMediaStrategy implements ExtensionStrategy<
   }
   
   async apply(
-    input: GrayscaleImage,
+    input: ChannelImage,
     configOverride?: Partial<NaturalMediaConfig>
-  ): Promise<GrayscaleImage> {
+  ): Promise<ChannelImage> {
     const mergedConfig = { ...this.config, ...configOverride };
     const resolved = new NaturalMediaStrategy(mergedConfig).getResolvedConfig();
     

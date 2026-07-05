@@ -6,8 +6,8 @@
  * weighted by a Gaussian kernel. This produces blur that follows edge contours
  * rather than blurring across them.
  */
-import { BlurStrategy, GrayscaleImage, FlowField } from '../types.js';
-import { createGrayscaleImage, getPixelBilinear, generateGaussianKernel } from '../utils.js';
+import { BlurStrategy, ChannelImage, FlowField } from '../types.js';
+import { createChannelImage, getPixelBilinear, generateGaussianKernel } from '../utils.js';
 import { createProgram } from '../utils/webgl.js';
 import { BaseCPUBlur, BaseWebGLBlur, BaseWebGPUBlur } from './base.js';
 
@@ -55,7 +55,7 @@ export class CPUFlowGuidedBlur extends BaseCPUBlur implements BlurStrategy, Flow
     this.flowField = flowField;
   }
   
-  async blur(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage> {
+  async blur(input: ChannelImage, sigma: number): Promise<ChannelImage> {
     if (sigma < 0.1) {
       return {
         data: new Float32Array(input.data),
@@ -64,7 +64,7 @@ export class CPUFlowGuidedBlur extends BaseCPUBlur implements BlurStrategy, Flow
       };
     }
     
-    const output = createGrayscaleImage(input.width, input.height);
+    const output = createChannelImage(input.width, input.height);
     
     // Number of samples along the flow line
     // Paper samples at 2× sigma in each direction
@@ -91,7 +91,7 @@ export class CPUFlowGuidedBlur extends BaseCPUBlur implements BlurStrategy, Flow
    * accumulating weighted samples to produce a blur along the edge direction.
    */
   private sampleAlongFlow(
-    input: GrayscaleImage,
+    input: ChannelImage,
     startX: number,
     startY: number,
     halfSamples: number,
@@ -361,7 +361,7 @@ export class WebGLFlowGuidedBlur extends BaseWebGLBlur implements BlurStrategy, 
     this.flowField = flowField;
   }
   
-  async blur(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage> {
+  async blur(input: ChannelImage, sigma: number): Promise<ChannelImage> {
     if (sigma < 0.1) {
       return {
         data: new Float32Array(input.data),
@@ -428,7 +428,7 @@ export class WebGLFlowGuidedBlur extends BaseWebGLBlur implements BlurStrategy, 
     const outputRGBA = new Uint8Array(width * height * 4);
     gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, outputRGBA);
     
-    const output = createGrayscaleImage(width, height);
+    const output = createChannelImage(width, height);
     for (let i = 0; i < output.data.length; i++) {
       output.data[i] = outputRGBA[i * 4] / 255;
     }
@@ -723,7 +723,7 @@ export class WebGPUFlowGuidedBlur extends BaseWebGPUBlur implements BlurStrategy
     this.flowField = flowField;
   }
   
-  async blur(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage> {
+  async blur(input: ChannelImage, sigma: number): Promise<ChannelImage> {
     if (sigma < 0.1) {
       return {
         data: new Float32Array(input.data),
@@ -827,7 +827,7 @@ export class FlowGuidedBlur implements BlurStrategy {
         }
     }
 
-    async blur(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage> {
+    async blur(input: ChannelImage, sigma: number): Promise<ChannelImage> {
         return this.instance.blur(input, sigma);
     }
 

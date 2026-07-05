@@ -1,5 +1,5 @@
-import { GrayscaleImage } from "../types.js";
-import { createGrayscaleImage, getPixel, getPixelBilinear } from "../utils.js";
+import { ChannelImage } from "../types.js";
+import { createChannelImage, getPixel, getPixelBilinear } from "../utils.js";
 import { ExtensionStrategy } from "./base.js";
 
 
@@ -8,7 +8,7 @@ import { ExtensionStrategy } from "./base.js";
  */
 export interface HatchTexture {
   /** Grayscale texture data (tiled as needed) */
-  data: GrayscaleImage;
+  data: ChannelImage;
   /** Rotation angle in radians (0 = horizontal) */
   rotation: number;
 }
@@ -37,7 +37,7 @@ export interface HatchingConfig {
   /**
    * Background/paper texture (optional)
    */
-  paperTexture?: GrayscaleImage;
+  paperTexture?: ChannelImage;
   
   /**
    * Sharpening strength for threshold masks (default: 20)
@@ -90,8 +90,8 @@ const DEFAULT_HATCHING_CONFIG: HatchingConfig = {
  */
 export class HatchingStrategy implements ExtensionStrategy<
   HatchingConfig,
-  { sharpened: GrayscaleImage; original?: GrayscaleImage },
-  GrayscaleImage
+  { sharpened: ChannelImage; original?: ChannelImage },
+  ChannelImage
 > {
   private config: HatchingConfig;
   
@@ -111,14 +111,14 @@ export class HatchingStrategy implements ExtensionStrategy<
    * cumulative effect where dark areas have more hatching.
    */
   generateMasks(
-    sharpened: GrayscaleImage,
+    sharpened: ChannelImage,
     configOverride?: Partial<HatchingConfig>
-  ): GrayscaleImage[] {
+  ): ChannelImage[] {
     const cfg = { ...this.config, ...configOverride };
     const { width, height } = sharpened;
     const levels = [...cfg.thresholdLevels].sort((a, b) => a - b);
     
-    const masks: GrayscaleImage[] = [];
+    const masks: ChannelImage[] = [];
     
     if (cfg.cumulative) {
       // Cumulative masks for tonal art maps
@@ -126,7 +126,7 @@ export class HatchingStrategy implements ExtensionStrategy<
       // Darkest areas activate ALL masks, lightest activate NONE
       
       for (let i = 0; i < levels.length; i++) {
-        const mask = createGrayscaleImage(width, height);
+        const mask = createChannelImage(width, height);
         const threshold = levels[i];
         
         for (let j = 0; j < width * height; j++) {
@@ -148,7 +148,7 @@ export class HatchingStrategy implements ExtensionStrategy<
       }
       
       // Add a final "base" mask that's always slightly active for paper texture
-      const baseMask = createGrayscaleImage(width, height);
+      const baseMask = createChannelImage(width, height);
       for (let j = 0; j < width * height; j++) {
         baseMask.data[j] = 0.0; // No hatching in lightest areas
       }
@@ -157,7 +157,7 @@ export class HatchingStrategy implements ExtensionStrategy<
     } else {
       // Non-cumulative: independent bands (original behavior, but fixed)
       for (let i = 0; i <= levels.length; i++) {
-        const mask = createGrayscaleImage(width, height);
+        const mask = createChannelImage(width, height);
         
         const lowerBound = i === 0 ? 0 : levels[i - 1];
         const upperBound = i === levels.length ? 1 : levels[i];
@@ -187,9 +187,9 @@ export class HatchingStrategy implements ExtensionStrategy<
   }
   
   async apply(
-    input: { sharpened: GrayscaleImage; original?: GrayscaleImage },
+    input: { sharpened: ChannelImage; original?: ChannelImage },
     configOverride?: Partial<HatchingConfig>
-  ): Promise<GrayscaleImage> {
+  ): Promise<ChannelImage> {
     const cfg = { ...this.config, ...configOverride };
     const { sharpened } = input;
     const { width, height } = sharpened;
@@ -197,7 +197,7 @@ export class HatchingStrategy implements ExtensionStrategy<
     // Generate masks
     const masks = this.generateMasks(sharpened, cfg);
     
-    const output = createGrayscaleImage(width, height);
+    const output = createChannelImage(width, height);
     
     if (!cfg.textures || cfg.textures.length === 0) {
       // Simple tonal bands without textures
@@ -316,7 +316,7 @@ export class HatchingStrategy implements ExtensionStrategy<
     thickness: number,
     rotation: number = 0
   ): HatchTexture {
-    const data = createGrayscaleImage(width, height);
+    const data = createChannelImage(width, height);
     
     // Create horizontal lines (rotation is applied during sampling)
     for (let y = 0; y < height; y++) {
@@ -353,7 +353,7 @@ export class HatchingStrategy implements ExtensionStrategy<
     angle1: number = 0,
     angle2: number = Math.PI / 2
   ): HatchTexture {
-    const data = createGrayscaleImage(width, height);
+    const data = createChannelImage(width, height);
     
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
