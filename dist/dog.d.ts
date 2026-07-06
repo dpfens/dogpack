@@ -93,16 +93,6 @@ export declare class DoGProcessor {
      */
     private computeSharpening;
     /**
-     * Apply soft thresholding using Equation 5 from the paper:
-     *
-     * T_ε,φ(u) = {
-     *   1                           if u >= ε
-     *   1 + tanh(φ · (u - ε))       otherwise
-     * }
-     *
-     
-     */
-    /**
      * Apply thresholding using the configured strategy
      * This creates the characteristic XDoG stylization:
      * - Values above ε become white (1)

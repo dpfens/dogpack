@@ -16,7 +16,7 @@ export interface Vec2 {
 }
 
 /**
- * Grayscale image representation
+ * Single-channel image representation
  * Using a flat Float32Array for performance and future GPU compatibility
  * Values are normalized to 0-1 range
  */
@@ -138,7 +138,7 @@ export interface DoGConfig {
    * Note: This replaces the original τ parameter. The relationship is:
    * p = τ / (τ - 1), or equivalently τ = p / (p + 1)
    */
-  p: number;
+  p: number | ChannelImage; 
   
   /** 
    * Threshold for white vs black transition (default: 0.5)
@@ -146,7 +146,7 @@ export interface DoGConfig {
    * Should be in 0-1 range for normalized images
    * Paper's Appendix A shows values around 0.72-0.88 (normalized from 0-100)
    */
-  epsilon: number;
+  epsilon: number | ChannelImage;
   
   /** 
    * Sharpness of the soft threshold / tanh steepness (default: 10)
@@ -155,7 +155,7 @@ export interface DoGConfig {
    * - φ ≈ 1-10: Moderate transitions
    * - φ >> 10: Hard black/white threshold (approaches step function)
    */
-  phi: number;
+  phi: number | ChannelImage;
 
   thresholdStrategy: ThresholdStrategy;
 }

@@ -91,7 +91,7 @@ export { EdgeTangentFlow } from './etf/index.js';
 export { PreprocessingPresets, Preprocessor, bilateralFilter, medianFilter, kuwaharaFilter, gaussianBlur, enhanceContrast, quantize } from './preprocess.js';
 export { PreprocessingPresetsWebGL, PreprocessorWebGL } from './preprocess-webgl.js';
 export type { ThresholdConfig, ThresholdStrategy } from './threshold.js';
-export { AdaptiveThresholdStrategy, BilateralThresholdStrategy, HysteresisThresholdStrategy, SoftThresholdStrategy } from './threshold.js';
+export { HysteresisThresholdStrategy, SoftThresholdStrategy } from './threshold.js';
 export type { Vec2, ChannelImage, RGBImage, FlowField, DoGConfig, ETFConfig, FDoGConfig, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from './types.js';
 export { DEFAULT_DOG_CONFIG, DEFAULT_ETF_CONFIG, DEFAULT_FDOG_CONFIG, STYLE_PRESETS, FDOG_STYLE_PRESETS, tauToP, pToTau } from './types.js';
 export { createChannelImage, cloneChannelImage, imageDataToLuminance, luminanceToImageData, rgbToGrayscale, getPixel, getPixelBilinear, setPixel, normalizeVec2, dotVec2, perpendicular, generateGaussianKernel, computeKernelSize, clamp, lerp, } from './utils.js';

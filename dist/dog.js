@@ -9,7 +9,7 @@
  * advanced image stylization" by Winnemöller et al. (2012)
  */
 import { DEFAULT_DOG_CONFIG } from './types.js';
-import { createChannelImage } from './utils.js';
+import { at, createChannelImage } from './utils.js';
 import { SoftThresholdStrategy } from './threshold.js';
 /**
  * Difference of Gaussians processor
@@ -155,26 +155,12 @@ export class DoGProcessor {
     computeSharpening(blur1, blur2, p) {
         const output = createChannelImage(blur1.width, blur1.height);
         const size = blur1.width * blur1.height;
-        // S = (1 + p) * blur1 - p * blur2
-        // This is equivalent to: blur1 + p * (blur1 - blur2)
-        // Which is: blur1 + p * DoG
-        const factor1 = 1 + p;
-        const factor2 = p;
         for (let i = 0; i < size; i++) {
-            output.data[i] = factor1 * blur1.data[i] - factor2 * blur2.data[i];
+            const pValue = at(p, i);
+            output.data[i] = (1 + pValue) * blur1.data[i] - pValue * blur2.data[i];
         }
         return output;
     }
-    /**
-     * Apply soft thresholding using Equation 5 from the paper:
-     *
-     * T_ε,φ(u) = {
-     *   1                           if u >= ε
-     *   1 + tanh(φ · (u - ε))       otherwise
-     * }
-     *
-     
-     */
     /**
      * Apply thresholding using the configured strategy
      * This creates the characteristic XDoG stylization:

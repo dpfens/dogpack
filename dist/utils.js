@@ -176,4 +176,10 @@ export function clamp(value, min, max) {
 export function lerp(a, b, t) {
     return a + (b - a) * t;
 }
+/**
+ * Reads a value that may be a scalar (uniform) or a per-pixel ChannelImage.
+ */
+export function at(value, i) {
+    return typeof value === "number" ? value : value.data[i];
+}
 //# sourceMappingURL=utils.js.map

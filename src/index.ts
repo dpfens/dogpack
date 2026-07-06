@@ -105,6 +105,12 @@ export type {
 export { EdgeTangentFlow } from './etf/index.js';
 
 // Preprocessing
+export {
+  LocalVarianceConfig,
+  LocalVariancePreprocessor,
+  LocalVariancePreprocessorOptimized
+} from './preprocess/local-variance.js';
+
 export { 
   PreprocessingPresets, 
   Preprocessor,
@@ -122,8 +128,6 @@ export type {
   ThresholdStrategy
 } from './threshold.js';
 export {
-  AdaptiveThresholdStrategy,
-  BilateralThresholdStrategy,
   HysteresisThresholdStrategy,
   SoftThresholdStrategy
 } from './threshold.js'

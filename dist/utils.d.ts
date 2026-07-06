@@ -76,4 +76,8 @@ export declare function clamp(value: number, min: number, max: number): number;
  * Linear interpolation
  */
 export declare function lerp(a: number, b: number, t: number): number;
+/**
+ * Reads a value that may be a scalar (uniform) or a per-pixel ChannelImage.
+ */
+export declare function at(value: number | ChannelImage, i: number): number;
 //# sourceMappingURL=utils.d.ts.map
