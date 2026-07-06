@@ -208,3 +208,10 @@ export function clamp(value: number, min: number, max: number): number {
 export function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
+
+/**
+ * Reads a value that may be a scalar (uniform) or a per-pixel ChannelImage.
+ */
+export function at(value: number | ChannelImage, i: number): number {
+  return typeof value === "number" ? value : value.data[i];
+}
