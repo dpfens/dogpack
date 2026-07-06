@@ -17,15 +17,15 @@
  *   ↓
  * [LocalVariancePreprocessor.process(image)]
  *   ↓
- * Texture Strength Map (Float32Array, values 0-1)
+ * Texture Strength Map (ChannelImage, values 0-1)
  *   ├─ 0 = pure structure (object boundaries)
  *   └─ 1 = pure texture (fabric weave, skin pores, foliage, etc.)
  *   ↓
- * [Create Adaptive XDoG Parameters]
- * τ_adaptive = τ_base + α × texture_strength
- * ε_adaptive = ε_base + β × texture_strength
+ * [Build adaptive p / epsilon ChannelImages from the texture map]
+ * p_adaptive(x,y)       = p_base + α × texture_strength(x,y)
+ * epsilon_adaptive(x,y) = epsilon_base + β × texture_strength(x,y)
  *   ↓
- * [Run XDoG/FDoG/HDoG with adaptive parameters]
+ * [Pass as ChannelImage overrides straight into XDoG/FDoG.process()]
  *   ↓
  * High-quality Edge Map (texture suppressed, structure preserved)
  * ```
@@ -33,46 +33,59 @@
  * ## Why This Works
  *
  * Standard XDoG uses constant parameters across the entire image:
- * - `τ = 0.95` everywhere means same edge suppression in texture and structure regions
+ * - `p = 20` everywhere means the same edge emphasis in texture and structure regions
  * - Result: Either suppresses textures (loses details) or preserves them (cluttered edges)
  *
- * Texture-aware XDoG adapts the inhibition parameter:
- * - Structure regions (texture_strength ≈ 0): τ ≈ 0.95 (normal edge detection)
- * - Texture regions (texture_strength ≈ 1): τ ≈ 1.25 (strong suppression)
+ * Texture-aware XDoG adapts the sharpening/inhibition strength spatially:
+ * - Structure regions (texture_strength ≈ 0): p at its base value (normal edge detection)
+ * - Texture regions (texture_strength ≈ 1): p pushed lower, or epsilon pushed higher (strong suppression)
  * - Transition regions blend smoothly between both
+ *
+ * **Important coupling, per Winnemöller et al. (2012):** the DoG mixing weight (`p`, or
+ * the original `τ` it's reparameterized from) directly changes the average brightness
+ * of the filtered response. Varying `p` spatially without also shifting `epsilon` in the
+ * same region can introduce a visible local brightness/tone artifact rather than clean
+ * texture suppression. In practice this means `p_adaptive` and `epsilon_adaptive` should
+ * usually be derived from the *same* texture map and applied together, not just one of them.
  *
  * This allows **selective suppression**: texture edges die out while structural edges remain.
  *
  * ## Implementation Pattern
  *
+ * `p`, `epsilon`, and `phi` on `DoGConfig` all accept either a plain `number` or a
+ * `ChannelImage` (see `types.ts`), so an adaptive parameter map can be passed directly
+ * as a config override — no manual blur/threshold loop needed.
+ *
  * ```typescript
- * // Step 1: Detect texture regions (preprocessing)
+ * import { XDoG } from "./xdog.js";
+ * import { ChannelImage } from "./types.js";
+ *
+ * // Step 1: Detect texture regions (preprocessing, unrelated to XDoG/FDoG)
  * const preprocessor = new LocalVariancePreprocessor({
  *   windowRadius: 2,           // 5×5 window
  *   normalizeByGradient: true, // Distinguish texture from edges
  * });
  * const textureMap = preprocessor.process(grayImage);
- * // textureMap.data is Float32Array where each value ∈ [0, 1]
+ * // textureMap: ChannelImage where each value ∈ [0, 1]
  *
- * // Step 2: Create adaptive XDoG parameters (external to preprocessor)
- * const τ_base = 0.95;
- * const α = 0.3;  // Texture sensitivity
- * const τ_adaptive = new Float32Array(textureMap.data.length);
- * for (let i = 0; i < τ_adaptive.length; i++) {
- *   τ_adaptive[i] = τ_base + α * textureMap.data[i];
+ * // Step 2: Build adaptive parameter maps from texture strength (external to XDoG)
+ * const pBase = 20;
+ * const epsilonBase = 0.5;
+ * const alpha = -10;  // p sensitivity: texture regions get weaker sharpening
+ * const beta = 0.3;   // epsilon sensitivity: texture regions get a higher threshold
+ *
+ * const pData = new Float32Array(textureMap.data.length);
+ * const epsilonData = new Float32Array(textureMap.data.length);
+ * for (let i = 0; i < textureMap.data.length; i++) {
+ *   pData[i] = Math.max(0, pBase + alpha * textureMap.data[i]);
+ *   epsilonData[i] = epsilonBase + beta * textureMap.data[i];
  * }
+ * const pMap: ChannelImage = { data: pData, width: textureMap.width, height: textureMap.height };
+ * const epsilonMap: ChannelImage = { data: epsilonData, width: textureMap.width, height: textureMap.height };
  *
- * // Step 3: Run XDoG with adaptive parameters (standard XDoG code)
- * const gaussian_σ = gaussianBlur(grayImage, 1.5);
- * const gaussian_kσ = gaussianBlur(grayImage, 1.5 * 1.6);
- *
- * const xdog = new Float32Array(grayImage.data.length);
- * for (let i = 0; i < xdog.length; i++) {
- *   // Use τ_adaptive[i] instead of constant τ_base
- *   xdog[i] = gaussian_σ.data[i] - τ_adaptive[i] * gaussian_kσ.data[i];
- * }
- *
- * const edgeMap = softThreshold(xdog, epsilon, phi);
+ * // Step 3: Run XDoG, passing both adaptive maps together as overrides
+ * const xdog = new XDoG({ sigma: 1.0, k: 1.6, phi: 10 });
+ * const edgeMap = await xdog.process(grayImage, { p: pMap, epsilon: epsilonMap });
  * ```
  *
  * ## What the Preprocessor Computes
@@ -121,28 +134,26 @@
  *
  * ## Integration with XDoG Variants
  *
- * The texture map is domain-agnostic and works with all XDoG variants:
+ * The texture map is domain-agnostic and, once turned into a `p`/`epsilon`/`phi`
+ * `ChannelImage`, works identically with either variant since both accept the
+ * same `DoGConfig` overrides:
  *
  * **Standard XDoG**:
- * ```
- * τ_map[i] = τ_base + α * texture_map.data[i]
- * xdog[i] = G_σ[i] - τ_map[i] * G_kσ[i]
- * ```
- *
- * **FDoG (Flow-based)**: Same approach, just apply τ_map to anisotropic Gaussians
- * ```
- * gaussian_σ = anisotropicBlur(image, σ, structure_tensor)
- * gaussian_kσ = anisotropicBlur(image, k*σ, structure_tensor)
- * xdog[i] = gaussian_σ[i] - τ_map[i] * gaussian_kσ[i]
+ * ```typescript
+ * const xdog = new XDoG({ sigma: 1.0, k: 1.6, phi: 10 });
+ * const edgeMap = await xdog.process(grayImage, { p: pMap, epsilon: epsilonMap });
  * ```
  *
- * **HDoG (Line + Tone)**: Apply separately to both components
+ * **FDoG (Flow-based)**: Same overrides — FDoG's flow/blur stages (σc, σm, σa)
+ * are unaffected; only the DoG mixing and thresholding stages are modulated.
+ * ```typescript
+ * const fdog = new FDoG({ sigma: 1.0, k: 1.6, phi: 10, sigmaC: 2.5, sigmaM: 4.0, sigmaA: 1.0 });
+ * const edgeMap = await fdog.process(grayImage, { p: pMap, epsilon: epsilonMap });
  * ```
- * τ_line[i] = τ_line_base + α_line * texture_map.data[i]
- * τ_tone[i] = τ_tone_base + α_tone * texture_map.data[i]
- * line_output[i] = G_σ[i] - τ_line[i] * G_kσ[i]
- * tone_output[i] = G_σ2[i] - τ_tone[i] * G_kσ2[i]
- * ```
+ *
+ * **HDoG (Line + Tone)**: Not currently implemented in this codebase. If added,
+ * the same pattern would apply: build two texture-derived maps (one per
+ * component's `p`/`epsilon`) and pass each to its respective processor call.
  *
  * ## Stacking with Other Preprocessors
  *
@@ -163,6 +174,8 @@
  * }
  *
  * // Use combined map with XDoG
+ * const pMap = buildAdaptiveMap({ data: textureMap, width: image.width, height: image.height }, { base: 20, sensitivity: -10 });
+ * const edgeMap = await myXDoG.process(image, { p: pMap });
  * ```
  *
  * ## Notes
@@ -170,7 +183,8 @@
  * - This preprocessor is **NOT integrated into XDoG/FDoG/HDoG**.
  *   It outputs a texture map that you use externally to create adaptive parameters.
  * - The texture map is computed **once** and can be reused with different XDoG parameters.
- * - For best results, tune `textureAlpha` (α parameter in τ_adaptive) per application domain.
+ * - For best results, tune the sensitivity (α/β) used when deriving `p_adaptive`/`epsilon_adaptive`
+ *   from the texture map, per application domain.
  * - Consider using the Optimized version for real-time applications.
  *
  * @see {@link LocalVarianceConfig} for configuration options
@@ -187,6 +201,20 @@
  * 2. Combined with other texture detection methods (Spectral, Patch-based, etc.)
  * 3. Tuned independently from edge detection logic
  * 
+ * Usage Pattern:
+ * ```
+ * const textureMap = preprocessor.process(image);
+ * // textureMap is a ChannelImage where each pixel value = texture strength (0-1)
+ * // 0 = pure structure, 1 = pure texture
+ * 
+ * // Turn it into an adaptive p/epsilon map, then pass as a DoGConfig override:
+ * const pMap = deriveAdaptiveMap(textureMap, pBase, alpha);
+ * const edgeMap = await xdog.process(image, { p: pMap });
+ * // or combine with other texture maps first:
+ * const combinedMap = combineTextureMaps([textureMap1, textureMap2, textureMap3]);
+ * const pMap2 = deriveAdaptiveMap(combinedMap, pBase, alpha);
+ * const edgeMap2 = await xdog.process(image, { p: pMap2 });
+ * ```
  * 
  * This separation of concerns allows:
  * - Stacking multiple texture detection methods
@@ -364,7 +392,6 @@ export class LocalVariancePreprocessor {
     cy: number,
     radius: number
   ): number {
-    const windowSize = (2 * radius + 1) * (2 * radius + 1);
     let sum = 0;
     let sumSquares = 0;
     let count = 0;
@@ -596,8 +623,11 @@ export class LocalVariancePreprocessorOptimized {
  * const textureMap = preprocessor.process(grayImage);
  * // textureMap: ChannelImage with texture strength (0-1) at each pixel
  * 
- * // Pass to your XDoG/FDoG/HDoG implementation
- * const edgeMap = myXDoGImplementation.process(grayImage, textureMap);
+ * // Derive adaptive p/epsilon maps and pass as DoGConfig overrides
+ * const pMap = buildAdaptiveMap(textureMap, { base: 20, sensitivity: -10 });
+ * const epsilonMap = buildAdaptiveMap(textureMap, { base: 0.5, sensitivity: 0.3 });
+ * const xdog = new XDoG({ sigma: 1.0, k: 1.6, phi: 10 });
+ * const edgeMap = await xdog.process(grayImage, { p: pMap, epsilon: epsilonMap });
  * ```
  * 
  * Pattern 2: Stacking multiple texture detection methods
@@ -621,7 +651,8 @@ export class LocalVariancePreprocessorOptimized {
  *   height: grayImage.height,
  * };
  * 
- * const edgeMap = myXDoGImplementation.process(grayImage, textureMapCombined);
+ * const pMap = buildAdaptiveMap(textureMapCombined, { base: 20, sensitivity: -10 });
+ * const edgeMap = await xdog.process(grayImage, { p: pMap });
  * ```
  * 
  * Pattern 3: Using optimized version for real-time
@@ -633,8 +664,15 @@ export class LocalVariancePreprocessorOptimized {
  * });
  * 
  * const textureMap = optimized.process(grayImage);  // ~0.5ms @ 1080p
- * const edgeMap = myFDoGImplementation.process(grayImage, textureMap);
+ * const pMap = buildAdaptiveMap(textureMap, { base: 20, sensitivity: -10 });
+ * const edgeMap = await fdog.process(grayImage, { p: pMap });
  * ```
+ * 
+ * Note: `buildAdaptiveMap` above is illustrative — a small helper that maps
+ * `base + sensitivity * textureMap.data[i]` over each pixel into a new
+ * `ChannelImage`, mirroring the loop shown in the Implementation Pattern
+ * section above. It isn't part of this module; construct it at the call site
+ * (or factor it into a shared utility if this pattern recurs).
  * 
  * Pattern 4: Visualizing texture detection
  * ```

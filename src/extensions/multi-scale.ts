@@ -6,10 +6,10 @@
  * 2. Supply their own custom blend function
  */
 
-import { FDoG, XDoG } from '../xdog.js';
-import { ChannelImage, DoGImplementation } from '../types.js';
-import { createChannelImage } from '../utils.js';
-import { ExtensionStrategy } from './base.js';
+import { FDoG, XDoG } from '../core/dog';
+import type { ChannelImage, DoGImplementation } from '../core/types';
+import { createChannelImage } from '../utils';
+import type { ExtensionStrategy } from './base';
 
 // =============================================================================
 // Blend Function Types

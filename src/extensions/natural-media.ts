@@ -1,6 +1,6 @@
-import { FDoGConfig, ChannelImage } from "../types.js";
-import { FDoG, XDoG } from "../xdog.js";
-import { ExtensionStrategy } from "./base.js";
+import type { FDoGConfig, ChannelImage } from "../core/types";
+import { FDoG, XDoG } from "../core/dog";
+import type { ExtensionStrategy } from "./base";
 
 /**
  * Natural media style presets

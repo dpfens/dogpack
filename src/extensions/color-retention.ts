@@ -14,8 +14,8 @@
  * Based on Section 5.2 of the XDoG paper.
  */
 
-import { ChannelImage } from '../types.js';
-import { RGBImage } from './base.js'
+import type { ChannelImage } from '../core/types';
+import type { RGBImage } from './base'
 
 // =============================================================================
 // Core Types
@@ -743,7 +743,7 @@ export const MaskTransforms = {
    * Gaussian blur approximation
    */
   blur: (radius: number = 1): MaskTransformFn =>
-    (mask, ctx) => {
+    (_mask, ctx) => {
       let sum = 0;
       let weight = 0;
       const sigma = radius / 2;

@@ -43,7 +43,7 @@ const canvas = document.getElementById('myCanvas') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
 const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
-const result = await xdog.processGrayscaleImageData(imageData);
+const result = await xdog.processChannelImageData(imageData);
 ctx.putImageData(result, 0, 0);
 ```
 
@@ -79,7 +79,7 @@ const fdog = new FDoG({
   phi: 10,         // Threshold sharpness
 });
 
-const result = await fdog.processGrayscaleImageData(imageData);
+const result = await fdog.processChannelImageData(imageData);
 
 // Or use a preset tuned for specific effects
 const fdog2 = FDoG.withPreset('standard');
@@ -131,73 +131,26 @@ The library provides multiple thresholding strategies to handle different image 
 The classic approach using a soft tanh function: `T_ε,φ(u) = 1 + tanh(φ · (u - ε))`
 
 ```typescript
-import { XDoG, SoftThresholdStrategy } from 'xdog';
+import { XDoG, core } from 'xdog';
 
 const xdog = new XDoG({
   sigma: 1.4,
-  thresholdStrategy: new SoftThresholdStrategy(),
+  thresholdStrategy: new core.threshold.SoftThresholdStrategy(),
 });
 ```
 
 **Use when:** You want smooth, gradual transitions between black and white—ideal for pencil and pastel styles.
-
-#### Adaptive Threshold
-
-Varies the threshold spatially based on local image contrast: `ε(x,y) = ε_base + LocalContrast(x,y)`
-
-```typescript
-import { XDoG, AdaptiveThresholdStrategy } from 'xdog';
-
-const xdog = new XDoG({
-  sigma: 1.4,
-  thresholdStrategy: new AdaptiveThresholdStrategy(),
-  // Additional config for adaptive threshold:
-  localContrastRadius: 5,  // Radius for local contrast computation
-});
-```
-
-**Benefits:**
-- Reduces threshold artifacts in low-contrast regions
-- Automatically adapts to local image statistics
-- Better handling of images with uneven lighting or texture
-
-**Use when:** Processing photographs with variable lighting, or when you have regions of very different contrast levels.
-
-#### Bilateral Soft Threshold
-
-Considers neighborhood similarity before thresholding to improve edge connectivity and reduce isolated artifacts:
-
-```typescript
-import { XDoG, BilateralThresholdStrategy } from 'xdog';
-
-const xdog = new XDoG({
-  sigma: 1.4,
-  thresholdStrategy: new BilateralThresholdStrategy(),
-  // Additional config for bilateral filtering:
-  bilateralRadius: 3,           // Neighborhood radius
-  bilateralSigmaIntensity: 0.2, // Intensity similarity weight
-});
-```
-
-**Benefits:**
-- Preserves edge sharpness while reducing noise
-- Better edge connectivity and fewer floating fragments
-- Excellent for noisy or textured source images
-
-**Use when:** Your source images have noise or compression artifacts that create scattered pixels.
 
 #### Hysteresis Threshold (Canny-style)
 
 Uses two thresholds to produce connected edge traces, inspired by Canny edge detection:
 
 ```typescript
-import { XDoG, HysteresisThresholdStrategy } from 'xdog';
+import { XDoG, core } from 'xdog';
 
 const xdog = new XDoG({
   sigma: 1.4,
-  epsilon: 0.5,         // Low threshold for weak edges
-  epsilonHigh: 0.75,    // High threshold for strong edges
-  thresholdStrategy: new HysteresisThresholdStrategy(),
+  thresholdStrategy: new core.threshold.HysteresisThresholdStrategy(0.5, 0.75),
 });
 ```
 
@@ -214,6 +167,53 @@ const xdog = new XDoG({
 
 **Use when:** You want guaranteed connected edges and clean, professional-looking line art.
 
+### Spatially-Varying Parameters
+
+`p`, `epsilon`, and `phi` each accept either a single `number` (applied uniformly, as in every example above) or a `ChannelImage`; a per-pixel map with the same width/height as the input. This drives sharpening strength and threshold behavior from per-pixel data, most commonly a texture-strength map, instead of one global setting for the whole image.
+
+```typescript
+import { XDoG } from 'xdog';
+
+const xdog = new XDoG({ sigma: 1.0, k: 1.6, phi: 10 });
+
+// epsilonMap is a ChannelImage, same width/height as grayImage
+const result = await xdog.process(grayImage, { epsilon: epsilonMap });
+```
+
+Nothing else about calling XDoG/FDoG changes. Any parameter resolves per-pixel automatically wherever a `ChannelImage` is passed instead of a number.
+
+#### Building a Texture-Adaptive Map
+
+The most common use is texture suppression: real photographs often have regions (skin, fabric, foliage) where fine texture creates edge noise. Score each pixel with a texture-detection preprocessor, then derive adaptive `p`/`epsilon` maps from that score:
+
+```typescript
+import { XDoG, core, preprocess } from 'xdog';
+
+const textureMap = new preprocess.LocalVariancePreprocessor({ windowRadius: 2 }).process(grayImage);
+// textureMap: ChannelImage, 0 = pure structure, 1 = pure texture
+
+function adaptiveMap(base: number, sensitivity: number, texture: ChannelImage): ChannelImage {
+  const data = new Float32Array(texture.data.length);
+  for (let i = 0; i < data.length; i++) {
+    data[i] = base + sensitivity * texture.data[i];
+  }
+  return { data, width: texture.width, height: texture.height };
+}
+
+const pMap = adaptiveMap(20, -10, textureMap);        // weaker sharpening in texture
+const epsilonMap = adaptiveMap(0.5, 0.3, textureMap); // higher threshold in texture
+
+const xdog = new XDoG({ sigma: 1.0, k: 1.6, phi: 10 });
+const result = await xdog.process(grayImage, { p: pMap, epsilon: epsilonMap });
+```
+
+**Important:** per Winnemöller et al., `p` (the DoG mixing weight) changes the average brightness of the filtered response. When varying `p` spatially, vary `epsilon` from the *same* texture map at the same time; adjusting only one produces a visible local brightness shift rather than clean texture suppression.
+
+Works identically with `FDoG`: pass the same overrides; the flow parameters (`sigmaC`, `sigmaM`, `sigmaA`) are unaffected.
+
+**Use when:** your source images have regions of fine texture that clutter the output with unwanted edges, but you still want sharp, clean structural edges preserved elsewhere in the same image.
+
+
 ### FDoG-Specific Parameters
 
 The FDoG extends the basic DoG by replacing the single σ parameter with three separate parameters, each controlling a different stage of the flow-guided processing pipeline:
@@ -229,13 +229,13 @@ The FDoG extends the basic DoG by replacing the single σ parameter with three s
 If migrating from code using the original τ parameterization from earlier implementations, you can convert between the two representations. The relationship is p = τ / (1 - τ), which means τ = p / (p + 1):
 
 ```typescript
-import { tauToP, pToTau } from 'xdog';
+import { utilities } from 'xdog';
 
 // Convert τ to the new p parameter
-const p = tauToP(0.98);  // τ=0.98 → p≈49
+const p = utilities.tauToP(0.98);  // τ=0.98 → p≈49
 
 // Convert back if needed  
-const tau = pToTau(20);  // p=20 → τ≈0.95
+const tau = utilities.pToTau(20);  // p=20 → τ≈0.95
 ```
 
 ## Style Presets
@@ -271,7 +271,7 @@ While the standard XDoG/FDoG algorithms operate on grayscale images, color infor
 Process each color channel independently and combine the edge responses using maximum (most aggressive detection):
 
 ```typescript
-import { XDoG, createChannelImage, luminanceToImageData } from 'xdog';
+import { XDoG, utilities } from 'xdog';
 
 async function xdogColorAware(imageData: ImageData): Promise<ImageData> {
   const width = imageData.width;
@@ -279,9 +279,9 @@ async function xdogColorAware(imageData: ImageData): Promise<ImageData> {
   
   // Extract R, G, B channels separately
   const channels = {
-    r: createChannelImage(width, height),
-    g: createChannelImage(width, height),
-    b: createChannelImage(width, height),
+    r: utilities.createChannelImage(width, height),
+    g: utilities.createChannelImage(width, height),
+    b: utilities.createChannelImage(width, height),
   };
   
   for (let i = 0; i < imageData.data.length; i += 4) {
@@ -300,12 +300,12 @@ async function xdogColorAware(imageData: ImageData): Promise<ImageData> {
   ]);
   
   // Combine: take maximum (most aggressive edge detection)
-  const combined = createChannelImage(width, height);
+  const combined = utilities.createChannelImage(width, height);
   for (let i = 0; i < width * height; i++) {
     combined.data[i] = Math.max(resultR.data[i], resultG.data[i], resultB.data[i]);
   }
   
-  return luminanceToImageData(combined);
+  return utilities.luminanceToImageData(combined);
 }
 ```
 
@@ -327,7 +327,7 @@ async function xdogColorAware(imageData: ImageData): Promise<ImageData> {
 Convert to Lab color space and apply weighted combination, with higher weight on luminance (L) which aligns with human perception:
 
 ```typescript
-import { XDoG, createChannelImage, luminanceToImageData } from 'xdog';
+import { XDoG, utilities } from 'xdog';
 
 async function xdogPerceptual(imageData: ImageData): Promise<ImageData> {
   const width = imageData.width;
@@ -338,7 +338,7 @@ async function xdogPerceptual(imageData: ImageData): Promise<ImageData> {
   
   // Extract L (luminance) and a/b (chrominance) channels
   const L = lab.l;
-  const ab = createChannelImage(width, height);
+  const ab = utilities.createChannelImage(width, height);
   
   for (let i = 0; i < width * height; i++) {
     // Combine a and b components as chroma
@@ -353,7 +353,7 @@ async function xdogPerceptual(imageData: ImageData): Promise<ImageData> {
   ]);
   
   // Combine with perceptual weighting
-  const combined = createChannelImage(width, height);
+  const combined = utilities.createChannelImage(width, height);
   const wL = 0.8;   // 80% weight to luminance (human eyes are more sensitive)
   const wAB = 0.2;  // 20% weight to color information
   
@@ -361,7 +361,7 @@ async function xdogPerceptual(imageData: ImageData): Promise<ImageData> {
     combined.data[i] = wL * resultL.data[i] + wAB * resultAB.data[i];
   }
   
-  return luminanceToImageData(combined);
+  return utilities.luminanceToImageData(combined);
 }
 
 function rgbToLab(imageData: ImageData): { l: ChannelImage; a: ChannelImage; b: ChannelImage } {
@@ -417,18 +417,15 @@ Real-world photographs often contain texture and noise (grass, fabric, skin pore
 ```typescript
 import { 
   XDoG, 
-  imageDataToGrayscale, 
-  grayscaleToImageData,
-  PreprocessingPresets,
-  Preprocessor,
-  bilateralFilter 
+  utilities,
+  preprocess
 } from 'xdog';
 
 // Convert your image to grayscale
-const grayscale = imageDataToGrayscale(canvasImageData);
+const grayscale = utilities.imageDataToGrayscale(canvasImageData);
 
 // Apply preprocessing appropriate to your image content
-const cleaned = PreprocessingPresets.standard(grayscale);
+const cleaned = preprocess.PreprocessingPresets.standard(grayscale);
 
 // Process with XDoG
 const xdog = new XDoG(STYLE_PRESETS.threshold);
@@ -452,9 +449,9 @@ The choice of preprocessing depends on the characteristics of your source image 
 For fine control over preprocessing, you can chain multiple operations using the Preprocessor class. The bilateral filter is the most important tool here—it smooths texture while preserving edges by averaging pixels based on both spatial proximity and intensity similarity:
 
 ```typescript
-import { Preprocessor } from 'xdog';
+import { preprocess } from 'xdog';
 
-const preprocessor = new Preprocessor()
+const preprocessor = new preprocess.Preprocessor()
   .bilateral({ sigmaSpatial: 6, sigmaRange: 0.15 })  // First pass: broad smoothing
   .bilateral({ sigmaSpatial: 3, sigmaRange: 0.08 })  // Second pass: refine edges
   .contrast(0.01, 0.99);  // Stretch histogram to use full range
@@ -517,10 +514,10 @@ flowchart TB
 The BlurStrategy interface allows you to implement custom blur algorithms for specialized effects. For instance, you might implement a motion-blur-aligned strategy to create speed-line effects, or a radial blur for zoom effects:
 
 ```typescript
-import { BlurStrategy, DoGProcessor, GrayscaleImage } from 'xdog';
+import { BlurStrategy, DoGProcessor, core } from 'xdog';
 
-class MyCustomBlur implements BlurStrategy {
-  async blur(input: GrayscaleImage, sigma: number): Promise<GrayscaleImage> {
+class MyCustomBlur implements core.types.BlurStrategy {
+  async blur(input: types.ChannelImage, sigma: number): Promise<types.ChannelImage> {
     // Your implementation here
   }
 }
@@ -533,11 +530,11 @@ const processor = new DoGProcessor(new MyCustomBlur(), { sigma: 1.0, p: 20 });
 Each blur strategy provides a static method to check runtime availability, useful when some implementations may require specific browser capabilities:
 
 ```typescript
-import { IsotropicBlur, FlowGuidedBlur } from 'xdog';
+import { blur } from 'xdog';
 
 // Pure JavaScript implementations are always available
-console.log(IsotropicBlur.isSupported()); // true
-console.log(FlowGuidedBlur.isSupported()); // true
+console.log(blur.IsotropicBlur.isSupported()); // true
+console.log(blur.FlowGuidedBlur.isSupported()); // true
 ```
 
 ## Working with Grayscale Images
@@ -549,7 +546,7 @@ import {
   XDoG, 
   imageDataToGrayscale, 
   grayscaleToImageData,
-  createGrayscaleImage 
+  createChannelImage 
 } from 'xdog';
 
 // Convert from canvas ImageData (handles RGBA to grayscale conversion)
@@ -570,10 +567,10 @@ const outputImageData = grayscaleToImageData(result);
 The Edge Tangent Flow field represents the direction of edges at each pixel and can be visualized for debugging or artistic purposes. Understanding the ETF helps in tuning the σc parameter:
 
 ```typescript
-import { FDoG, imageDataToGrayscale } from 'xdog';
+import { FDoG, utilities } from 'xdog';
 
 const fdog = new FDoG();
-const grayscale = imageDataToGrayscale(imageData);
+const grayscale = utilities.imageDataToLuminance(imageData);
 
 // Compute ETF separately
 const etf = fdog.computeETF(grayscale);

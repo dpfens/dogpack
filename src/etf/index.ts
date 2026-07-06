@@ -1,6 +1,6 @@
-import { ETFConfig, FlowField, ChannelImage, Vec2 } from "../types";
-import { EdgeTangentFlowWebGL } from "./webgl.js";
-import { EdgeTangentFlow as EdgeTangentFlowCPU } from "./cpu.js";
+import type { ETFConfig, FlowField, ChannelImage, Vec2 } from "../core/types";
+import { EdgeTangentFlowWebGL } from "./webgl";
+import { EdgeTangentFlow as EdgeTangentFlowCPU } from "./cpu";
 
 /**
  * Unified Edge Tangent Flow that automatically selects the best implementation

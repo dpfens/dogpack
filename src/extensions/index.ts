@@ -19,21 +19,21 @@
  * - Chainable pipeline architecture
  */
 
-export type { DoGResult, ExtensionStrategy } from './base.js';
+export type { DoGResult, ExtensionStrategy } from './base';
 
-export { AntiAliasingStrategy } from './anti-alias.js';
-export type { AntiAliasingConfig } from './anti-alias.js';
+export { AntiAliasingStrategy } from './anti-alias';
+export type { AntiAliasingConfig } from './anti-alias';
 
-export { ColorRetentionBuilder, ColorRetentionStrategy, ColorTransforms, MaskTransforms, Presets, PostProcessors, BlendFunctions } from './color-retention.js';
-export type { Color, ColorRetentionConfig, ColorTransformFn, MaskTransformFn, PostProcessFn } from './color-retention.js';
+export * as colorRetention from './color-retention';
+export type { Color, ColorRetentionConfig, ColorTransformFn, MaskTransformFn, PostProcessFn } from './color-retention';
 
-export { HatchingStrategy } from './hatching.js';
-export type { HatchTexture, HatchingConfig } from './hatching.js';
+export { HatchingStrategy } from './hatching';
+export type { HatchTexture, HatchingConfig } from './hatching';
 
-export { NaturalMediaStrategy } from './natural-media.js';
-export type { NaturalMediaConfig, NaturalMediaStyle } from './natural-media.js';
+export { NaturalMediaStrategy } from './natural-media';
+export type { NaturalMediaConfig, NaturalMediaStyle } from './natural-media';
 
-export { createGammaCorrectedBlend, createMixedBlend, createPercentileBlend, MultiScaleStrategy, MultiScaleConfig, MultiScaleLayer, BlendFunctions as ScaleBlendFunctions } from './multi-scale.js';
-export type { BlendContext, BlendFunction, BuiltinBlendMode } from './multi-scale.js';
+export * as multiScale from './multi-scale';
+export type { BlendContext, BlendFunction, BuiltinBlendMode, MultiScaleConfig, MultiScaleLayer } from './multi-scale';
 
-export {imageDataToRGB, rgbToImageData, grayscaleToRGB} from './utils.js';
+export {imageDataToRGB, rgbToImageData, grayscaleToRGB} from './utils';

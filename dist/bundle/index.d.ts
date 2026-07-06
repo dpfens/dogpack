@@ -1,0 +1,2941 @@
+interface ThresholdStrategy {
+    threshold(sharpened: ChannelImage$1, config: ThresholdConfig): ChannelImage$1;
+}
+interface ThresholdConfig {
+    epsilon: number | ChannelImage$1;
+    phi: number | ChannelImage$1;
+}
+declare class SoftThresholdStrategy implements ThresholdStrategy {
+    threshold(sharpened: ChannelImage$1, config: ThresholdConfig): ChannelImage$1;
+}
+declare class HysteresisThresholdStrategy implements ThresholdStrategy {
+    private readonly highOffset;
+    private readonly lowOffset;
+    constructor(highOffset?: number, lowOffset?: number);
+    threshold(sharpened: ChannelImage$1, config: ThresholdConfig): ChannelImage$1;
+    private floodFill;
+}
+
+type threshold_HysteresisThresholdStrategy = HysteresisThresholdStrategy;
+declare const threshold_HysteresisThresholdStrategy: typeof HysteresisThresholdStrategy;
+type threshold_SoftThresholdStrategy = SoftThresholdStrategy;
+declare const threshold_SoftThresholdStrategy: typeof SoftThresholdStrategy;
+type threshold_ThresholdConfig = ThresholdConfig;
+type threshold_ThresholdStrategy = ThresholdStrategy;
+declare namespace threshold {
+  export { threshold_HysteresisThresholdStrategy as HysteresisThresholdStrategy, threshold_SoftThresholdStrategy as SoftThresholdStrategy };
+  export type { threshold_ThresholdConfig as ThresholdConfig, threshold_ThresholdStrategy as ThresholdStrategy };
+}
+
+/**
+ * Core types for XDoG/FDoG line drawing implementation
+ *
+ * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
+ * advanced image stylization" by Winnemöller et al. (2012)
+ */
+
+/**
+ * Simple 2D vector
+ */
+interface Vec2 {
+    x: number;
+    y: number;
+}
+/**
+ * Single-channel image representation
+ * Using a flat Float32Array for performance and future GPU compatibility
+ * Values are normalized to 0-1 range
+ */
+interface ChannelImage$1 {
+    data: Float32Array;
+    width: number;
+    height: number;
+}
+/**
+ * RGB image representation
+ */
+interface RGBImage$1 {
+    data: Float32Array;
+    width: number;
+    height: number;
+}
+/**
+ * Abstract blur strategy interface
+ * Implementations provide different blur algorithms (isotropic, flow-guided, etc.)
+ */
+interface BlurStrategy {
+    /**
+     * Apply blur to an image with the given sigma
+     * @param input Source image
+     * @param sigma Blur radius (standard deviation)
+     * @returns Blurred image
+     */
+    blur(input: ChannelImage$1, sigma: number): Promise<ChannelImage$1>;
+}
+/**
+ * Static interface for blur strategy classes
+ * Used to check runtime availability before instantiation
+ */
+interface BlurStrategyClass {
+    /**
+     * Check if this blur strategy is supported in the current environment
+     * @returns true if the strategy can be used, false otherwise
+     */
+    isSupported(): boolean;
+    /**
+     * Get a human-readable reason if the strategy is not supported
+     * @returns undefined if supported, or a string explaining why it's not
+     */
+    getUnsupportedReason?(): string | undefined;
+}
+/**
+ * Flow field representing edge tangent directions at each pixel
+ */
+interface FlowField {
+    getTangent(x: number, y: number): Vec2;
+    readonly width: number;
+    readonly height: number;
+}
+interface BilateralFilterConfig {
+    /** Spatial sigma - controls the size of the neighborhood (default: 3) */
+    sigmaSpatial: number;
+    /** Range/intensity sigma - controls sensitivity to intensity differences (default: 0.1) */
+    sigmaRange: number;
+    /** Kernel radius multiplier (default: 2, meaning radius = sigmaSpatial * 2) */
+    radiusMultiplier?: number;
+}
+/**
+ * Configuration for median filter
+ */
+interface MedianFilterConfig {
+    /** Radius of the filter (default: 2, meaning 5x5 kernel) */
+    radius: number;
+}
+/**
+ * Configuration for Kuwahara filter
+ */
+interface KuwaharaFilterConfig {
+    /** Radius of the filter (default: 3) */
+    radius: number;
+}
+/**
+ * Configuration for Difference of Gaussians processing
+ *
+ * Uses the reparameterized formulation from Section 2.5 of the paper:
+ * S_σ,k,p(x) = G_σ(x) + p · D_σ,k(x) = (1 + p) · G_σ(x) - p · G_kσ(x)
+ *
+ * This decouples edge sharpening strength (p) from threshold parameters,
+ * making the filter much easier to control.
+ */
+interface DoGConfig {
+    /**
+     * Base blur sigma for edge detection (default: 1.0)
+     * Controls the scale of detected edges - larger values detect coarser edges
+     * Paper typically uses 0.4-2.0 for most styles
+     */
+    sigma: number;
+    /**
+     * Ratio between the two Gaussian blur sizes (default: 1.6)
+     * Paper recommends k = 1.6 as a good engineering trade-off
+     * This approximates the Laplacian of Gaussian
+     */
+    k: number;
+    /**
+     * Sharpening strength parameter 'p' from Equation 7 (default: 20)
+     * Controls the strength of edge emphasis
+     * - p ≈ 0: No edge enhancement, just blurred image
+     * - p ≈ 20: Strong edges suitable for thresholding (paper's typical value)
+     * - p ≈ 100+: Extreme edge emphasis for woodcut style
+     *
+     * Note: This replaces the original τ parameter. The relationship is:
+     * p = τ / (τ - 1), or equivalently τ = p / (p + 1)
+     */
+    p: number | ChannelImage$1;
+    /**
+     * Threshold for white vs black transition (default: 0.5)
+     * Values above this become white, values below follow the soft threshold
+     * Should be in 0-1 range for normalized images
+     * Paper's Appendix A shows values around 0.72-0.88 (normalized from 0-100)
+     */
+    epsilon: number | ChannelImage$1;
+    /**
+     * Sharpness of the soft threshold / tanh steepness (default: 10)
+     * Controls the transition sharpness between black and white
+     * - φ ≈ 0.01: Very soft transitions (pencil shading, pastel)
+     * - φ ≈ 1-10: Moderate transitions
+     * - φ >> 10: Hard black/white threshold (approaches step function)
+     */
+    phi: number | ChannelImage$1;
+    thresholdStrategy: ThresholdStrategy;
+}
+/**
+ * Configuration for Edge Tangent Flow computation
+ *
+ * The ETF is computed from the smoothed structure tensor of image gradients.
+ * See Section 2.6 of the paper.
+ */
+interface ETFConfig {
+    /**
+     * Number of refinement iterations for the tangent field (default: 3)
+     * More iterations increase line coherence but add computation time
+     */
+    iterations: number;
+    /**
+     * Kernel size for structure tensor smoothing (default: 5)
+     * Paper uses Gaussian smoothing with sampling within 2.45 * σc
+     */
+    kernelSize: number;
+}
+/**
+ * Extended configuration for Flow-based DoG (FDoG)
+ *
+ * FDoG uses three separate sigma parameters as described in Section 2.6:
+ */
+interface FDoGConfig extends DoGConfig {
+    /**
+     * σc: Structure tensor smoothing sigma (default: 2.5)
+     * Controls the scale of the edge tangent flow computation
+     * - Small values: More noise in flow field, captures fine edges
+     * - Large values: Smoother flow, may distort fine features
+     */
+    sigmaC: number;
+    /**
+     * σe: Edge detection sigma - same as 'sigma' in base DoGConfig
+     * Controls the width of gradient-aligned DoG filter
+     * Larger values discard more fine details and result in wider edge lines
+     */
+    /**
+     * σm: Flow-aligned smoothing sigma for line integral convolution (default: 3.0)
+     * Controls the coherence of edge lines
+     * - Small values: Short, potentially disconnected edges
+     * - Large values: Long, coherent edges (may introduce noise if >> σc)
+     */
+    sigmaM: number;
+    /**
+     * σa: Anti-aliasing LIC sigma (default: 1.0)
+     * Applied as a post-processing step along the ETF
+     * - 0: No anti-aliasing
+     * - 0.5-2: Typical anti-aliasing
+     * - >2: Stylistic smoothing effect
+     */
+    sigmaA: number;
+}
+interface DoGProcessingResult {
+    /** Final thresholded output */
+    result: ChannelImage$1;
+    /** Sharpened image before thresholding */
+    sharpened: ChannelImage$1;
+    /** Raw DoG response (blur1 - blur2) */
+    rawDoG?: ChannelImage$1;
+}
+/**
+ * Interface for DoG processors (XDoG or FDoG)
+ */
+interface DoGImplementation {
+    process(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<ChannelImage$1>;
+    /** Process and return all intermediate results (avoids redundant blur operations) */
+    processDetailed(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<DoGProcessingResult>;
+}
+/**
+ * Default DoG configuration values
+ * Based on paper's recommendations and Appendix A parameter ranges
+ */
+declare const DEFAULT_DOG_CONFIG: DoGConfig;
+/**
+ * Default ETF configuration values
+ */
+declare const DEFAULT_ETF_CONFIG: ETFConfig;
+/**
+ * Default FDoG configuration values
+ * Based on Table A.1 in the paper
+ */
+declare const DEFAULT_FDOG_CONFIG: FDoGConfig;
+/**
+ * Preset configurations for common styles from the paper
+ */
+declare const STYLE_PRESETS: {
+    /**
+     * Pencil shading style (Figure 1b, Section 5.2)
+     * High-frequency detail resembling graphite on paper
+     */
+    readonly pencilShading: DoGConfig;
+    /**
+     * Pastel style (Figure 18b, Section 5.2)
+     * Intermediate edge width with flow turbulence
+     */
+    readonly pastel: DoGConfig;
+    /**
+     * Charcoal style (Figure 18c, Section 5.2)
+     * Broad strokes from large spatial support
+     */
+    readonly charcoal: DoGConfig;
+    /**
+     * Thresholding / line art (Section 4.1)
+     * Clean black and white edges
+     */
+    readonly threshold: DoGConfig;
+    /**
+     * Woodcut style (Section 4.2, Figure 15)
+     * Aggressive flow distortion with extreme edge emphasis
+     */
+    readonly woodcut: DoGConfig;
+};
+/**
+ * Preset FDoG configurations including flow parameters
+ */
+declare const FDOG_STYLE_PRESETS: {
+    /**
+     * Standard FDoG for coherent line drawing (Figure 2g)
+     */
+    readonly standard: FDoGConfig;
+    /**
+     * Pastel with flow (Figure 18b)
+     */
+    readonly pastel: FDoGConfig;
+    /**
+     * Woodcut with aggressive flow (Figure 15)
+     */
+    readonly woodcut: FDoGConfig;
+};
+
+type types_BilateralFilterConfig = BilateralFilterConfig;
+type types_BlurStrategy = BlurStrategy;
+type types_BlurStrategyClass = BlurStrategyClass;
+declare const types_DEFAULT_DOG_CONFIG: typeof DEFAULT_DOG_CONFIG;
+declare const types_DEFAULT_ETF_CONFIG: typeof DEFAULT_ETF_CONFIG;
+declare const types_DEFAULT_FDOG_CONFIG: typeof DEFAULT_FDOG_CONFIG;
+type types_DoGConfig = DoGConfig;
+type types_DoGImplementation = DoGImplementation;
+type types_DoGProcessingResult = DoGProcessingResult;
+type types_ETFConfig = ETFConfig;
+declare const types_FDOG_STYLE_PRESETS: typeof FDOG_STYLE_PRESETS;
+type types_FDoGConfig = FDoGConfig;
+type types_FlowField = FlowField;
+type types_KuwaharaFilterConfig = KuwaharaFilterConfig;
+type types_MedianFilterConfig = MedianFilterConfig;
+declare const types_STYLE_PRESETS: typeof STYLE_PRESETS;
+type types_Vec2 = Vec2;
+declare namespace types {
+  export { types_DEFAULT_DOG_CONFIG as DEFAULT_DOG_CONFIG, types_DEFAULT_ETF_CONFIG as DEFAULT_ETF_CONFIG, types_DEFAULT_FDOG_CONFIG as DEFAULT_FDOG_CONFIG, types_FDOG_STYLE_PRESETS as FDOG_STYLE_PRESETS, types_STYLE_PRESETS as STYLE_PRESETS };
+  export type { types_BilateralFilterConfig as BilateralFilterConfig, types_BlurStrategy as BlurStrategy, types_BlurStrategyClass as BlurStrategyClass, ChannelImage$1 as ChannelImage, types_DoGConfig as DoGConfig, types_DoGImplementation as DoGImplementation, types_DoGProcessingResult as DoGProcessingResult, types_ETFConfig as ETFConfig, types_FDoGConfig as FDoGConfig, types_FlowField as FlowField, types_KuwaharaFilterConfig as KuwaharaFilterConfig, types_MedianFilterConfig as MedianFilterConfig, RGBImage$1 as RGBImage, types_Vec2 as Vec2 };
+}
+
+/**
+ * Difference of Gaussians processor
+ *
+ * This is the core processor that can be used for both XDoG (with IsotropicBlur)
+ * and FDoG (with FlowGuidedBlur).
+ *
+ * Implements the reparameterized formulation from Section 2.5 of:
+ * "XDoG: An eXtended difference-of-Gaussians compendium including
+ * advanced image stylization" by Winnemöller et al. (2012)
+ */
+
+/**
+ * Difference of Gaussians processor
+ *
+ * Uses the reparameterized formulation (Equation 7):
+ * S_σ,k,p(x) = G_σ(x) + p · D_σ,k(x) = (1 + p) · G_σ(x) - p · G_kσ(x)
+ *
+ * This is equivalent to unsharp masking of the blurred image, which
+ * decouples edge sharpening strength (p) from threshold parameters.
+ *
+ * The blur strategy can be swapped to get different effects:
+ * - IsotropicBlur: Standard XDoG with uniform blur
+ * - FlowGuidedBlur: FDoG with edge-coherent blur
+ * - GradientAlignedBlur: Blur across edges only
+ */
+declare class DoGProcessor {
+    private config;
+    private blurStrategy;
+    private thresholdStrategy;
+    constructor(blurStrategy: BlurStrategy, config?: Partial<DoGConfig>);
+    /**
+     * Process an image through the DoG pipeline
+     *
+     * Pipeline:
+     * 1. Apply two Gaussian blurs with different sigma values
+     * 2. Compute sharpened image using Equation 7
+     * 3. Apply soft thresholding using Equation 5
+     *
+     * @param input Grayscale input image (values in 0-1 range)
+     * @param overrides Optional parameter overrides for this call
+     * @returns Processed image with edges detected and stylized
+     */
+    process(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<ChannelImage$1>;
+    /**
+     * Process without thresholding - returns the sharpened image
+     * Useful for debugging or custom post-processing
+     */
+    processNoThreshold(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<ChannelImage$1>;
+    /**
+     * Get the raw DoG response (without sharpening or thresholding)
+     * Useful for visualization and debugging
+     */
+    processRawDoG(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<ChannelImage$1>;
+    /**
+     * Process and return all intermediate results in a single pass
+     *
+     * This is more efficient than calling process(), processNoThreshold(), and
+     * processRawDoG() separately as it only performs the blur operations once.
+     *
+     * @param input Grayscale input image (values in 0-1 range)
+     * @param overrides Optional parameter overrides for this call
+     * @returns Object containing result, sharpened, and rawDoG images
+     */
+    processDetailed(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<DoGProcessingResult>;
+    /**
+     * Get current configuration
+     */
+    getConfig(): Readonly<DoGConfig>;
+    /**
+     * Update configuration
+     */
+    setConfig(config: Partial<DoGConfig>): void;
+    /**
+     * Replace blur strategy
+     */
+    setBlurStrategy(strategy: BlurStrategy): void;
+    /**
+     * Compute raw Difference of Gaussians: D(x) = G_σ(x) - G_kσ(x)
+     * This is the standard DoG without any weighting
+     */
+    private computeDoG;
+    /**
+     * Compute sharpened image using Equation 7 from the paper:
+     * S_σ,k,p(x) = G_σ(x) + p · D_σ,k(x) = (1 + p) · G_σ(x) - p · G_kσ(x)
+     *
+     * This can be understood as unsharp masking of the blurred image.
+     * The parameter p controls the edge sharpening strength independently
+     * of the threshold parameters.
+     *
+     * @param blur1 G_σ * I (smaller blur)
+     * @param blur2 G_kσ * I (larger blur)
+     * @param p Sharpening strength (p ≈ 20 typical, p ≈ 100 for woodcut)
+     */
+    private computeSharpening;
+    /**
+     * Apply thresholding using the configured strategy
+     * This creates the characteristic XDoG stylization:
+     * - Values above ε become white (1)
+     * - Values below ε get soft-thresholded with tanh
+     * - φ controls the sharpness of the transition
+     *
+     * @param sharpened Sharpened image from computeSharpening
+     * @param epsilon Threshold value (typically around 0.5-0.8 for normalized images)
+     * @param phi Threshold sharpness (0.01 = soft, 100 = near step function)
+     */
+    private applyThreshold;
+}
+/**
+ * Alternative thresholding modes that can be used for different effects
+ * These can be applied to the sharpened image manually for custom styles
+ */
+declare const ThresholdModes: {
+    /**
+     * Hard black and white threshold (step function)
+     * Equivalent to φ → ∞ in the soft threshold
+     */
+    hard: (value: number, epsilon: number) => number;
+    /**
+     * Soft threshold (default XDoG style, Equation 5)
+     */
+    soft: (value: number, epsilon: number, phi: number) => number;
+    /**
+     * Three-tone (white, gray, black) for sketch effect
+     * Creates a posterized look with three distinct values
+     */
+    threeTone: (value: number, epsilon: number, midPoint?: number) => number;
+    /**
+     * Multi-tone quantization
+     * Quantizes to n discrete levels
+     */
+    multiTone: (value: number, levels: number) => number;
+    /**
+     * Continuous (no thresholding) - useful for seeing raw sharpened output
+     * Maps the range to 0-1 for visualization
+     */
+    continuous: (value: number) => number;
+    /**
+     * Smooth curve approximating three-value quantization
+     * Used for Figure 7(c) in the paper
+     */
+    smoothThreeTone: (value: number, epsilon: number, phi: number) => number;
+};
+/**
+ * Apply a custom threshold function to a grayscale image
+ */
+declare function applyCustomThreshold(input: ChannelImage$1, thresholdFn: (value: number) => number): ChannelImage$1;
+
+type processor_DoGProcessor = DoGProcessor;
+declare const processor_DoGProcessor: typeof DoGProcessor;
+declare const processor_ThresholdModes: typeof ThresholdModes;
+declare const processor_applyCustomThreshold: typeof applyCustomThreshold;
+declare namespace processor {
+  export {
+    processor_DoGProcessor as DoGProcessor,
+    processor_ThresholdModes as ThresholdModes,
+    processor_applyCustomThreshold as applyCustomThreshold,
+  };
+}
+
+/**
+ * Image utility functions
+ */
+
+/**
+ * Create a new grayscale image with given dimensions
+ */
+declare function createChannelImage(width: number, height: number): ChannelImage$1;
+/**
+ * Clone a grayscale image
+ */
+declare function cloneChannelImage(image: ChannelImage$1): ChannelImage$1;
+/**
+ * Get pixel value with bounds checking (clamps to edge)
+ */
+declare function getPixel(image: ChannelImage$1, x: number, y: number): number;
+/**
+ * Get pixel value with bilinear interpolation for sub-pixel sampling
+ */
+declare function getPixelBilinear(image: ChannelImage$1, x: number, y: number): number;
+/**
+ * Set pixel value
+ */
+declare function setPixel(image: ChannelImage$1, x: number, y: number, value: number): void;
+/**
+ * Get pixel index for coordinates
+ */
+declare function getIndex(width: number, x: number, y: number): number;
+/**
+ * Convert RGB image to grayscale using luminance formula
+ */
+declare function rgbToGrayscale(rgb: RGBImage$1): ChannelImage$1;
+/**
+ * Convert ImageData (from canvas) to grayscale image
+ * Assumes values are in 0-255 range, normalizes to 0-1
+ */
+declare function imageDataToLuminance(imageData: ImageData): ChannelImage$1;
+/**
+ * Convert grayscale image to ImageData (for canvas display)
+ * Assumes input is in 0-1 range
+ */
+declare function luminanceToImageData(gray: ChannelImage$1): ImageData;
+/**
+ * Normalize a 2D vector
+ */
+declare function normalizeVec2(v: Vec2): Vec2;
+/**
+ * Compute dot product of two vectors
+ */
+declare function dotVec2(a: Vec2, b: Vec2): number;
+/**
+ * Rotate vector 90 degrees counter-clockwise (perpendicular)
+ */
+declare function perpendicular(v: Vec2): Vec2;
+/**
+ * Generate 1D Gaussian kernel
+ * @param sigma Standard deviation
+ * @param size Kernel size (should be odd)
+ * @returns Normalized Gaussian kernel
+ */
+declare function generateGaussianKernel(sigma: number, size: number): Float32Array;
+/**
+ * Compute kernel size from sigma
+ * Paper samples at all integer locations less than 2× sigma for flow-aligned,
+ * and extends to 2.45σ for structure tensor blur
+ *
+ * @param sigma Standard deviation
+ * @param multiplier Size multiplier (default 6 = 3σ on each side)
+ */
+declare function computeKernelSize(sigma: number, multiplier?: number): number;
+/**
+ * Clamp a value to a range
+ */
+declare function clamp(value: number, min: number, max: number): number;
+/**
+ * Linear interpolation
+ */
+declare function lerp(a: number, b: number, t: number): number;
+/**
+ * Reads a value that may be a scalar (uniform) or a per-pixel ChannelImage.
+ */
+declare function at(value: number | ChannelImage$1, i: number): number;
+/**
+ * Convert from the original τ parameterization to the new p parameterization
+ * τ = p / (p + 1), so p = τ / (1 - τ)
+ */
+declare function tauToP(tau: number): number;
+/**
+ * Convert from p parameterization back to τ
+ * p = τ / (1 - τ), so τ = p / (p + 1)
+ */
+declare function pToTau(p: number): number;
+
+declare const utils_at: typeof at;
+declare const utils_clamp: typeof clamp;
+declare const utils_cloneChannelImage: typeof cloneChannelImage;
+declare const utils_computeKernelSize: typeof computeKernelSize;
+declare const utils_createChannelImage: typeof createChannelImage;
+declare const utils_dotVec2: typeof dotVec2;
+declare const utils_generateGaussianKernel: typeof generateGaussianKernel;
+declare const utils_getIndex: typeof getIndex;
+declare const utils_getPixel: typeof getPixel;
+declare const utils_getPixelBilinear: typeof getPixelBilinear;
+declare const utils_imageDataToLuminance: typeof imageDataToLuminance;
+declare const utils_lerp: typeof lerp;
+declare const utils_luminanceToImageData: typeof luminanceToImageData;
+declare const utils_normalizeVec2: typeof normalizeVec2;
+declare const utils_pToTau: typeof pToTau;
+declare const utils_perpendicular: typeof perpendicular;
+declare const utils_rgbToGrayscale: typeof rgbToGrayscale;
+declare const utils_setPixel: typeof setPixel;
+declare const utils_tauToP: typeof tauToP;
+declare namespace utils {
+  export {
+    utils_at as at,
+    utils_clamp as clamp,
+    utils_cloneChannelImage as cloneChannelImage,
+    utils_computeKernelSize as computeKernelSize,
+    utils_createChannelImage as createChannelImage,
+    utils_dotVec2 as dotVec2,
+    utils_generateGaussianKernel as generateGaussianKernel,
+    utils_getIndex as getIndex,
+    utils_getPixel as getPixel,
+    utils_getPixelBilinear as getPixelBilinear,
+    utils_imageDataToLuminance as imageDataToLuminance,
+    utils_lerp as lerp,
+    utils_luminanceToImageData as luminanceToImageData,
+    utils_normalizeVec2 as normalizeVec2,
+    utils_pToTau as pToTau,
+    utils_perpendicular as perpendicular,
+    utils_rgbToGrayscale as rgbToGrayscale,
+    utils_setPixel as setPixel,
+    utils_tauToP as tauToP,
+  };
+}
+
+/**
+ * Unified Edge Tangent Flow that automatically selects the best implementation
+ */
+declare class EdgeTangentFlow implements FlowField {
+    private impl;
+    readonly width: number;
+    readonly height: number;
+    private constructor();
+    getTangent(x: number, y: number): Vec2;
+    getTangentArray(): Float32Array;
+    visualize(): ChannelImage$1;
+    /**
+     * Check if WebGL acceleration is available
+     */
+    static isWebGLSupported(): boolean;
+    /**
+     * Compute ETF using the best available implementation
+     *
+     * @param input Grayscale image
+     * @param config ETF configuration
+     * @param sigmaC Structure tensor smoothing sigma
+     * @param forceImpl Force a specific implementation ('cpu' | 'webgl' | 'auto')
+     */
+    static compute(input: ChannelImage$1, config?: Partial<ETFConfig>, sigmaC?: number, forceImpl?: 'cpu' | 'webgl' | 'auto'): EdgeTangentFlow;
+    /**
+     * Cleanup WebGL resources
+     */
+    static dispose(): void;
+}
+
+/**
+ * High-level XDoG and FDoG implementations
+ *
+ * These classes provide convenient wrappers that compose the blur strategies
+ * and DoG processor together.
+ *
+ * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
+ * advanced image stylization" by Winnemöller et al. (2012)
+ */
+
+/**
+ * XDoG configuration combining DoG parameters with isotropic blur options
+ */
+interface XDoGConfig extends DoGConfig {
+    /** Kernel size multiplier for Gaussian blur (default: 6) */
+    kernelSizeMultiplier?: number;
+    blurStrategy?: BlurStrategy;
+}
+/**
+ * XDoG (Extended Difference of Gaussians)
+ *
+ * Uses standard isotropic Gaussian blur for edge detection and stylization.
+ * Good for general-purpose edge detection and artistic effects.
+ *
+ * This implements the reparameterized XDoG from Section 2.5 of the paper,
+ * using Equation 7 for the sharpening computation.
+ */
+declare class XDoG implements DoGImplementation {
+    private processor;
+    private config;
+    constructor(config?: Partial<XDoGConfig>);
+    /**
+     * Create XDoG with a preset style
+     */
+    static withPreset(presetName: keyof typeof STYLE_PRESETS): XDoG;
+    /**
+     * Process a grayscale image
+     */
+    process(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<ChannelImage$1>;
+    /**
+     * Process without thresholding (returns sharpened image)
+     */
+    processSharpened(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<ChannelImage$1>;
+    /**
+     * Get raw DoG response for visualization
+     */
+    processRawDoG(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<ChannelImage$1>;
+    /**
+     * Process and return all intermediate results
+     *
+     * This is more efficient than calling process(), processSharpened(), and
+     * processRawDoG() separately as it only performs the blur operations once.
+     *
+     * Useful for:
+     * - Hatching strategies that need the sharpened image
+     * - Debugging and visualization
+     * - Custom post-processing pipelines
+     */
+    processDetailed(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<DoGProcessingResult>;
+    /**
+     * Convenience method to process ImageData directly (e.g., from a canvas)
+     */
+    processGrayscaleImageData(input: ImageData, overrides?: Partial<DoGConfig>): Promise<ImageData>;
+    /**
+     * Get current configuration
+     */
+    getConfig(): Readonly<XDoGConfig>;
+    /**
+     * Update configuration
+     */
+    setConfig(config: Partial<XDoGConfig>): void;
+}
+/**
+ * FDoG (Flow-based Difference of Gaussians)
+ *
+ * Uses flow-guided blur along edge tangent directions for coherent line drawing.
+ * Produces smoother, more artistic results similar to hand-drawn illustrations.
+ *
+ * This implements the full FDoG pipeline from Section 2.6:
+ * 1. Compute Edge Tangent Flow (ETF) from structure tensor
+ * 2. Apply gradient-aligned DoG (across edges)
+ * 3. Apply flow-aligned smoothing (along edges)
+ * 4. Apply soft thresholding
+ * 5. Optional: Apply anti-aliasing LIC pass
+ *
+ * Parameters:
+ * - σc: Structure tensor smoothing (controls ETF smoothness)
+ * - σe: Edge detection sigma (controls edge width)
+ * - σm: Flow-aligned smoothing (controls line coherence)
+ * - σa: Anti-aliasing sigma (optional post-processing)
+ */
+declare class FDoG implements DoGImplementation {
+    private config;
+    constructor(config?: Partial<FDoGConfig>);
+    /**
+     * Create FDoG with a preset style
+     */
+    static withPreset(presetName: keyof typeof FDOG_STYLE_PRESETS): FDoG;
+    /**
+     * Process a grayscale image
+     *
+     * Unlike XDoG, FDoG computes a new flow field for each image,
+     * so the full pipeline runs fresh each time.
+     */
+    process(input: ChannelImage$1, overrides?: Partial<FDoGConfig>): Promise<ChannelImage$1>;
+    /**
+     * Process with more control over individual stages
+     */
+    processDetailed(input: ChannelImage$1, overrides?: Partial<FDoGConfig>): Promise<{
+        result: ChannelImage$1;
+        etf: EdgeTangentFlow;
+        sharpened: ChannelImage$1;
+        thresholded: ChannelImage$1;
+        smoothed: ChannelImage$1;
+    }>;
+    /**
+     * Convenience method to process ImageData directly
+     */
+    processGrayscaleImageData(input: ImageData, overrides?: Partial<FDoGConfig>): Promise<ImageData>;
+    /**
+     * Process with a pre-computed ETF
+     *
+     * Useful when processing multiple frames of video where the ETF
+     * can be computed once and reused, or interpolated between keyframes.
+     */
+    processWithETF(input: ChannelImage$1, etf: EdgeTangentFlow, overrides?: Partial<FDoGConfig>): Promise<ChannelImage$1>;
+    /**
+     * Compute Edge Tangent Flow separately
+     *
+     * Useful for visualizing the flow field or reusing it across frames.
+     */
+    computeETF(input: ChannelImage$1, sigmaC?: number): EdgeTangentFlow;
+    /**
+     * Apply only the anti-aliasing pass to an already-processed image
+     */
+    applyAntiAliasing(input: ChannelImage$1, etf: EdgeTangentFlow, sigmaA?: number): Promise<ChannelImage$1>;
+    /**
+     * Get current configuration
+     */
+    getConfig(): Readonly<FDoGConfig>;
+    /**
+     * Update configuration
+     */
+    setConfig(config: Partial<FDoGConfig>): void;
+}
+/**
+ * Convenience function for one-shot XDoG processing
+ */
+declare function xdog(input: ChannelImage$1, config?: Partial<XDoGConfig>): Promise<ChannelImage$1>;
+/**
+ * Convenience function for one-shot FDoG processing
+ */
+declare function fdog(input: ChannelImage$1, config?: Partial<FDoGConfig>): Promise<ChannelImage$1>;
+
+type dog_FDoG = FDoG;
+declare const dog_FDoG: typeof FDoG;
+type dog_XDoG = XDoG;
+declare const dog_XDoG: typeof XDoG;
+type dog_XDoGConfig = XDoGConfig;
+declare const dog_fdog: typeof fdog;
+declare const dog_xdog: typeof xdog;
+declare namespace dog {
+  export { dog_FDoG as FDoG, dog_XDoG as XDoG, dog_fdog as fdog, dog_xdog as xdog };
+  export type { dog_XDoGConfig as XDoGConfig };
+}
+
+declare const index$3_dog: typeof dog;
+declare const index$3_processor: typeof processor;
+declare const index$3_threshold: typeof threshold;
+declare const index$3_types: typeof types;
+declare namespace index$3 {
+  export {
+    index$3_dog as dog,
+    index$3_processor as processor,
+    index$3_threshold as threshold,
+    index$3_types as types,
+    utils as utilities,
+  };
+}
+
+declare class BaseCPUBlur {
+    /**
+   * Check if isotropic blur is supported
+   * Always returns true as this is a pure JavaScript implementation
+   */
+    static isSupported(): boolean;
+    /**
+     * Get reason if unsupported (always undefined for this implementation)
+     */
+    static getUnsupportedReason(): string | undefined;
+}
+declare class BaseWebGLBlur {
+    /**
+     * Check if WebGL2 is supported in the current environment
+     */
+    static isSupported(): boolean;
+    /**
+     * Get reason if WebGL2 is not supported
+     */
+    static getUnsupportedReason(): string | undefined;
+}
+declare class BaseWebGPUBlur {
+    protected static cachedAdapter: GPUAdapter | null;
+    protected static cachedDevice: GPUDevice | null;
+    protected static devicePromise: Promise<GPUDevice | null> | null;
+    protected static adapterInfo: GPUAdapterInfo | null;
+    protected static isSoftwareRenderer: boolean;
+    /**
+     * Check if WebGPU is supported (sync check - just API availability)
+     */
+    static isSupported(): boolean;
+    /**
+     * Get reason if WebGPU is not supported
+     */
+    static getUnsupportedReason(): string | undefined;
+    /**
+     * Check if the adapter is a software/fallback renderer (call after getWebGPUDevice)
+     */
+    static isFallbackAdapter(): boolean;
+    /**
+     * Get adapter info (call after getWebGPUDevice)
+     */
+    static getAdapterInfo(): GPUAdapterInfo | null;
+    /**
+     * Async check if WebGPU is actually usable with hardware acceleration
+     * Returns false for software renderers like SwiftShader
+     */
+    static isAvailable(allowSoftware?: boolean): Promise<boolean>;
+    /**
+     * Detect if adapter is a software renderer
+     */
+    private static detectSoftwareRenderer;
+    /**
+     * Get or create WebGPU device (shared)
+     */
+    static getWebGPUDevice(): Promise<GPUDevice | null>;
+}
+
+/**
+ * Blur strategies for DoG processing
+ *
+ * Provides both isotropic (standard) and anisotropic (flow-guided) blur
+ * implementations for use in XDoG and FDoG pipelines.
+ *
+ * FIXED: WebGPUIsotropicBlur now supports parallel/concurrent blur operations
+ */
+
+/**
+ * Configuration for isotropic Gaussian blur
+ */
+interface BaseIsotropicBlurConfig {
+    /**
+     * Kernel size multiplier relative to sigma (default: 6, meaning 3σ on each side)
+     * Paper samples at 2× sigma for flow-aligned, 2.45× for structure tensor
+     */
+    kernelSizeMultiplier: number;
+}
+/**
+ * Standard isotropic Gaussian blur using separable convolution
+ * This is the blur used in basic XDoG
+ */
+declare class CPUIsotropicBlur extends BaseCPUBlur implements BlurStrategy {
+    private config;
+    constructor(config?: Partial<BaseIsotropicBlurConfig>);
+    blur(input: ChannelImage$1, sigma: number): Promise<ChannelImage$1>;
+}
+/**
+ * Configuration for WebGL blur
+ */
+interface WebGLBlurConfig {
+    /** Kernel size multiplier relative to sigma (default: 6) */
+    kernelSizeMultiplier: number;
+    /** Maximum kernel size (default: 63, limited by shader uniform array) */
+    maxKernelSize: number;
+}
+/**
+ * WebGL2-accelerated isotropic Gaussian blur
+ * Uses separable convolution with two passes (horizontal + vertical)
+ */
+declare class WebGLIsotropicBlur extends BaseWebGLBlur implements BlurStrategy {
+    private config;
+    private resources;
+    private currentWidth;
+    private currentHeight;
+    private framebuffer;
+    private textures;
+    constructor(config?: Partial<WebGLBlurConfig>);
+    private initResources;
+    blur(input: ChannelImage$1, sigma: number): Promise<ChannelImage$1>;
+    private blurPass;
+    dispose(): void;
+}
+/**
+ * WebGPU configuration
+ */
+interface WebGPUBlurConfig {
+    /** Kernel size multiplier relative to sigma (default: 6) */
+    kernelSizeMultiplier: number;
+    /** Maximum kernel size (default: 63) */
+    maxKernelSize: number;
+}
+/**
+ * WebGPU-accelerated isotropic Gaussian blur
+ * Uses compute shaders with separable convolution
+ *
+ * FIXED: Now supports concurrent/parallel blur calls by creating
+ * separate staging buffers for each operation instead of reusing one.
+ */
+declare class WebGPUIsotropicBlur extends BaseWebGPUBlur implements BlurStrategy {
+    private config;
+    private resources;
+    private paramsBuffer;
+    private kernelBuffer;
+    private inputBuffer;
+    private tempBuffer;
+    private outputBuffer;
+    private currentBufferSize;
+    private currentKernelSize;
+    constructor(config?: Partial<WebGPUBlurConfig>);
+    /**
+     * Initialize WebGPU resources
+     */
+    private initResources;
+    /**
+     * Ensure buffers are sized correctly
+     */
+    private ensureBuffers;
+    /**
+     * Blur implementation - supports concurrent/parallel calls
+     *
+     * KEY FIX: Creates a new staging buffer for each operation instead of
+     * reusing a single one. This prevents "Buffer already has an outstanding
+     * map pending" errors when blur() is called in parallel.
+     */
+    blur(input: ChannelImage$1, sigma: number): Promise<ChannelImage$1>;
+    /**
+     * Clean up GPU resources
+     */
+    dispose(): void;
+}
+type IsotropicBlurConfig = BaseIsotropicBlurConfig | WebGLBlurConfig | WebGPUBlurConfig;
+declare class IsotropicBlur implements BlurStrategy {
+    instance: BlurStrategy;
+    constructor(config: Partial<IsotropicBlurConfig>);
+    blur(input: ChannelImage$1, sigma: number): Promise<ChannelImage$1>;
+}
+
+/**
+ * Flow-guided blur using line integral convolution along edge tangents
+ * This is the blur used in FDoG for coherent line drawing
+ *
+ * The blur is computed by integrating pixel values along the flow direction,
+ * weighted by a Gaussian kernel. This produces blur that follows edge contours
+ * rather than blurring across them.
+ */
+
+interface FlowGuidedBlurStrategy {
+    setFlowField(flowField: FlowField): void;
+}
+/**
+ * Configuration for flow-guided blur
+ */
+interface CPUFlowGuidedBlurConfig {
+    /**
+     * Kernel size multiplier for flow-aligned LIC (default: 6)
+     */
+    kernelSizeMultiplier: number;
+    /**
+     * Step size for line integral convolution (default: 1.0)
+     * Smaller values give smoother integration but cost more
+     */
+    stepSize: number;
+}
+declare class CPUFlowGuidedBlur extends BaseCPUBlur implements BlurStrategy, FlowGuidedBlurStrategy {
+    private flowField;
+    private config;
+    constructor(flowField: FlowField, config?: Partial<CPUFlowGuidedBlurConfig>);
+    /**
+     * Update the flow field (e.g., when processing a new image)
+     */
+    setFlowField(flowField: FlowField): void;
+    blur(input: ChannelImage$1, sigma: number): Promise<ChannelImage$1>;
+    /**
+     * Sample along the flow direction using line integral convolution
+     *
+     * This follows the tangent field in both directions from the starting point,
+     * accumulating weighted samples to produce a blur along the edge direction.
+     */
+    private sampleAlongFlow;
+}
+/**
+ * WebGL2-accelerated flow-guided blur
+ * Uses line integral convolution along edge tangent directions
+ */
+declare class WebGLFlowGuidedBlur extends BaseWebGLBlur implements BlurStrategy, FlowGuidedBlurStrategy {
+    private config;
+    private flowField;
+    private resources;
+    private currentWidth;
+    private currentHeight;
+    private framebuffer;
+    private textures;
+    private flowTexture;
+    constructor(flowField: FlowField, config?: Partial<GLGPUBlurConfig>);
+    private initResources;
+    private ensureTextureSize;
+    /**
+     * Update the flow field (e.g., when processing a new image)
+     */
+    setFlowField(flowField: FlowField): void;
+    blur(input: ChannelImage$1, sigma: number): Promise<ChannelImage$1>;
+    dispose(): void;
+}
+/**
+ * Configuration for WebGL blur
+ */
+interface GLGPUBlurConfig {
+    /** Kernel size multiplier relative to sigma (default: 6) */
+    kernelSizeMultiplier: number;
+    /** Maximum kernel size (default: 63, limited by shader uniform array) */
+    maxKernelSize: number;
+}
+/**
+ * Configuration for WebGPU blur
+ */
+interface GLGPUBlurConfig {
+    /** Kernel size multiplier relative to sigma (default: 6) */
+    kernelSizeMultiplier: number;
+    /** Maximum kernel size (default: 127) */
+    maxKernelSize: number;
+}
+/**
+ * WebGPU-accelerated flow-guided blur
+ */
+declare class WebGPUFlowGuidedBlur extends BaseWebGPUBlur implements BlurStrategy, FlowGuidedBlurStrategy {
+    private config;
+    private flowField;
+    private resources;
+    private paramsBuffer;
+    private kernelBuffer;
+    private inputBuffer;
+    private flowBuffer;
+    private outputBuffer;
+    private stagingBuffer;
+    private currentBufferSize;
+    private currentKernelSize;
+    constructor(flowField: FlowField, config?: Partial<GLGPUBlurConfig>);
+    private initResources;
+    private ensureBuffers;
+    /**
+     * Update the flow field (e.g., when processing a new image)
+     */
+    setFlowField(flowField: FlowField): void;
+    blur(input: ChannelImage$1, sigma: number): Promise<ChannelImage$1>;
+    dispose(): void;
+}
+type FlowGuidedBlurConfig = CPUFlowGuidedBlurConfig | GLGPUBlurConfig;
+declare class FlowGuidedBlur implements BlurStrategy {
+    instance: BlurStrategy & FlowGuidedBlurStrategy;
+    constructor(flowField: FlowField, config?: Partial<FlowGuidedBlurConfig>);
+    blur(input: ChannelImage$1, sigma: number): Promise<ChannelImage$1>;
+    /**
+     * Update the flow field (e.g., when processing a new image)
+     */
+    setFlowField(flowField: FlowField): void;
+}
+
+/**
+ * Gradient-aligned blur for FDoG
+ *
+ * This applies blur perpendicular to the flow direction (across edges).
+ * Used for the DoG computation in FDoG, where we want to blur across
+ * edges but not along them.
+ */
+
+/**
+ * Configuration for flow-guided blur
+ */
+interface GradientAlignedBlurConfig {
+    /**
+     * Kernel size multiplier for flow-aligned LIC (default: 6)
+     */
+    kernelSizeMultiplier: number;
+    /**
+     * Step size for line integral convolution (default: 1.0)
+     * Smaller values give smoother integration but cost more
+     */
+    stepSize: number;
+}
+declare class GradientAlignedBlur implements BlurStrategy {
+    private instance;
+    constructor(flowField: FlowField, config?: Partial<GradientAlignedBlurConfig>);
+    blur(input: ChannelImage$1, sigma: number): Promise<ChannelImage$1>;
+    setFlowField(flowField: FlowField): void;
+    dispose(): void;
+}
+
+type index$2_CPUFlowGuidedBlur = CPUFlowGuidedBlur;
+declare const index$2_CPUFlowGuidedBlur: typeof CPUFlowGuidedBlur;
+type index$2_CPUIsotropicBlur = CPUIsotropicBlur;
+declare const index$2_CPUIsotropicBlur: typeof CPUIsotropicBlur;
+type index$2_FlowGuidedBlur = FlowGuidedBlur;
+declare const index$2_FlowGuidedBlur: typeof FlowGuidedBlur;
+type index$2_FlowGuidedBlurConfig = FlowGuidedBlurConfig;
+type index$2_GradientAlignedBlur = GradientAlignedBlur;
+declare const index$2_GradientAlignedBlur: typeof GradientAlignedBlur;
+type index$2_GradientAlignedBlurConfig = GradientAlignedBlurConfig;
+type index$2_IsotropicBlur = IsotropicBlur;
+declare const index$2_IsotropicBlur: typeof IsotropicBlur;
+type index$2_IsotropicBlurConfig = IsotropicBlurConfig;
+type index$2_WebGLFlowGuidedBlur = WebGLFlowGuidedBlur;
+declare const index$2_WebGLFlowGuidedBlur: typeof WebGLFlowGuidedBlur;
+type index$2_WebGLIsotropicBlur = WebGLIsotropicBlur;
+declare const index$2_WebGLIsotropicBlur: typeof WebGLIsotropicBlur;
+type index$2_WebGPUFlowGuidedBlur = WebGPUFlowGuidedBlur;
+declare const index$2_WebGPUFlowGuidedBlur: typeof WebGPUFlowGuidedBlur;
+type index$2_WebGPUIsotropicBlur = WebGPUIsotropicBlur;
+declare const index$2_WebGPUIsotropicBlur: typeof WebGPUIsotropicBlur;
+declare namespace index$2 {
+  export { index$2_CPUFlowGuidedBlur as CPUFlowGuidedBlur, index$2_CPUIsotropicBlur as CPUIsotropicBlur, index$2_FlowGuidedBlur as FlowGuidedBlur, index$2_GradientAlignedBlur as GradientAlignedBlur, index$2_IsotropicBlur as IsotropicBlur, index$2_WebGLFlowGuidedBlur as WebGLFlowGuidedBlur, index$2_WebGLIsotropicBlur as WebGLIsotropicBlur, index$2_WebGPUFlowGuidedBlur as WebGPUFlowGuidedBlur, index$2_WebGPUIsotropicBlur as WebGPUIsotropicBlur };
+  export type { index$2_FlowGuidedBlurConfig as FlowGuidedBlurConfig, index$2_GradientAlignedBlurConfig as GradientAlignedBlurConfig, index$2_IsotropicBlurConfig as IsotropicBlurConfig };
+}
+
+/**
+ * # Texture-Aware Edge Detection: Local Variance Preprocessing
+ *
+ * ## Conceptual Overview
+ *
+ * The Local Variance Preprocessor addresses a fundamental limitation of standard XDoG/FDoG:
+ * texture creates false edges that clutter the output. This preprocessor distinguishes
+ * texture regions from structural regions by computing local variance at each pixel.
+ *
+ * The output is a **texture strength map** (not edge map) that you then use to create
+ * **adaptive parameters** for XDoG/FDoG/HDoG.
+ *
+ * ## Pipeline Workflow
+ *
+ * ```
+ * Input Image
+ *   ↓
+ * [LocalVariancePreprocessor.process(image)]
+ *   ↓
+ * Texture Strength Map (ChannelImage, values 0-1)
+ *   ├─ 0 = pure structure (object boundaries)
+ *   └─ 1 = pure texture (fabric weave, skin pores, foliage, etc.)
+ *   ↓
+ * [Build adaptive p / epsilon ChannelImages from the texture map]
+ * p_adaptive(x,y)       = p_base + α × texture_strength(x,y)
+ * epsilon_adaptive(x,y) = epsilon_base + β × texture_strength(x,y)
+ *   ↓
+ * [Pass as ChannelImage overrides straight into XDoG/FDoG.process()]
+ *   ↓
+ * High-quality Edge Map (texture suppressed, structure preserved)
+ * ```
+ *
+ * ## Why This Works
+ *
+ * Standard XDoG uses constant parameters across the entire image:
+ * - `p = 20` everywhere means the same edge emphasis in texture and structure regions
+ * - Result: Either suppresses textures (loses details) or preserves them (cluttered edges)
+ *
+ * Texture-aware XDoG adapts the sharpening/inhibition strength spatially:
+ * - Structure regions (texture_strength ≈ 0): p at its base value (normal edge detection)
+ * - Texture regions (texture_strength ≈ 1): p pushed lower, or epsilon pushed higher (strong suppression)
+ * - Transition regions blend smoothly between both
+ *
+ * **Important coupling, per Winnemöller et al. (2012):** the DoG mixing weight (`p`, or
+ * the original `τ` it's reparameterized from) directly changes the average brightness
+ * of the filtered response. Varying `p` spatially without also shifting `epsilon` in the
+ * same region can introduce a visible local brightness/tone artifact rather than clean
+ * texture suppression. In practice this means `p_adaptive` and `epsilon_adaptive` should
+ * usually be derived from the *same* texture map and applied together, not just one of them.
+ *
+ * This allows **selective suppression**: texture edges die out while structural edges remain.
+ *
+ * ## Implementation Pattern
+ *
+ * `p`, `epsilon`, and `phi` on `DoGConfig` all accept either a plain `number` or a
+ * `ChannelImage` (see `types.ts`), so an adaptive parameter map can be passed directly
+ * as a config override — no manual blur/threshold loop needed.
+ *
+ * ```typescript
+ * import { XDoG } from "./xdog.js";
+ * import { ChannelImage } from "./types.js";
+ *
+ * // Step 1: Detect texture regions (preprocessing, unrelated to XDoG/FDoG)
+ * const preprocessor = new LocalVariancePreprocessor({
+ *   windowRadius: 2,           // 5×5 window
+ *   normalizeByGradient: true, // Distinguish texture from edges
+ * });
+ * const textureMap = preprocessor.process(grayImage);
+ * // textureMap: ChannelImage where each value ∈ [0, 1]
+ *
+ * // Step 2: Build adaptive parameter maps from texture strength (external to XDoG)
+ * const pBase = 20;
+ * const epsilonBase = 0.5;
+ * const alpha = -10;  // p sensitivity: texture regions get weaker sharpening
+ * const beta = 0.3;   // epsilon sensitivity: texture regions get a higher threshold
+ *
+ * const pData = new Float32Array(textureMap.data.length);
+ * const epsilonData = new Float32Array(textureMap.data.length);
+ * for (let i = 0; i < textureMap.data.length; i++) {
+ *   pData[i] = Math.max(0, pBase + alpha * textureMap.data[i]);
+ *   epsilonData[i] = epsilonBase + beta * textureMap.data[i];
+ * }
+ * const pMap: ChannelImage = { data: pData, width: textureMap.width, height: textureMap.height };
+ * const epsilonMap: ChannelImage = { data: epsilonData, width: textureMap.width, height: textureMap.height };
+ *
+ * // Step 3: Run XDoG, passing both adaptive maps together as overrides
+ * const xdog = new XDoG({ sigma: 1.0, k: 1.6, phi: 10 });
+ * const edgeMap = await xdog.process(grayImage, { p: pMap, epsilon: epsilonMap });
+ * ```
+ *
+ * ## What the Preprocessor Computes
+ *
+ * For each pixel (x, y), the local variance is computed in a window W:
+ *
+ * ```
+ * variance(x,y) = E[X²] - E[X]²
+ *   where E[X] = mean of pixel values in window W
+ *   where E[X²] = mean of squared pixel values in window W
+ * ```
+ *
+ * **Intuition**:
+ * - Smooth regions (sky, uniform fabric): low variance
+ * - Textured regions (grass, patterned fabric): high variance
+ * - Structural edges (object boundary): medium variance + high gradient
+ *
+ * **Gradient Normalization** (if enabled):
+ * ```
+ * texture_strength = variance / (1 + |∇I|²)
+ * ```
+ *
+ * This prevents suppressing subtle edges that happen to have variance (e.g., wrinkles).
+ * - High variance + high gradient → likely a real edge → texture_strength reduced
+ * - High variance + low gradient → likely texture → texture_strength preserved
+ *
+ * ## Configuration Options
+ *
+ * | Parameter | Default | Range | Effect |
+ * |-----------|---------|-------|--------|
+ * | `windowRadius` | 2 | 1-4 | Size of variance window (1=3×3, 2=5×5, 3=7×7, 4=9×9) |
+ * | `normalizeByGradient` | true | - | Divide by gradient to avoid suppressing edges |
+ * | `varianceScale` | 1.0 | 0.5-3.0 | Multiply variance before normalizing (amplify/dampen) |
+ * | `maxVariance` | undefined | 0-1 | Clamp maximum texture_strength (optional) |
+ *
+ * **Tuning Guide**:
+ * - **windowRadius**: Larger = smoother texture map, slower computation
+ *   - Use 2 (5×5) for most applications
+ *   - Use 3 (7×7) for very fine texture details
+ * - **normalizeByGradient**: Should usually be `true`
+ *   - Set `false` for sketches/technical drawings where variance indicates structure
+ * - **varianceScale**: Controls sensitivity to texture
+ *   - Increase (2.0-3.0) if textures are subtle
+ *   - Decrease (0.5-1.0) if too much suppression
+ * - **maxVariance**: Rarely needed; useful if some regions are overly textured
+ *
+ * ## Integration with XDoG Variants
+ *
+ * The texture map is domain-agnostic and, once turned into a `p`/`epsilon`/`phi`
+ * `ChannelImage`, works identically with either variant since both accept the
+ * same `DoGConfig` overrides:
+ *
+ * **Standard XDoG**:
+ * ```typescript
+ * const xdog = new XDoG({ sigma: 1.0, k: 1.6, phi: 10 });
+ * const edgeMap = await xdog.process(grayImage, { p: pMap, epsilon: epsilonMap });
+ * ```
+ *
+ * **FDoG (Flow-based)**: Same overrides — FDoG's flow/blur stages (σc, σm, σa)
+ * are unaffected; only the DoG mixing and thresholding stages are modulated.
+ * ```typescript
+ * const fdog = new FDoG({ sigma: 1.0, k: 1.6, phi: 10, sigmaC: 2.5, sigmaM: 4.0, sigmaA: 1.0 });
+ * const edgeMap = await fdog.process(grayImage, { p: pMap, epsilon: epsilonMap });
+ * ```
+ *
+ * **HDoG (Line + Tone)**: Not currently implemented in this codebase. If added,
+ * the same pattern would apply: build two texture-derived maps (one per
+ * component's `p`/`epsilon`) and pass each to its respective processor call.
+ *
+ * ## Stacking with Other Preprocessors
+ *
+ * Local Variance can be combined with other texture detection methods
+ * (Spectral Analysis, Patch-based Contrast) for more robust texture detection:
+ *
+ * ```typescript
+ * const varianceMap = new LocalVariancePreprocessor().process(image);
+ * const spectralMap = new SpectralPreprocessor().process(image);
+ * const patchMap = new PatchContrastPreprocessor().process(image);
+ *
+ * // Combine with weights
+ * const textureMap = new Float32Array(image.data.length);
+ * for (let i = 0; i < textureMap.length; i++) {
+ *   textureMap[i] = 0.3 * varianceMap.data[i] +
+ *                   0.4 * spectralMap.data[i] +
+ *                   0.3 * patchMap.data[i];
+ * }
+ *
+ * // Use combined map with XDoG
+ * const pMap = buildAdaptiveMap({ data: textureMap, width: image.width, height: image.height }, { base: 20, sensitivity: -10 });
+ * const edgeMap = await myXDoG.process(image, { p: pMap });
+ * ```
+ *
+ * ## Notes
+ *
+ * - This preprocessor is **NOT integrated into XDoG/FDoG/HDoG**.
+ *   It outputs a texture map that you use externally to create adaptive parameters.
+ * - The texture map is computed **once** and can be reused with different XDoG parameters.
+ * - For best results, tune the sensitivity (α/β) used when deriving `p_adaptive`/`epsilon_adaptive`
+ *   from the texture map, per application domain.
+ * - Consider using the Optimized version for real-time applications.
+ *
+ * @see {@link LocalVarianceConfig} for configuration options
+ * @see {@link LocalVariancePreprocessorOptimized} for faster computation using separable filters
+ */
+/**
+ * Local Variance Texture Detection Preprocessor
+ *
+ * This module provides texture detection as a reusable preprocessing step.
+ * It computes texture strength maps that can be:
+ *
+ * 1. Used directly with your own XDoG/FDoG/HDoG implementation
+ * 2. Combined with other texture detection methods (Spectral, Patch-based, etc.)
+ * 3. Tuned independently from edge detection logic
+ *
+ * Usage Pattern:
+ * ```
+ * const textureMap = preprocessor.process(image);
+ * // textureMap is a ChannelImage where each pixel value = texture strength (0-1)
+ * // 0 = pure structure, 1 = pure texture
+ *
+ * // Turn it into an adaptive p/epsilon map, then pass as a DoGConfig override:
+ * const pMap = deriveAdaptiveMap(textureMap, pBase, alpha);
+ * const edgeMap = await xdog.process(image, { p: pMap });
+ * // or combine with other texture maps first:
+ * const combinedMap = combineTextureMaps([textureMap1, textureMap2, textureMap3]);
+ * const pMap2 = deriveAdaptiveMap(combinedMap, pBase, alpha);
+ * const edgeMap2 = await xdog.process(image, { p: pMap2 });
+ * ```
+ *
+ * This separation of concerns allows:
+ * - Stacking multiple texture detection methods
+ * - Testing texture detection independently from edge detection
+ * - Swapping XDoG/FDoG/HDoG implementations without changing preprocessor
+ * - Different parameter tuning for different algorithms
+ */
+/**
+ * Single-channel image representation
+ * Using a flat Float32Array for performance and future GPU compatibility
+ * Values are normalized to 0-1 range
+ */
+interface ChannelImage {
+    data: Float32Array;
+    width: number;
+    height: number;
+}
+/**
+ * Configuration for Local Variance Texture Detection
+ *
+ * These parameters control how texture is detected. They are independent
+ * from XDoG/FDoG/HDoG parameters - you tune them separately based on the
+ * image characteristics you're working with.
+ */
+interface LocalVarianceConfig {
+    /**
+     * Window radius for variance computation
+     * Examples:
+     * - 1 = 3×3 window (fast, fine detail)
+     * - 2 = 5×5 window (recommended, balanced)
+     * - 3 = 7×7 window (slower, coarser texture detection)
+     */
+    windowRadius: number;
+    /**
+     * Normalize by local gradient to distinguish texture from structure edges
+     *
+     * Without normalization:
+     *   - High variance alone indicates texture
+     *   - Problem: Subtle structural edges with variance get suppressed
+     *
+     * With normalization:
+     *   - High variance + low gradient = texture (keep)
+     *   - High variance + high gradient = edge (reduce texture score)
+     *   - Formula: texture *= 1 / (1 + gradient²)
+     *
+     * Recommended: true
+     */
+    normalizeByGradient: boolean;
+    /**
+     * Scale factor for raw variance values
+     * Typical range: 1.0 - 3.0
+     * Higher = more sensitive to texture variations
+     * Output is clamped to [0, 1] after scaling
+     */
+    varianceScale: number;
+    /**
+     * Optional hard cap on variance values (before normalization)
+     * Prevents outliers from dominating
+     * If undefined, no capping is applied
+     */
+    maxVariance?: number;
+}
+/**
+ * Computes local variance as texture detection preprocessing
+ *
+ * STANDALONE PREPROCESSING: This class only detects texture.
+ * It does NOT perform edge detection.
+ *
+ * Input: ChannelImage (typically grayscale image)
+ * Output: ChannelImage with same dimensions where each pixel value
+ *         represents texture strength (0 = pure structure, 1 = pure texture)
+ *
+ * The output can be:
+ * 1. Passed to your XDoG/FDoG/HDoG implementation to modulate parameters
+ * 2. Combined with other texture detection methods (Spectral, Patch-based)
+ * 3. Visualized for debugging
+ * 4. Processed through additional preprocessing steps
+ *
+ * Example:
+ * ```
+ * const preprocessor = new LocalVariancePreprocessor({
+ *   windowRadius: 2,
+ *   normalizeByGradient: true,
+ * });
+ *
+ * const textureMap = preprocessor.process(grayImage);
+ * // textureMap.data[i] = texture strength at pixel i
+ * // Now use textureMap with your own edge detection
+ * ```
+ */
+declare class LocalVariancePreprocessor {
+    private config;
+    constructor(config?: Partial<LocalVarianceConfig>);
+    /**
+     * Compute texture strength map from image
+     *
+     * @param image Input grayscale image (Float32Array, 0-1 normalized)
+     * @returns ChannelImage containing texture strength values
+     *          Each pixel: 0 = pure structure (edges, boundaries)
+     *                     1 = pure texture (patterns, fine details)
+     *          Developer uses these values to adapt XDoG parameters
+     */
+    process(image: ChannelImage): ChannelImage;
+    /**
+     * Compute variance of pixel values in a window
+     * @private
+     */
+    private computeLocalVariance;
+    /**
+     * Compute gradient magnitude at pixel (Sobel filter)
+     * Used to normalize variance (distinguish texture from edges)
+     * @private
+     */
+    private computeLocalGradient;
+}
+/**
+ * Optimized Local Variance Texture Detector
+ *
+ * Same functionality as LocalVariancePreprocessor, but faster.
+ * Uses separable convolution: O(n × r) instead of O(n × r²)
+ *
+ * Approach: Variance = E[X²] - E[X]²
+ * - Compute box blur of image (gives E[X])
+ * - Compute box blur of image squared (gives E[X²])
+ * - Subtract to get variance
+ *
+ * Performance:
+ * - Basic version: ~1-2ms for 1080p (5×5 window)
+ * - Optimized version: ~0.5ms for 1080p (5×5 window)
+ * - 3-4x faster for large windows
+ *
+ * Use this for real-time applications. Basic version is fine for batch processing.
+ */
+declare class LocalVariancePreprocessorOptimized {
+    private config;
+    constructor(config?: Partial<LocalVarianceConfig>);
+    /**
+     * Process using separable convolution (faster for large windows)
+     * Variance = E[X²] - E[X]²
+     * Compute box blur of X and X² separately, then combine
+     */
+    process(image: ChannelImage): ChannelImage;
+    /**
+     * Fast box blur using separable convolution
+     * O(n) instead of O(n * r²)
+     * @private
+     */
+    private boxBlur;
+    /**
+     * Compute gradient map using Sobel filter (separable for efficiency)
+     * @private
+     */
+    private computeGradientMap;
+}
+
+/**
+ * Preprocessing module for XDoG/FDoG
+ *
+ * Provides filters to prepare images before line detection.
+ * These help reduce noise and texture while preserving important edges.
+ *
+ * Section 3.2 of the paper discusses the importance of bilateral
+ * preprocessing for "indication" - attenuating weak edges while
+ * preserving strong edges.
+ */
+
+/**
+ * Bilateral Filter
+ *
+ * Edge-preserving smoothing filter that averages pixels based on both
+ * spatial proximity AND intensity similarity. This smooths out texture
+ * (like grass) while keeping strong edges (like the car outline) sharp.
+ *
+ * This is the recommended preprocessing for most images.
+ *
+ * As mentioned in Section 3.2, bilateral filtering can serve as a
+ * "prioritization mechanism" for indication - attenuating weak edges
+ * while supporting strong edges.
+ */
+declare function bilateralFilter(input: ChannelImage$1, config?: Partial<BilateralFilterConfig>): ChannelImage$1;
+/**
+ * Median Filter
+ *
+ * Replaces each pixel with the median of its neighborhood.
+ * Excellent for removing salt-and-pepper noise and small texture details.
+ */
+declare function medianFilter(input: ChannelImage$1, config?: Partial<MedianFilterConfig>): ChannelImage$1;
+/**
+ * Kuwahara Filter
+ *
+ * Artistic smoothing filter that creates a painterly effect.
+ * Divides the neighborhood into 4 quadrants, finds the one with
+ * lowest variance, and uses its mean. Creates flat regions with
+ * preserved edges - great for a more stylized look.
+ */
+declare function kuwaharaFilter(input: ChannelImage$1, config?: Partial<KuwaharaFilterConfig>): ChannelImage$1;
+/**
+ * Gaussian Blur
+ *
+ * Simple Gaussian smoothing. Less edge-preserving than bilateral,
+ * but faster. Good for very noisy images or when used with small sigma.
+ */
+declare function gaussianBlur(input: ChannelImage$1, sigma?: number): ChannelImage$1;
+/**
+ * Contrast Enhancement
+ *
+ * Stretches the histogram to use the full 0-1 range.
+ * Can help make edges more distinct before processing.
+ */
+declare function enhanceContrast(input: ChannelImage$1, blackPoint?: number, whitePoint?: number): ChannelImage$1;
+/**
+ * Quantize to reduce color levels
+ *
+ * Reduces the number of intensity levels, creating a posterized effect.
+ * Can help reduce noise by grouping similar intensities together.
+ */
+declare function quantize(input: ChannelImage$1, levels?: number): ChannelImage$1;
+/**
+ * Preset preprocessing pipelines for common use cases
+ */
+declare const PreprocessingPresets: {
+    /**
+     * Light preprocessing - minimal smoothing
+     * Good for: Clean studio photos, illustrations
+     */
+    light: (input: ChannelImage$1) => ChannelImage$1;
+    /**
+     * Standard preprocessing - balanced smoothing
+     * Good for: Most outdoor photos, portraits
+     */
+    standard: (input: ChannelImage$1) => ChannelImage$1;
+    /**
+     * Heavy preprocessing - aggressive noise removal
+     * Good for: Very textured images (grass, foliage, fabric)
+     */
+    heavy: (input: ChannelImage$1) => ChannelImage$1;
+    /**
+     * Artistic preprocessing - painterly smoothing
+     * Good for: Stylized/artistic output
+     */
+    artistic: (input: ChannelImage$1) => ChannelImage$1;
+    /**
+     * Photo preprocessing - for photos with grass/nature
+     * Good for: Landscape, outdoor scenes
+     */
+    nature: (input: ChannelImage$1) => ChannelImage$1;
+};
+/**
+ * Convenience class for chaining preprocessing operations
+ */
+declare class Preprocessor {
+    private operations;
+    /**
+     * Add bilateral filter to the pipeline
+     */
+    bilateral(config?: Partial<BilateralFilterConfig>): this;
+    /**
+     * Add median filter to the pipeline
+     */
+    median(config?: Partial<MedianFilterConfig>): this;
+    /**
+     * Add Kuwahara filter to the pipeline
+     */
+    kuwahara(config?: Partial<KuwaharaFilterConfig>): this;
+    /**
+     * Add Gaussian blur to the pipeline
+     */
+    gaussian(sigma?: number): this;
+    /**
+     * Add contrast enhancement to the pipeline
+     */
+    contrast(blackPoint?: number, whitePoint?: number): this;
+    /**
+     * Add quantization to the pipeline
+     */
+    quantize(levels?: number): this;
+    /**
+     * Apply all operations in sequence
+     */
+    apply(input: ChannelImage$1): ChannelImage$1;
+    /**
+     * Clear all operations
+     */
+    clear(): this;
+}
+
+/**
+ * WebGL-Accelerated Preprocessing Module for XDoG/FDoG
+ *
+ * High-performance GPU implementations of image preprocessing filters.
+ * Achieves 50-100x speedup over CPU implementations for large images.
+ *
+ * Filters included:
+ * - Bilateral Filter (edge-preserving smoothing)
+ * - Median Filter (noise removal) - approximated via weighted histogram
+ * - Kuwahara Filter (painterly effect)
+ * - Gaussian Blur (separable, very fast)
+ * - Contrast Enhancement
+ * - Quantization
+ */
+
+declare function bilateralFilterWebGL(input: ChannelImage$1, config: BilateralFilterConfig): ChannelImage$1;
+declare function gaussianBlurWebGL(input: ChannelImage$1, sigma?: number): ChannelImage$1;
+declare function medianFilterWebGL(input: ChannelImage$1, config: MedianFilterConfig): ChannelImage$1;
+declare function kuwaharaFilterWebGL(input: ChannelImage$1, config: KuwaharaFilterConfig): ChannelImage$1;
+declare function enhanceContrastWebGL(input: ChannelImage$1, blackPoint?: number, whitePoint?: number): ChannelImage$1;
+declare function quantizeWebGL(input: ChannelImage$1, levels?: number): ChannelImage$1;
+declare const PreprocessingPresetsWebGL: {
+    light: (input: ChannelImage$1) => ChannelImage$1;
+    standard: (input: ChannelImage$1) => ChannelImage$1;
+    heavy: (input: ChannelImage$1) => ChannelImage$1;
+    artistic: (input: ChannelImage$1) => ChannelImage$1;
+    nature: (input: ChannelImage$1) => ChannelImage$1;
+};
+declare class PreprocessorWebGL {
+    private operations;
+    bilateral(config?: Partial<BilateralFilterConfig>): this;
+    median(config?: Partial<MedianFilterConfig>): this;
+    kuwahara(config?: Partial<KuwaharaFilterConfig>): this;
+    gaussian(sigma?: number): this;
+    contrast(blackPoint?: number, whitePoint?: number): this;
+    quantize(levels?: number): this;
+    apply(input: ChannelImage$1): ChannelImage$1;
+    clear(): this;
+}
+/**
+ * Check if WebGL 2.0 is available
+ */
+declare function isWebGLAvailable(): boolean;
+/**
+ * Cleanup all WebGL resources
+ */
+declare function disposeWebGL(): void;
+
+declare const webgl_PreprocessingPresetsWebGL: typeof PreprocessingPresetsWebGL;
+type webgl_PreprocessorWebGL = PreprocessorWebGL;
+declare const webgl_PreprocessorWebGL: typeof PreprocessorWebGL;
+declare const webgl_bilateralFilterWebGL: typeof bilateralFilterWebGL;
+declare const webgl_disposeWebGL: typeof disposeWebGL;
+declare const webgl_enhanceContrastWebGL: typeof enhanceContrastWebGL;
+declare const webgl_gaussianBlurWebGL: typeof gaussianBlurWebGL;
+declare const webgl_isWebGLAvailable: typeof isWebGLAvailable;
+declare const webgl_kuwaharaFilterWebGL: typeof kuwaharaFilterWebGL;
+declare const webgl_medianFilterWebGL: typeof medianFilterWebGL;
+declare const webgl_quantizeWebGL: typeof quantizeWebGL;
+declare namespace webgl {
+  export {
+    PreprocessingPresetsWebGL as PreprocessingPresets,
+    webgl_PreprocessingPresetsWebGL as PreprocessingPresetsWebGL,
+    PreprocessorWebGL as Preprocessor,
+    webgl_PreprocessorWebGL as PreprocessorWebGL,
+    bilateralFilterWebGL as bilateralFilter,
+    webgl_bilateralFilterWebGL as bilateralFilterWebGL,
+    webgl_disposeWebGL as disposeWebGL,
+    enhanceContrastWebGL as enhanceContrast,
+    webgl_enhanceContrastWebGL as enhanceContrastWebGL,
+    gaussianBlurWebGL as gaussianBlur,
+    webgl_gaussianBlurWebGL as gaussianBlurWebGL,
+    webgl_isWebGLAvailable as isWebGLAvailable,
+    kuwaharaFilterWebGL as kuwaharaFilter,
+    webgl_kuwaharaFilterWebGL as kuwaharaFilterWebGL,
+    medianFilterWebGL as medianFilter,
+    webgl_medianFilterWebGL as medianFilterWebGL,
+    quantizeWebGL as quantize,
+    webgl_quantizeWebGL as quantizeWebGL,
+  };
+}
+
+type index$1_LocalVarianceConfig = LocalVarianceConfig;
+type index$1_LocalVariancePreprocessor = LocalVariancePreprocessor;
+declare const index$1_LocalVariancePreprocessor: typeof LocalVariancePreprocessor;
+type index$1_LocalVariancePreprocessorOptimized = LocalVariancePreprocessorOptimized;
+declare const index$1_LocalVariancePreprocessorOptimized: typeof LocalVariancePreprocessorOptimized;
+declare const index$1_PreprocessingPresets: typeof PreprocessingPresets;
+type index$1_Preprocessor = Preprocessor;
+declare const index$1_Preprocessor: typeof Preprocessor;
+declare const index$1_bilateralFilter: typeof bilateralFilter;
+declare const index$1_enhanceContrast: typeof enhanceContrast;
+declare const index$1_gaussianBlur: typeof gaussianBlur;
+declare const index$1_kuwaharaFilter: typeof kuwaharaFilter;
+declare const index$1_medianFilter: typeof medianFilter;
+declare const index$1_quantize: typeof quantize;
+declare const index$1_webgl: typeof webgl;
+declare namespace index$1 {
+  export { index$1_LocalVariancePreprocessor as LocalVariancePreprocessor, index$1_LocalVariancePreprocessorOptimized as LocalVariancePreprocessorOptimized, index$1_PreprocessingPresets as PreprocessingPresets, index$1_Preprocessor as Preprocessor, index$1_bilateralFilter as bilateralFilter, index$1_enhanceContrast as enhanceContrast, index$1_gaussianBlur as gaussianBlur, index$1_kuwaharaFilter as kuwaharaFilter, index$1_medianFilter as medianFilter, index$1_quantize as quantize, index$1_webgl as webgl };
+  export type { index$1_LocalVarianceConfig as LocalVarianceConfig };
+}
+
+/**
+ * Base interface for all extension strategies
+ */
+interface ExtensionStrategy<TConfig, TInput, TOutput> {
+    apply(input: TInput, config?: Partial<TConfig>): Promise<TOutput>;
+}
+/**
+ * RGB image representation for color operations
+ */
+interface RGBImage {
+    r: Float32Array;
+    g: Float32Array;
+    b: Float32Array;
+    width: number;
+    height: number;
+}
+/**
+ * Result from a DoG processor (either XDoG or FDoG)
+ */
+interface DoGResult {
+    /** The final processed image */
+    image: ChannelImage$1;
+    /** The sharpened image before thresholding (if available) */
+    sharpened?: ChannelImage$1;
+    /** Edge tangent flow (only from FDoG) */
+    etf?: EdgeTangentFlow;
+    /** The original grayscale input */
+    originalGray?: ChannelImage$1;
+    /** The original color input (if provided) */
+    originalColor?: RGBImage;
+}
+
+/**
+ * Anti-aliasing configuration
+ *
+ * From Section 4.3: "Since many of the examples in this paper use the ETF
+ * field to compute coherent edges, we can easily re-use the ETF to apply
+ * a very small line integral convolution along the field"
+ */
+interface AntiAliasingConfig {
+    /**
+     * Integration sigma along the flow direction (default: 1.0)
+     * - 0.5-2 pixels: Standard anti-aliasing
+     * - >2: Stylistic smoothing effect
+     */
+    sigma: number;
+    /**
+     * Step size for LIC sampling (default: 0.5)
+     */
+    stepSize: number;
+}
+/**
+ * Anti-Aliasing Strategy
+ *
+ * Applies line integral convolution along the edge tangent flow
+ * to produce image-coherent and visually pleasing anti-aliasing.
+ *
+ * @example
+ * ```typescript
+ * const fdog = new FDoG({ ... });
+ * const result = await fdog.processDetailed(input);
+ *
+ * const aa = new AntiAliasingStrategy();
+ * const smoothed = await aa.apply({
+ *   image: result.result,
+ *   etf: result.etf
+ * }, { sigma: 1.5 });
+ * ```
+ */
+declare class AntiAliasingStrategy implements ExtensionStrategy<AntiAliasingConfig, {
+    image: ChannelImage$1;
+    etf: FlowField;
+}, ChannelImage$1> {
+    private config;
+    constructor(config?: Partial<AntiAliasingConfig>);
+    apply(input: {
+        image: ChannelImage$1;
+        etf: FlowField;
+    }, configOverride?: Partial<AntiAliasingConfig>): Promise<ChannelImage$1>;
+    /**
+     * Create anti-aliasing with preset intensity
+     */
+    static withPreset(preset: 'subtle' | 'standard' | 'stylistic'): AntiAliasingStrategy;
+}
+
+/**
+ * Color Retention Extension - Extensible Architecture
+ *
+ * Provides a composable, hook-based system for combining stylized XDoG/FDoG
+ * output with original colors. Developers can inject custom logic at every
+ * stage of the pipeline.
+ *
+ * Pipeline stages:
+ * 1. Mask Transform: Modify the stylized mask before blending
+ * 2. Color Transform: Pre-process the original color
+ * 3. Blend Function: Combine mask and color (the core operation)
+ * 4. Post-Process: Final adjustments to the output
+ *
+ * Based on Section 5.2 of the XDoG paper.
+ */
+
+/**
+ * RGBA color tuple (values in 0-1 range)
+ */
+type Color = [r: number, g: number, b: number];
+/**
+ * Pixel context provided to all hook functions
+ * Contains spatial and neighborhood information for advanced effects
+ */
+interface PixelContext {
+    /** Current pixel x coordinate */
+    x: number;
+    /** Current pixel y coordinate */
+    y: number;
+    /** Linear index into the image array */
+    index: number;
+    /** Image width */
+    width: number;
+    /** Image height */
+    height: number;
+    /** Normalized x coordinate (0-1) */
+    u: number;
+    /** Normalized v coordinate (0-1) */
+    v: number;
+    /**
+     * Sample the original color at an offset from current pixel
+     * Useful for blur, sharpen, or texture effects
+     */
+    sampleColor: (dx: number, dy: number) => Color;
+    /**
+     * Sample the mask at an offset from current pixel
+     */
+    sampleMask: (dx: number, dy: number) => number;
+    /**
+     * Get a value from the shared state (for multi-pass effects)
+     */
+    getState: <T>(key: string) => T | undefined;
+    /**
+     * Set a value in the shared state
+     */
+    setState: <T>(key: string, value: T) => void;
+}
+/**
+ * Transform the stylized mask value before blending
+ *
+ * @param mask - Original mask value (0 = edge, 1 = background)
+ * @param ctx - Pixel context with spatial info and sampling functions
+ * @returns Transformed mask value
+ *
+ * @example
+ * ```typescript
+ * // Increase edge thickness by expanding dark regions
+ * const thickenEdges: MaskTransformFn = (mask, ctx) => {
+ *   // Sample neighbors and take minimum (expand dark)
+ *   let min = mask;
+ *   for (let dy = -1; dy <= 1; dy++) {
+ *     for (let dx = -1; dx <= 1; dx++) {
+ *       min = Math.min(min, ctx.sampleMask(dx, dy));
+ *     }
+ *   }
+ *   return min;
+ * };
+ * ```
+ */
+type MaskTransformFn = (mask: number, ctx: PixelContext) => number;
+/**
+ * Transform the original color before blending
+ *
+ * @param color - Original RGB color
+ * @param mask - Current mask value (after mask transform)
+ * @param ctx - Pixel context
+ * @returns Transformed color
+ *
+ * @example
+ * ```typescript
+ * // Boost saturation in non-edge areas
+ * const boostSaturation: ColorTransformFn = (color, mask, ctx) => {
+ *   const [h, s, l] = rgbToHsl(...color);
+ *   const boostedS = s * (1 + 0.3 * mask); // More saturation where mask is light
+ *   return hslToRgb(h, Math.min(1, boostedS), l);
+ * };
+ * ```
+ */
+type ColorTransformFn = (color: Color, mask: number, ctx: PixelContext) => Color;
+/**
+ * Core blend function that combines mask and color
+ *
+ * @param color - Transformed color
+ * @param mask - Transformed mask value
+ * @param ctx - Pixel context
+ * @returns Blended output color
+ *
+ * @example
+ * ```typescript
+ * // Simple multiply blend
+ * const multiply: BlendFn = (color, mask) => {
+ *   return [color[0] * mask, color[1] * mask, color[2] * mask];
+ * };
+ *
+ * // Screen blend for lighter result
+ * const screen: BlendFn = (color, mask) => {
+ *   return [
+ *     1 - (1 - color[0]) * (1 - mask),
+ *     1 - (1 - color[1]) * (1 - mask),
+ *     1 - (1 - color[2]) * (1 - mask),
+ *   ];
+ * };
+ * ```
+ */
+type BlendFn = (color: Color, mask: number, ctx: PixelContext) => Color;
+/**
+ * Post-process the blended result
+ *
+ * @param color - Blended color
+ * @param originalColor - Original input color (for reference)
+ * @param mask - Final mask value
+ * @param ctx - Pixel context
+ * @returns Final output color
+ *
+ * @example
+ * ```typescript
+ * // Add vignette effect
+ * const vignette: PostProcessFn = (color, original, mask, ctx) => {
+ *   const dist = Math.sqrt((ctx.u - 0.5) ** 2 + (ctx.v - 0.5) ** 2);
+ *   const vignette = 1 - Math.min(1, dist * 1.2);
+ *   return [color[0] * vignette, color[1] * vignette, color[2] * vignette];
+ * };
+ * ```
+ */
+type PostProcessFn = (color: Color, originalColor: Color, mask: number, ctx: PixelContext) => Color;
+/**
+ * Global pre-processing hook (runs once before pixel iteration)
+ * Useful for computing histograms, statistics, or initializing state
+ */
+type PreProcessHook = (stylized: ChannelImage$1, originalColor: RGBImage, state: Map<string, unknown>) => void;
+/**
+ * Global post-processing hook (runs once after pixel iteration)
+ * Useful for normalization, filtering, or multi-pass effects
+ */
+type GlobalPostProcessHook = (output: RGBImage, state: Map<string, unknown>) => RGBImage;
+/**
+ * Full configuration for the color retention pipeline
+ */
+interface ColorRetentionConfig {
+    /**
+     * Mask transformation function
+     * Default: identity (no change)
+     */
+    maskTransform?: MaskTransformFn;
+    /**
+     * Color transformation function
+     * Default: identity (no change)
+     */
+    colorTransform?: ColorTransformFn;
+    /**
+     * Core blend function (required or use preset)
+     */
+    blend: BlendFn;
+    /**
+     * Post-processing function
+     * Default: identity (no change)
+     */
+    postProcess?: PostProcessFn;
+    /**
+     * Global pre-processing hook
+     */
+    preProcess?: PreProcessHook;
+    /**
+     * Global post-processing hook
+     */
+    globalPostProcess?: GlobalPostProcessHook;
+    /**
+     * Chain multiple mask transforms (applied in order)
+     */
+    maskTransformChain?: MaskTransformFn[];
+    /**
+     * Chain multiple color transforms (applied in order)
+     */
+    colorTransformChain?: ColorTransformFn[];
+    /**
+     * Chain multiple post-process functions (applied in order)
+     */
+    postProcessChain?: PostProcessFn[];
+}
+/**
+ * Extensible Color Retention Strategy
+ *
+ * A fully customizable pipeline for combining stylized edges with colors.
+ * Every stage can be overridden with custom functions.
+ *
+ * @example Basic usage with preset
+ * ```typescript
+ * const strategy = ColorRetentionStrategy.preset('coloredEdges');
+ * const result = await strategy.apply({ stylized, originalColor });
+ * ```
+ *
+ * @example Custom blend function
+ * ```typescript
+ * const strategy = new ColorRetentionStrategy({
+ *   blend: (color, mask) => {
+ *     // Custom logic here
+ *     return [color[0] * mask, color[1] * mask, color[2] * mask];
+ *   }
+ * });
+ * ```
+ *
+ * @example Full pipeline customization
+ * ```typescript
+ * const strategy = new ColorRetentionStrategy({
+ *   maskTransform: (mask) => Math.pow(mask, 0.8), // Gamma adjust
+ *   colorTransform: (color, mask) => boostSaturation(color, 1.2),
+ *   blend: BlendFunctions.multiply,
+ *   postProcess: (color, orig, mask, ctx) => addVignette(color, ctx),
+ * });
+ * ```
+ *
+ * @example Chaining multiple transforms
+ * ```typescript
+ * const strategy = new ColorRetentionStrategy({
+ *   maskTransformChain: [
+ *     MaskTransforms.gamma(0.8),
+ *     MaskTransforms.threshold(0.1, 0.9),
+ *   ],
+ *   colorTransformChain: [
+ *     ColorTransforms.saturation(1.2),
+ *     ColorTransforms.brightness(0.1),
+ *   ],
+ *   blend: BlendFunctions.coloredEdges(),
+ * });
+ * ```
+ */
+declare class ColorRetentionStrategy {
+    private config;
+    constructor(config: ColorRetentionConfig);
+    apply(input: {
+        stylized: ChannelImage$1;
+        originalColor: RGBImage;
+    }, configOverride?: Partial<ColorRetentionConfig>): Promise<RGBImage>;
+    private buildMaskTransformChain;
+    private buildColorTransformChain;
+    private buildPostProcessChain;
+    private createPixelContext;
+    /**
+     * Create a strategy from a preset
+     */
+    static preset(name: keyof typeof Presets): ColorRetentionStrategy;
+    /**
+     * Create a strategy with just a blend function
+     */
+    static withBlend(blend: BlendFn): ColorRetentionStrategy;
+    /**
+     * Builder pattern for constructing complex pipelines
+     */
+    static builder(): ColorRetentionBuilder;
+}
+/**
+ * Fluent builder for constructing color retention pipelines
+ *
+ * @example
+ * ```typescript
+ * const strategy = ColorRetentionStrategy.builder()
+ *   .maskTransform(MaskTransforms.gamma(0.8))
+ *   .maskTransform(MaskTransforms.clamp(0.05, 0.95))
+ *   .colorTransform(ColorTransforms.saturation(1.2))
+ *   .blend(BlendFunctions.multiply)
+ *   .postProcess(PostProcessors.vignette(0.3))
+ *   .build();
+ * ```
+ */
+declare class ColorRetentionBuilder {
+    private maskTransforms;
+    private colorTransforms;
+    private postProcesses;
+    private blendFn?;
+    private preProcessHook?;
+    private globalPostProcessHook?;
+    maskTransform(fn: MaskTransformFn): this;
+    colorTransform(fn: ColorTransformFn): this;
+    blend(fn: BlendFn): this;
+    postProcess(fn: PostProcessFn): this;
+    preProcess(fn: PreProcessHook): this;
+    globalPostProcess(fn: GlobalPostProcessHook): this;
+    build(): ColorRetentionStrategy;
+}
+/**
+ * Collection of common blend functions
+ */
+declare const BlendFunctions$1: {
+    /**
+     * Simple multiply: color * mask
+     * White mask = full color, black mask = black
+     */
+    multiply: BlendFn;
+    /**
+     * Screen blend: 1 - (1-color) * (1-mask)
+     * Creates lighter results
+     */
+    screen: BlendFn;
+    /**
+     * Overlay blend: combines multiply and screen
+     */
+    overlay: BlendFn;
+    /**
+     * Soft light blend: gentler than overlay
+     */
+    softLight: BlendFn;
+    /**
+     * Colored edges: black lines on colored background
+     * Most common use case for line art + color
+     */
+    coloredEdges: (edgeStrength?: number) => BlendFn;
+    /**
+     * Tinted lines: edges take on underlying color
+     */
+    tintedLines: (darkness?: number) => BlendFn;
+    /**
+     * Luminosity replacement in HSL space
+     */
+    luminosity: BlendFn;
+    /**
+     * Linear interpolation between color and grayscale edge
+     */
+    lerp: (edgeColor?: Color) => BlendFn;
+    /**
+     * Preserve hue and saturation, replace value (HSV)
+     */
+    valueReplace: BlendFn;
+};
+/**
+ * Collection of mask transformation functions
+ */
+declare const MaskTransforms: {
+    /**
+     * Gamma correction for mask
+     */
+    gamma: (gamma: number) => MaskTransformFn;
+    /**
+     * Clamp mask to range
+     */
+    clamp: (min: number, max: number) => MaskTransformFn;
+    /**
+     * Remap mask from [inMin, inMax] to [outMin, outMax]
+     */
+    remap: (inMin: number, inMax: number, outMin?: number, outMax?: number) => MaskTransformFn;
+    /**
+     * Invert the mask
+     */
+    invert: () => MaskTransformFn;
+    /**
+     * Apply contrast adjustment
+     */
+    contrast: (amount: number) => MaskTransformFn;
+    /**
+     * Threshold with soft edges
+     */
+    softThreshold: (threshold: number, softness?: number) => MaskTransformFn;
+    /**
+     * Hard threshold (binary)
+     */
+    threshold: (threshold: number) => MaskTransformFn;
+    /**
+     * Quantize to N levels
+     */
+    quantize: (levels: number) => MaskTransformFn;
+    /**
+     * Morphological dilation (expand dark/edge regions)
+     */
+    dilate: (radius?: number) => MaskTransformFn;
+    /**
+     * Morphological erosion (shrink dark/edge regions)
+     */
+    erode: (radius?: number) => MaskTransformFn;
+    /**
+     * Gaussian blur approximation
+     */
+    blur: (radius?: number) => MaskTransformFn;
+    /**
+     * Add noise to mask
+     */
+    noise: (amount: number, seed?: number) => MaskTransformFn;
+};
+/**
+ * Collection of color transformation functions
+ */
+declare const ColorTransforms: {
+    /**
+     * Adjust saturation
+     */
+    saturation: (factor: number) => ColorTransformFn;
+    /**
+     * Adjust brightness
+     */
+    brightness: (amount: number) => ColorTransformFn;
+    /**
+     * Adjust contrast
+     */
+    contrast: (amount: number) => ColorTransformFn;
+    /**
+     * Shift hue
+     */
+    hueShift: (degrees: number) => ColorTransformFn;
+    /**
+     * Desaturate based on mask (less saturation in edge areas)
+     */
+    maskBasedDesaturate: (factor?: number) => ColorTransformFn;
+    /**
+     * Apply a color matrix transformation
+     */
+    colorMatrix: (matrix: number[][]) => ColorTransformFn;
+    /**
+     * Sepia tone
+     */
+    sepia: (intensity?: number) => ColorTransformFn;
+    /**
+     * Warm/cool temperature adjustment
+     */
+    temperature: (warmth: number) => ColorTransformFn;
+};
+/**
+ * Collection of post-processing functions
+ */
+declare const PostProcessors: {
+    /**
+     * Add vignette effect
+     */
+    vignette: (strength?: number, radius?: number) => PostProcessFn;
+    /**
+     * Add film grain
+     */
+    grain: (amount?: number, seed?: number) => PostProcessFn;
+    /**
+     * Blend with original color
+     */
+    blendOriginal: (amount: number) => PostProcessFn;
+    /**
+     * Clamp output to valid range
+     */
+    clampOutput: () => PostProcessFn;
+    /**
+     * Posterize (reduce color levels)
+     */
+    posterize: (levels: number) => PostProcessFn;
+    /**
+     * Edge-aware sharpening
+     */
+    sharpenEdges: (amount?: number) => PostProcessFn;
+};
+/**
+ * Pre-built configurations for common use cases
+ */
+declare const Presets: Record<string, ColorRetentionConfig>;
+declare function imageDataToRGB$1(imageData: ImageData): RGBImage;
+declare function rgbToImageData$1(rgb: RGBImage): ImageData;
+
+type colorRetention_BlendFn = BlendFn;
+type colorRetention_Color = Color;
+type colorRetention_ColorRetentionBuilder = ColorRetentionBuilder;
+declare const colorRetention_ColorRetentionBuilder: typeof ColorRetentionBuilder;
+type colorRetention_ColorRetentionConfig = ColorRetentionConfig;
+type colorRetention_ColorRetentionStrategy = ColorRetentionStrategy;
+declare const colorRetention_ColorRetentionStrategy: typeof ColorRetentionStrategy;
+type colorRetention_ColorTransformFn = ColorTransformFn;
+declare const colorRetention_ColorTransforms: typeof ColorTransforms;
+type colorRetention_GlobalPostProcessHook = GlobalPostProcessHook;
+type colorRetention_MaskTransformFn = MaskTransformFn;
+declare const colorRetention_MaskTransforms: typeof MaskTransforms;
+type colorRetention_PixelContext = PixelContext;
+type colorRetention_PostProcessFn = PostProcessFn;
+declare const colorRetention_PostProcessors: typeof PostProcessors;
+type colorRetention_PreProcessHook = PreProcessHook;
+declare const colorRetention_Presets: typeof Presets;
+declare namespace colorRetention {
+  export { BlendFunctions$1 as BlendFunctions, colorRetention_ColorRetentionBuilder as ColorRetentionBuilder, colorRetention_ColorRetentionStrategy as ColorRetentionStrategy, colorRetention_ColorTransforms as ColorTransforms, colorRetention_MaskTransforms as MaskTransforms, colorRetention_PostProcessors as PostProcessors, colorRetention_Presets as Presets, imageDataToRGB$1 as imageDataToRGB, rgbToImageData$1 as rgbToImageData };
+  export type { colorRetention_BlendFn as BlendFn, colorRetention_Color as Color, colorRetention_ColorRetentionConfig as ColorRetentionConfig, colorRetention_ColorTransformFn as ColorTransformFn, colorRetention_GlobalPostProcessHook as GlobalPostProcessHook, colorRetention_MaskTransformFn as MaskTransformFn, colorRetention_PixelContext as PixelContext, colorRetention_PostProcessFn as PostProcessFn, colorRetention_PreProcessHook as PreProcessHook };
+}
+
+/**
+ * Hatching texture specification
+ */
+interface HatchTexture {
+    /** Grayscale texture data (tiled as needed) */
+    data: ChannelImage$1;
+    /** Rotation angle in radians (0 = horizontal) */
+    rotation: number;
+}
+/**
+ * Hatching configuration
+ *
+ * From Section 5.1: "Our hatching approach is based on the concept of
+ * tonal art maps, where layers of strokes add up to achieve a desired tone"
+ */
+interface HatchingConfig {
+    /**
+     * Threshold levels for creating masks (ascending order)
+     * Each level creates a separate tone band
+     * Default: [0.3, 0.5, 0.7] creates 4 bands
+     */
+    thresholdLevels: number[];
+    /**
+     * Hatching textures for each band (darkest to lightest)
+     * Should have length = thresholdLevels.length + 1
+     */
+    textures?: HatchTexture[];
+    /**
+     * Background/paper texture (optional)
+     */
+    paperTexture?: ChannelImage$1;
+    /**
+     * Sharpening strength for threshold masks (default: 20)
+     */
+    p: number;
+    /**
+     * Smoothness of threshold transitions (default: 10)
+     * Lower values = softer transitions between bands
+     * Higher values = sharper band boundaries
+     */
+    phi: number;
+    /**
+     * Whether to use cumulative (tonal art map) style (default: true)
+     * When true: darker areas accumulate more hatching layers
+     * When false: each band is independent
+     */
+    cumulative: boolean;
+}
+/**
+ * Hatching Strategy
+ *
+ * Creates tonal art maps by computing multiple threshold levels from a
+ * sharpened XDoG/FDoG image and using them as masks for hatching textures.
+ *
+ * The key insight from tonal art maps is that darker tones are achieved by
+ * ACCUMULATING hatching layers - dark areas have all hatching layers active,
+ * while light areas have none.
+ *
+ * @example
+ * ```typescript
+ * const xdog = new XDoG({ p: 20 });
+ * const { sharpened } = await xdog.processDetailed(input);
+ *
+ * const hatching = new HatchingStrategy({
+ *   thresholdLevels: [0.25, 0.5, 0.75],
+ *   textures: [darkHatch, medHatch, lightHatch, white],
+ * });
+ * const result = await hatching.apply({ sharpened, original: input });
+ * ```
+ */
+declare class HatchingStrategy implements ExtensionStrategy<HatchingConfig, {
+    sharpened: ChannelImage$1;
+    original?: ChannelImage$1;
+}, ChannelImage$1> {
+    private config;
+    constructor(config?: Partial<HatchingConfig>);
+    /**
+     * Generate cumulative threshold masks for tonal art maps
+     *
+     * For tonal art maps, we generate masks where:
+     * - Mask 0 (darkest hatching): active where input < levels[0]
+     * - Mask 1: active where input < levels[1]
+     * - Mask N (lightest): active everywhere (or where input < 1.0)
+     *
+     * Each darker mask is a SUBSET of the lighter masks, creating the
+     * cumulative effect where dark areas have more hatching.
+     */
+    generateMasks(sharpened: ChannelImage$1, configOverride?: Partial<HatchingConfig>): ChannelImage$1[];
+    apply(input: {
+        sharpened: ChannelImage$1;
+        original?: ChannelImage$1;
+    }, configOverride?: Partial<HatchingConfig>): Promise<ChannelImage$1>;
+    /**
+     * Sample a texture with tiling and rotation
+     */
+    private sampleTexture;
+    /**
+     * Generate a simple procedural hatching texture
+     *
+     * Creates parallel lines at the specified spacing and thickness.
+     * The rotation parameter rotates the SAMPLING, not the line pattern itself.
+     */
+    static generateHatchTexture(width: number, height: number, spacing: number, thickness: number, rotation?: number): HatchTexture;
+    /**
+     * Generate a cross-hatching texture (two overlapping line patterns)
+     */
+    static generateCrossHatchTexture(width: number, height: number, spacing: number, thickness: number, angle1?: number, angle2?: number): HatchTexture;
+}
+
+/**
+ * Natural media style presets
+ */
+type NaturalMediaStyle = 'pencilShading' | 'pastel' | 'charcoal' | 'dryBrush';
+/**
+ * Natural media configuration
+ *
+ * From Section 5.2: Parameters for various natural media looks
+ */
+interface NaturalMediaConfig {
+    /** Base style preset */
+    style: NaturalMediaStyle;
+    /** Override sigma for edge detection */
+    sigma?: number;
+    /** Override p for edge emphasis */
+    p?: number;
+    /** Override phi for threshold sharpness */
+    phi?: number;
+    /** Override epsilon for threshold level */
+    epsilon?: number;
+    /** For FDoG: structure tensor smoothing */
+    sigmaC?: number;
+    /** For FDoG: flow-aligned smoothing */
+    sigmaM?: number;
+    /** For FDoG: anti-aliasing */
+    sigmaA?: number;
+    /** Use flow-based processing (FDoG) */
+    useFlow?: boolean;
+}
+/**
+ * Natural Media Strategy
+ *
+ * Provides preset parameter configurations for pencil, pastel, charcoal,
+ * and other natural media styles as described in Section 5.2.
+ *
+ * @example
+ * ```typescript
+ * const naturalMedia = new NaturalMediaStrategy({ style: 'pastel' });
+ * const result = await naturalMedia.apply(input);
+ * ```
+ */
+declare class NaturalMediaStrategy implements ExtensionStrategy<NaturalMediaConfig, ChannelImage$1, ChannelImage$1> {
+    private config;
+    /**
+     * Style presets from Section 5.2 and Table A.1
+     *
+     * Note on epsilon values:
+     * - epsilon is the threshold for white vs black transition (0-1 range)
+     * - Values ABOVE epsilon become white, values BELOW follow soft threshold
+     * - For natural media effects, we want lower epsilon values to preserve
+     *   more tonal variation and avoid all-white output
+     */
+    static readonly PRESETS: Record<NaturalMediaStyle, Partial<FDoGConfig> & {
+        useFlow: boolean;
+    }>;
+    constructor(config?: Partial<NaturalMediaConfig>);
+    /**
+     * Get the resolved configuration for the current style
+     */
+    getResolvedConfig(): Partial<FDoGConfig> & {
+        useFlow: boolean;
+    };
+    apply(input: ChannelImage$1, configOverride?: Partial<NaturalMediaConfig>): Promise<ChannelImage$1>;
+    /**
+     * Create strategy for a specific style
+     */
+    static forStyle(style: NaturalMediaStyle): NaturalMediaStrategy;
+}
+
+/**
+ * Multi-Scale Strategy Types and Implementation
+ *
+ * Refactored to use function-based blending, allowing users to either:
+ * 1. Use the provided blend functions (average, min, max, multiply)
+ * 2. Supply their own custom blend function
+ */
+
+/**
+ * Context provided to blend functions for each pixel
+ */
+interface BlendContext {
+    /** Pixel values from each layer at the current position */
+    values: number[];
+    /** Normalized weights for each layer (sum to 1.0) */
+    weights: number[];
+    /** Current pixel x coordinate */
+    x: number;
+    /** Current pixel y coordinate */
+    y: number;
+    /** Image width */
+    width: number;
+    /** Image height */
+    height: number;
+}
+/**
+ * Function type for blending multiple layer values into a single output value.
+ *
+ * @param ctx - Context containing pixel values, weights, and position info
+ * @returns The blended output value (should be in 0-1 range)
+ *
+ * @example Custom blend function
+ * ```typescript
+ * const softMin: BlendFunction = (ctx) => {
+ *   // Soft minimum using negative log-sum-exp
+ *   const k = 10; // sharpness parameter
+ *   const sumExp = ctx.values.reduce((sum, v) => sum + Math.exp(-k * v), 0);
+ *   return -Math.log(sumExp / ctx.values.length) / k;
+ * };
+ * ```
+ */
+type BlendFunction = (ctx: BlendContext) => number;
+/**
+ * Weighted average blend - smoothly combines all layers
+ *
+ * Best for: Balanced multi-scale results, general purpose
+ */
+declare const blendAverage: BlendFunction;
+/**
+ * Minimum blend - takes the darkest value at each pixel
+ *
+ * Best for: Preserving fine details, ensuring all edges are captured
+ * Since edges are dark (0) on white (1), min keeps all detected edges
+ */
+declare const blendMin: BlendFunction;
+/**
+ * Maximum blend - takes the brightest value at each pixel
+ *
+ * Best for: Abstract styles where only strong edges should appear
+ * Removes edges that don't appear in all scales
+ */
+declare const blendMax: BlendFunction;
+/**
+ * Multiply blend - multiplies all layer values together
+ *
+ * Best for: Strong edge emphasis, high contrast results
+ * Areas that are dark in any layer become very dark
+ */
+declare const blendMultiply: BlendFunction;
+/**
+ * Screen blend - inverse of multiply, brightens the result
+ *
+ * Best for: Lighter, more ethereal line drawings
+ */
+declare const blendScreen: BlendFunction;
+/**
+ * Soft light blend - subtle contrast enhancement
+ *
+ * Best for: Natural-looking multi-scale combination
+ */
+declare const blendSoftLight: BlendFunction;
+/**
+ * Overlay blend - combines multiply and screen based on base value
+ *
+ * Best for: High contrast results that preserve both highlights and shadows
+ */
+declare const blendOverlay: BlendFunction;
+/**
+ * Geometric mean blend - multiplicative average, less extreme than multiply
+ *
+ * Best for: Balanced darkening that respects layer weights
+ */
+declare const blendGeometricMean: BlendFunction;
+/**
+ * Harmonic mean blend - emphasizes smaller values more than arithmetic mean
+ *
+ * Best for: Preserving fine details while still allowing averaging
+ */
+declare const blendHarmonicMean: BlendFunction;
+/**
+ * Median blend - selects the middle value, robust to outliers
+ *
+ * Best for: Noise-resistant combination when layer count is odd
+ */
+declare const blendMedian: BlendFunction;
+/**
+ * Soft min blend - smooth approximation of minimum using log-sum-exp
+ *
+ * Best for: Capturing all edges with smoother transitions than hard min
+ */
+declare const blendSoftMin: BlendFunction;
+/**
+ * Soft max blend - smooth approximation of maximum using log-sum-exp
+ *
+ * Best for: Selecting dominant edges with smoother transitions than hard max
+ */
+declare const blendSoftMax: BlendFunction;
+/**
+ * Difference blend - absolute difference between layers (best with 2 layers)
+ *
+ * Best for: Highlighting scale-dependent features, edge comparison
+ */
+declare const blendDifference: BlendFunction;
+/**
+ * Priority blend - uses fine scale unless coarse scale has strong edges
+ *
+ * Best for: Detail preservation with fallback to coarse structure
+ * Assumes layers ordered fine-to-coarse (first = finest detail)
+ */
+declare const blendPriority: BlendFunction;
+/**
+ * Collection of all built-in blend functions for easy access
+ */
+declare const BlendFunctions: {
+    readonly average: BlendFunction;
+    readonly min: BlendFunction;
+    readonly max: BlendFunction;
+    readonly multiply: BlendFunction;
+    readonly screen: BlendFunction;
+    readonly softLight: BlendFunction;
+    readonly overlay: BlendFunction;
+    readonly geometricMean: BlendFunction;
+    readonly harmonicMean: BlendFunction;
+    readonly median: BlendFunction;
+    readonly softMin: BlendFunction;
+    readonly softMax: BlendFunction;
+    readonly difference: BlendFunction;
+    readonly priority: BlendFunction;
+};
+/**
+ * Type representing the names of built-in blend functions
+ */
+type BuiltinBlendMode = keyof typeof BlendFunctions;
+/**
+ * Configuration for a single scale layer
+ */
+interface MultiScaleLayer {
+    /** Pre-configured XDoG or FDoG processor instance */
+    processor: DoGImplementation;
+    /** Weight for blending (will be normalized) */
+    weight: number;
+}
+/**
+ * Multi-scale configuration
+ */
+interface MultiScaleConfig {
+    /** Layer specifications with processor instances */
+    layers: MultiScaleLayer[];
+    /**
+     * Blend function for combining layers.
+     *
+     * Can be either:
+     * - A built-in blend function from BlendFunctions (e.g., BlendFunctions.min)
+     * - A custom BlendFunction
+     *
+     * @example Using built-in
+     * ```typescript
+     * { layers: [...], blend: BlendFunctions.average }
+     * ```
+     *
+     * @example Using custom function
+     * ```typescript
+     * {
+     *   layers: [...],
+     *   blend: (ctx) => {
+     *     // Custom logic using ctx.values, ctx.weights, ctx.x, ctx.y
+     *     return Math.min(...ctx.values) * 0.8 + ctx.values[0] * 0.2;
+     *   }
+     * }
+     * ```
+     */
+    blend: BlendFunction;
+}
+/**
+ * Multi-Scale Strategy
+ *
+ * Combines XDoG/FDoG results at different scales for scale-space
+ * edge detection. Accepts pre-configured processor instances, giving
+ * developers full control over each layer's configuration.
+ *
+ * From Section 3.1 (Abstraction): Different σ values capture different
+ * levels of detail.
+ *
+ * @example Using built-in blend function
+ * ```typescript
+ * const multiScale = new MultiScaleStrategy({
+ *   layers: [
+ *     { processor: new XDoG({ sigma: 0.5, p: 30 }), weight: 1 },
+ *     { processor: new FDoG({ sigma: 2.0, sigmaM: 4.0 }), weight: 2 },
+ *   ],
+ *   blend: BlendFunctions.min,
+ * });
+ * const result = await multiScale.apply(input);
+ * ```
+ *
+ * @example Using custom blend function
+ * ```typescript
+ * const multiScale = new MultiScaleStrategy({
+ *   layers: [
+ *     { processor: new XDoG({ sigma: 0.4, p: 20 }), weight: 2 },
+ *     { processor: new FDoG({ sigma: 1.6, sigmaM: 4.0 }), weight: 1 },
+ *   ],
+ *   blend: (ctx) => {
+ *     // Weighted geometric mean
+ *     let logSum = 0;
+ *     for (let i = 0; i < ctx.values.length; i++) {
+ *       logSum += ctx.weights[i] * Math.log(ctx.values[i] + 0.001);
+ *     }
+ *     return Math.exp(logSum);
+ *   },
+ * });
+ * ```
+ *
+ * @example Position-dependent blending
+ * ```typescript
+ * const vignetteBlend: BlendFunction = (ctx) => {
+ *   // Use fine details in center, coarse at edges
+ *   const cx = ctx.width / 2, cy = ctx.height / 2;
+ *   const dist = Math.sqrt((ctx.x - cx) ** 2 + (ctx.y - cy) ** 2);
+ *   const maxDist = Math.sqrt(cx ** 2 + cy ** 2);
+ *   const t = dist / maxDist; // 0 at center, 1 at corners
+ *
+ *   // Interpolate between first layer (fine) and last layer (coarse)
+ *   return ctx.values[0] * (1 - t) + ctx.values[ctx.values.length - 1] * t;
+ * };
+ * ```
+ */
+declare class MultiScaleStrategy implements ExtensionStrategy<MultiScaleConfig, ChannelImage$1, ChannelImage$1> {
+    private config;
+    constructor(config: MultiScaleConfig);
+    apply(input: ChannelImage$1, configOverride?: Partial<Pick<MultiScaleConfig, 'blend'>>): Promise<ChannelImage$1>;
+    private blendLayers;
+    /**
+     * Create a preset multi-scale configuration
+     */
+    static withPreset(preset: 'detailed' | 'balanced' | 'abstract'): MultiScaleStrategy;
+    /**
+     * Get the configured layers (useful for inspection/debugging)
+     */
+    getLayers(): ReadonlyArray<MultiScaleLayer>;
+    /**
+     * Get the blend function
+     */
+    getBlendFunction(): BlendFunction;
+}
+/**
+ * Creates a weighted percentile blend function
+ *
+ * @param percentile - Value from 0 to 1 (0 = min, 0.5 = median, 1 = max)
+ * @returns A blend function that selects the given percentile
+ *
+ * @example
+ * ```typescript
+ * const medianBlend = createPercentileBlend(0.5);
+ * const multiScale = new MultiScaleStrategy({
+ *   layers: [...],
+ *   blend: medianBlend,
+ * });
+ * ```
+ */
+declare function createPercentileBlend(percentile: number): BlendFunction;
+/**
+ * Creates a blend function that interpolates between two other blend functions
+ * based on a spatial mask or gradient
+ *
+ * @param blendA - First blend function
+ * @param blendB - Second blend function
+ * @param mixer - Function that returns interpolation factor (0 = use A, 1 = use B)
+ * @returns Combined blend function
+ *
+ * @example Radial gradient between min and average
+ * ```typescript
+ * const radialBlend = createMixedBlend(
+ *   BlendFunctions.min,
+ *   BlendFunctions.average,
+ *   (ctx) => {
+ *     const cx = ctx.width / 2, cy = ctx.height / 2;
+ *     const dist = Math.hypot(ctx.x - cx, ctx.y - cy);
+ *     const maxDist = Math.hypot(cx, cy);
+ *     return dist / maxDist;
+ *   }
+ * );
+ * ```
+ */
+declare function createMixedBlend(blendA: BlendFunction, blendB: BlendFunction, mixer: (ctx: BlendContext) => number): BlendFunction;
+/**
+ * Creates a blend function that applies gamma correction to another blend
+ *
+ * @param baseBlend - The base blend function
+ * @param gamma - Gamma value (< 1 brightens, > 1 darkens)
+ * @returns Gamma-corrected blend function
+ */
+declare function createGammaCorrectedBlend(baseBlend: BlendFunction, gamma: number): BlendFunction;
+
+type multiScale_BlendContext = BlendContext;
+type multiScale_BlendFunction = BlendFunction;
+declare const multiScale_BlendFunctions: typeof BlendFunctions;
+type multiScale_BuiltinBlendMode = BuiltinBlendMode;
+type multiScale_MultiScaleConfig = MultiScaleConfig;
+type multiScale_MultiScaleLayer = MultiScaleLayer;
+type multiScale_MultiScaleStrategy = MultiScaleStrategy;
+declare const multiScale_MultiScaleStrategy: typeof MultiScaleStrategy;
+declare const multiScale_blendAverage: typeof blendAverage;
+declare const multiScale_blendDifference: typeof blendDifference;
+declare const multiScale_blendGeometricMean: typeof blendGeometricMean;
+declare const multiScale_blendHarmonicMean: typeof blendHarmonicMean;
+declare const multiScale_blendMax: typeof blendMax;
+declare const multiScale_blendMedian: typeof blendMedian;
+declare const multiScale_blendMin: typeof blendMin;
+declare const multiScale_blendMultiply: typeof blendMultiply;
+declare const multiScale_blendOverlay: typeof blendOverlay;
+declare const multiScale_blendPriority: typeof blendPriority;
+declare const multiScale_blendScreen: typeof blendScreen;
+declare const multiScale_blendSoftLight: typeof blendSoftLight;
+declare const multiScale_blendSoftMax: typeof blendSoftMax;
+declare const multiScale_blendSoftMin: typeof blendSoftMin;
+declare const multiScale_createGammaCorrectedBlend: typeof createGammaCorrectedBlend;
+declare const multiScale_createMixedBlend: typeof createMixedBlend;
+declare const multiScale_createPercentileBlend: typeof createPercentileBlend;
+declare namespace multiScale {
+  export { multiScale_BlendFunctions as BlendFunctions, multiScale_MultiScaleStrategy as MultiScaleStrategy, multiScale_blendAverage as blendAverage, multiScale_blendDifference as blendDifference, multiScale_blendGeometricMean as blendGeometricMean, multiScale_blendHarmonicMean as blendHarmonicMean, multiScale_blendMax as blendMax, multiScale_blendMedian as blendMedian, multiScale_blendMin as blendMin, multiScale_blendMultiply as blendMultiply, multiScale_blendOverlay as blendOverlay, multiScale_blendPriority as blendPriority, multiScale_blendScreen as blendScreen, multiScale_blendSoftLight as blendSoftLight, multiScale_blendSoftMax as blendSoftMax, multiScale_blendSoftMin as blendSoftMin, multiScale_createGammaCorrectedBlend as createGammaCorrectedBlend, multiScale_createMixedBlend as createMixedBlend, multiScale_createPercentileBlend as createPercentileBlend };
+  export type { multiScale_BlendContext as BlendContext, multiScale_BlendFunction as BlendFunction, multiScale_BuiltinBlendMode as BuiltinBlendMode, multiScale_MultiScaleConfig as MultiScaleConfig, multiScale_MultiScaleLayer as MultiScaleLayer };
+}
+
+/**
+ * Convert ImageData to RGBImage
+ */
+declare function imageDataToRGB(imageData: ImageData): RGBImage;
+/**
+ * Convert RGBImage to ImageData
+ */
+declare function rgbToImageData(rgb: RGBImage): ImageData;
+/**
+ * Convert grayscale to RGB (same value in all channels)
+ */
+declare function grayscaleToRGB(gray: ChannelImage$1): RGBImage;
+
+/**
+ * XDoG/FDoG Extensions Module
+ *
+ * Provides composable strategy patterns for extending XDoG/FDoG output:
+ * - Hatching: Multiple threshold masks for tonal art maps
+ * - Natural Media: Pencil, pastel, charcoal effects via parameter tuning
+ * - Anti-aliasing: LIC pass along edge tangent flow
+ * - Color Retention: Modulating stylized output with source colors
+ * - Multi-scale: Combining results at different σ values
+ *
+ * Based on Sections 4.3, 5.1, 5.2 of:
+ * "XDoG: An eXtended difference-of-Gaussians compendium including
+ * advanced image stylization" by Winnemöller et al. (2012)
+ *
+ * Design Philosophy:
+ * - Each extension is a standalone strategy that can be composed
+ * - Developers control XDoG vs FDoG choice and parameters
+ * - Extensions accept pre-processed results or raw images
+ * - Chainable pipeline architecture
+ */
+
+type index_AntiAliasingConfig = AntiAliasingConfig;
+type index_AntiAliasingStrategy = AntiAliasingStrategy;
+declare const index_AntiAliasingStrategy: typeof AntiAliasingStrategy;
+type index_BlendContext = BlendContext;
+type index_BlendFunction = BlendFunction;
+type index_BuiltinBlendMode = BuiltinBlendMode;
+type index_Color = Color;
+type index_ColorRetentionConfig = ColorRetentionConfig;
+type index_ColorTransformFn = ColorTransformFn;
+type index_DoGResult = DoGResult;
+type index_ExtensionStrategy<TConfig, TInput, TOutput> = ExtensionStrategy<TConfig, TInput, TOutput>;
+type index_HatchTexture = HatchTexture;
+type index_HatchingConfig = HatchingConfig;
+type index_HatchingStrategy = HatchingStrategy;
+declare const index_HatchingStrategy: typeof HatchingStrategy;
+type index_MaskTransformFn = MaskTransformFn;
+type index_MultiScaleConfig = MultiScaleConfig;
+type index_MultiScaleLayer = MultiScaleLayer;
+type index_NaturalMediaConfig = NaturalMediaConfig;
+type index_NaturalMediaStrategy = NaturalMediaStrategy;
+declare const index_NaturalMediaStrategy: typeof NaturalMediaStrategy;
+type index_NaturalMediaStyle = NaturalMediaStyle;
+type index_PostProcessFn = PostProcessFn;
+declare const index_colorRetention: typeof colorRetention;
+declare const index_grayscaleToRGB: typeof grayscaleToRGB;
+declare const index_imageDataToRGB: typeof imageDataToRGB;
+declare const index_multiScale: typeof multiScale;
+declare const index_rgbToImageData: typeof rgbToImageData;
+declare namespace index {
+  export { index_AntiAliasingStrategy as AntiAliasingStrategy, index_HatchingStrategy as HatchingStrategy, index_NaturalMediaStrategy as NaturalMediaStrategy, index_colorRetention as colorRetention, index_grayscaleToRGB as grayscaleToRGB, index_imageDataToRGB as imageDataToRGB, index_multiScale as multiScale, index_rgbToImageData as rgbToImageData };
+  export type { index_AntiAliasingConfig as AntiAliasingConfig, index_BlendContext as BlendContext, index_BlendFunction as BlendFunction, index_BuiltinBlendMode as BuiltinBlendMode, index_Color as Color, index_ColorRetentionConfig as ColorRetentionConfig, index_ColorTransformFn as ColorTransformFn, index_DoGResult as DoGResult, index_ExtensionStrategy as ExtensionStrategy, index_HatchTexture as HatchTexture, index_HatchingConfig as HatchingConfig, index_MaskTransformFn as MaskTransformFn, index_MultiScaleConfig as MultiScaleConfig, index_MultiScaleLayer as MultiScaleLayer, index_NaturalMediaConfig as NaturalMediaConfig, index_NaturalMediaStyle as NaturalMediaStyle, index_PostProcessFn as PostProcessFn };
+}
+
+export { DEFAULT_DOG_CONFIG, DEFAULT_ETF_CONFIG, DEFAULT_FDOG_CONFIG, DoGProcessor, EdgeTangentFlow, FDOG_STYLE_PRESETS, FDoG, STYLE_PRESETS, ThresholdModes, XDoG, applyCustomThreshold, index$2 as blur, index$3 as core, index as extensions, fdog, index$1 as preprocess, threshold, utils as utilities, xdog };
+export type { AntiAliasingConfig, BilateralFilterConfig, BlendFunction, BlurStrategy, BlurStrategyClass, ChannelImage$1 as ChannelImage, ColorRetentionConfig, ColorTransformFn, DoGConfig, DoGResult, ETFConfig, ExtensionStrategy, FDoGConfig, FlowField, FlowGuidedBlurConfig, HatchTexture, HatchingConfig, IsotropicBlurConfig, KuwaharaFilterConfig, MaskTransformFn, MedianFilterConfig, MultiScaleConfig, MultiScaleLayer, NaturalMediaConfig, NaturalMediaStyle, PostProcessFn, RGBImage$1 as RGBImage, ThresholdConfig, ThresholdStrategy, Vec2, XDoGConfig };

@@ -1,6 +1,6 @@
-import { ChannelImage } from "../types.js";
-import { createChannelImage, getPixel, getPixelBilinear } from "../utils.js";
-import { ExtensionStrategy } from "./base.js";
+import type { ChannelImage } from "../core/types";
+import { createChannelImage, getPixel, getPixelBilinear } from "../utils";
+import type { ExtensionStrategy } from "./base";
 
 
 /**

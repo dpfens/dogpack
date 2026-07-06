@@ -1,0 +1,53 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.ExtensionPipeline = void 0;
+/**
+ * Extension Pipeline
+ *
+ * Composes multiple extension strategies into a single processing pipeline.
+ * Provides type-safe chaining of operations.
+ *
+ * @example
+ * ```typescript
+ * const pipeline = new ExtensionPipeline()
+ *   .addStep('naturalMedia', async (input: ChannelImage) => {
+ *     const nm = new NaturalMediaStrategy({ style: 'pastel' });
+ *     return nm.apply(input);
+ *   })
+ *   .addStep('antiAlias', async (image: ChannelImage) => {
+ *     const etf = EdgeTangentFlow.compute(originalInput);
+ *     const aa = new AntiAliasingStrategy({ sigma: 1.5 });
+ *     return aa.apply({ image, etf });
+ *   });
+ *
+ * const result = await pipeline.run(input);
+ * ```
+ */
+class ExtensionPipeline {
+    steps = [];
+    /**
+     * Add a processing step to the pipeline
+     */
+    addStep(name, fn) {
+        this.steps.push({ name, fn });
+        return this;
+    }
+    /**
+     * Run the pipeline
+     */
+    async run(input) {
+        let current = input;
+        for (const step of this.steps) {
+            current = await step.fn(current);
+        }
+        return current;
+    }
+    /**
+     * Get step names for debugging
+     */
+    getStepNames() {
+        return this.steps.map(s => s.name);
+    }
+}
+exports.ExtensionPipeline = ExtensionPipeline;
+//# sourceMappingURL=pipeline.js.map

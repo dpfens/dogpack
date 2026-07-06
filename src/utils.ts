@@ -2,7 +2,7 @@
  * Image utility functions
  */
 
-import { ChannelImage, RGBImage, Vec2 } from './types.js';
+import type { ChannelImage, RGBImage, Vec2 } from './core/types';
 
 /**
  * Create a new grayscale image with given dimensions
@@ -214,4 +214,23 @@ export function lerp(a: number, b: number, t: number): number {
  */
 export function at(value: number | ChannelImage, i: number): number {
   return typeof value === "number" ? value : value.data[i];
+}
+
+/**
+ * Convert from the original τ parameterization to the new p parameterization
+ * τ = p / (p + 1), so p = τ / (1 - τ)
+ */
+export function tauToP(tau: number): number {
+  if (tau >= 1) {
+    return Infinity;
+  }
+  return tau / (1 - tau);
+}
+
+/**
+ * Convert from p parameterization back to τ
+ * p = τ / (1 - τ), so τ = p / (p + 1)
+ */
+export function pToTau(p: number): number {
+  return p / (p + 1);
 }
