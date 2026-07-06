@@ -1,4 +1,4 @@
-import { ChannelImage } from "../types.js";
+import type { ChannelImage } from "../core/types.js";
 import { createChannelImage } from "../utils.js";
 
 /**

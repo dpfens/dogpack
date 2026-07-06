@@ -1,7 +1,7 @@
-import { 
+import type { 
   ChannelImage, 
-} from '../types.js';
-import { EdgeTangentFlow } from '../etf/index.js';
+} from '../core/types';
+import { EdgeTangentFlow } from '../etf/index';
 
 // =============================================================================
 // Core Types

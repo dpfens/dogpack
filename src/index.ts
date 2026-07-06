@@ -83,54 +83,33 @@
  */
 
 // High-level API
-export type {BlurStrategy, BlurStrategyClass} from './types.js';
-export { XDoG, FDoG, xdog, fdog } from './xdog.js';
-export type { XDoGConfig } from './xdog.js';
+export * as core from './core'
+export type {BlurStrategy, BlurStrategyClass} from './core/types';
+export { XDoG, FDoG, xdog, fdog } from './core/dog';
+export type { XDoGConfig } from './core/dog';
 
 // Core processor (for advanced usage)
-export { DoGProcessor, ThresholdModes, applyCustomThreshold } from './dog.js';
+export { DoGProcessor, ThresholdModes, applyCustomThreshold } from './core/processor';
 
 // Blur strategies (for custom configurations)
-export { 
-  IsotropicBlur, 
-  FlowGuidedBlur, 
-  GradientAlignedBlur,
-} from './blur/index.js';
+export * as blur from './blur';
 export type {  
   IsotropicBlurConfig,
   FlowGuidedBlurConfig
-} from './blur/index.js';
+} from './blur';
 
 // Edge Tangent Flow (for visualization or custom pipelines)
-export { EdgeTangentFlow } from './etf/index.js';
+export { EdgeTangentFlow } from './etf';
 
 // Preprocessing
-export {
-  LocalVarianceConfig,
-  LocalVariancePreprocessor,
-  LocalVariancePreprocessorOptimized
-} from './preprocess/local-variance.js';
 
-export { 
-  PreprocessingPresets, 
-  Preprocessor,
-  bilateralFilter,
-  medianFilter,
-  kuwaharaFilter,
-  gaussianBlur,
-  enhanceContrast,
-  quantize
-} from './preprocess.js';
-export {PreprocessingPresetsWebGL, PreprocessorWebGL} from './preprocess-webgl.js';
+export * as preprocess from './preprocess'
 
 export type {
   ThresholdConfig,
   ThresholdStrategy
-} from './threshold.js';
-export {
-  HysteresisThresholdStrategy,
-  SoftThresholdStrategy
-} from './threshold.js'
+} from './core/threshold';
+export * as threshold from './core/threshold'
 
 // Types
 export type {
@@ -144,7 +123,7 @@ export type {
   BilateralFilterConfig,
   MedianFilterConfig,
   KuwaharaFilterConfig
-} from './types.js';
+} from './core/types';
 
 export { 
   DEFAULT_DOG_CONFIG, 
@@ -152,45 +131,13 @@ export {
   DEFAULT_FDOG_CONFIG,
   STYLE_PRESETS,
   FDOG_STYLE_PRESETS,
-  tauToP,
-  pToTau
-} from './types.js';
+} from './core/types';
 
 // Utilities
-export {
-  createChannelImage,
-  cloneChannelImage,
-  imageDataToLuminance,
-  luminanceToImageData,
-  rgbToGrayscale,
-  getPixel,
-  getPixelBilinear,
-  setPixel,
-  normalizeVec2,
-  dotVec2,
-  perpendicular,
-  generateGaussianKernel,
-  computeKernelSize,
-  clamp,
-  lerp,
-} from './utils.js';
+export * as utilities from './utils';
 // Extensions (composable strategies for advanced stylization)
 
-export {
-  AntiAliasingStrategy,
-  ColorRetentionStrategy,
-  BlendFunctions,
-  ColorTransforms,
-  MaskTransforms,
-  PostProcessors,
-  HatchingStrategy,
-  MultiScaleStrategy,
-  ScaleBlendFunctions,
-  NaturalMediaStrategy,
-  imageDataToRGB,
-  rgbToImageData,
-  grayscaleToRGB,
-} from './extensions/index.js';
+export * as extensions from './extensions';
 export type {
   ExtensionStrategy,
   DoGResult,
@@ -206,4 +153,4 @@ export type {
   NaturalMediaStyle,
   HatchingConfig,
   HatchTexture
-} from './extensions/index.js';
+} from './extensions';

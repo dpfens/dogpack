@@ -10,8 +10,8 @@
  */
 
 
-import { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from './types.js';
-import { createChannelImage, getPixel, generateGaussianKernel } from './utils.js';
+import type { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from '../core/types';
+import { createChannelImage, getPixel, generateGaussianKernel } from '../utils';
 
 
 const DEFAULT_BILATERAL_CONFIG: BilateralFilterConfig = {

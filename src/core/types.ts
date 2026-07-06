@@ -5,7 +5,7 @@
  * advanced image stylization" by Winnemöller et al. (2012)
  */
 
-import { SoftThresholdStrategy, ThresholdStrategy } from "./threshold.js";
+import { SoftThresholdStrategy, type ThresholdStrategy } from "./threshold";
 
 /**
  * Simple 2D vector
@@ -370,22 +370,3 @@ export const FDOG_STYLE_PRESETS = {
     sigmaA: 0.75,
   } as FDoGConfig,
 } as const;
-
-/**
- * Convert from the original τ parameterization to the new p parameterization
- * τ = p / (p + 1), so p = τ / (1 - τ)
- */
-export function tauToP(tau: number): number {
-  if (tau >= 1) {
-    return Infinity;
-  }
-  return tau / (1 - tau);
-}
-
-/**
- * Convert from p parameterization back to τ
- * p = τ / (1 - τ), so τ = p / (p + 1)
- */
-export function pToTau(p: number): number {
-  return p / (p + 1);
-}

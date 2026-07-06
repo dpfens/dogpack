@@ -878,22 +878,11 @@
         import { 
             XDoG,
             FDoG,
-            imageDataToLuminance, 
-            luminanceToImageData,
-            PreprocessingPresetsWebGL,
-            HatchingStrategy,
-            MultiScaleStrategy,
-            NaturalMediaStrategy,
-            ColorRetentionStrategy,
-            BlendFunctions,
-            MaskTransforms,
-            ColorTransforms,
-            PostProcessors,
-            AntiAliasingStrategy,
-            EdgeTangentFlow,
-            imageDataToRGB,
-            rgbToImageData
-        } from './dist/index.js';
+            utilities,
+            preprocess,
+            extensions,
+            EdgeTangentFlow
+        } from './dist/bundle/index.esm.js';
 
         // State
         let currentExtension = 'naturalMedia';
@@ -983,10 +972,10 @@
 
         // Natural Media presets from the library
         const nmPresets = {
-            pencilShading: NaturalMediaStrategy.PRESETS.pencilShading,
-            pastel: NaturalMediaStrategy.PRESETS.pastel,
-            charcoal: NaturalMediaStrategy.PRESETS.charcoal,
-            dryBrush: NaturalMediaStrategy.PRESETS.dryBrush,
+            pencilShading: extensions.NaturalMediaStrategy.PRESETS.pencilShading,
+            pastel: extensions.NaturalMediaStrategy.PRESETS.pastel,
+            charcoal: extensions.NaturalMediaStrategy.PRESETS.charcoal,
+            dryBrush: extensions.NaturalMediaStrategy.PRESETS.dryBrush,
         };
 
         // Multi-scale presets
@@ -1089,9 +1078,8 @@
         // Apply preprocessing
         function applyPreprocessing(luminance) {
             const mode = preprocessMode.value;
-            if (mode === 'none') return luminance;
-            
-            const preprocessFn = PreprocessingPresetsWebGL[mode];
+            if (mode === 'none') return luminance;        
+            const preprocessFn = preprocess.webgl.PreprocessingPresetsWebGL[mode];
             if (preprocessFn) {
                 return preprocessFn(luminance);
             }
@@ -1123,7 +1111,7 @@
 
             try {
                 const imageData = getImageData();
-                let luminance = imageDataToLuminance(imageData);
+                let luminance = utilities.imageDataToLuminance(imageData);
                 
                 // Apply preprocessing
                 luminance = applyPreprocessing(luminance);
@@ -1134,28 +1122,28 @@
                 switch (currentExtension) {
                     case 'naturalMedia':
                         result = await processNaturalMedia(luminance);
-                        resultImageData = luminanceToImageData(result);
+                        resultImageData = utilities.luminanceToImageData(result);
                         break;
                         
                     case 'multiScale':
                         result = await processMultiScale(luminance);
-                        resultImageData = luminanceToImageData(result);
+                        resultImageData = utilities.luminanceToImageData(result);
                         break;
                         
                     case 'hatching':
                         result = await processHatching(luminance);
-                        resultImageData = luminanceToImageData(result);
+                        resultImageData = utilities.luminanceToImageData(result);
                         break;
                         
                     case 'colorRetention':
-                        const rgbInput = imageDataToRGB(imageData);
+                        const rgbInput = extensions.imageDataToRGB(imageData);
                         result = await processColorRetention(luminance, rgbInput);
-                        resultImageData = rgbToImageData(result);
+                        resultImageData = extensions.rgbToImageData(result);
                         break;
                         
                     case 'antiAliasing':
                         result = await processAntiAliasing(luminance);
-                        resultImageData = luminanceToImageData(result);
+                        resultImageData = utilities.luminanceToImageData(result);
                         break;
                 }
 
@@ -1177,7 +1165,7 @@
 
         // Natural Media processing
         async function processNaturalMedia(luminance) {
-            const strategy = new NaturalMediaStrategy({
+            const strategy = new extensions.NaturalMediaStrategy({
                 style: 'pencilShading', // Base style, we'll override params
                 sigma: parseFloat(nmControls.sigma.value),
                 p: parseFloat(nmControls.p.value),
@@ -1190,7 +1178,7 @@
 
         // Multi-Scale processing
         async function processMultiScale(luminance) {
-            const strategy = MultiScaleStrategy.withPreset(currentMSPreset);
+            const strategy = extensions.multiScale.MultiScaleStrategy.withPreset(currentMSPreset);
             return strategy.apply(luminance, { blendMode: msControls.blendMode.value });
         }
 
@@ -1225,21 +1213,21 @@
                 for (let i = 0; i < numBands; i++) {
                     // Rotate each band's hatching by different amount
                     const rotation = (i * Math.PI) / numBands;
-                    textures.push(HatchingStrategy.generateHatchTexture(
+                    textures.push(extensions.HatchingStrategy.generateHatchTexture(
                         64, 64, spacing, thickness, rotation
                     ));
                 }
                 config.textures = textures;
             }
             
-            const strategy = new HatchingStrategy(config);
+            const strategy = new extensions.HatchingStrategy(config);
             return strategy.apply({ sharpened, original: luminance });
         }
 
         // Color Retention processing
         async function processColorRetention(luminance, rgbInput) {
             // First process with Natural Media to get stylized output
-            const nmStrategy = new NaturalMediaStrategy({ style: currentCRStyle });
+            const nmStrategy = new extensions.NaturalMediaStrategy({ style: currentCRStyle });
             const stylized = await nmStrategy.apply(luminance);
             
             // Build blend function based on selection
@@ -1315,38 +1303,38 @@
                 // Standard blends (color in background, dark edges)
                 switch (blendMode) {
                     case 'multiply':
-                        blend = BlendFunctions.multiply;
+                        blend = extensions.multiScale.BlendFunctions.multiply;
                         break;
                     case 'screen':
-                        blend = BlendFunctions.screen;
+                        blend = extensions.multiScale.BlendFunctions.screen;
                         break;
                     case 'overlay':
-                        blend = BlendFunctions.overlay;
+                        blend = extensions.multiScale.BlendFunctions.overlay;
                         break;
                     case 'softLight':
-                        blend = BlendFunctions.softLight;
+                        blend = extensions.multiScale.BlendFunctions.softLight;
                         break;
                     case 'coloredEdges':
-                        blend = BlendFunctions.coloredEdges(parseFloat(crControls.edgeStrength.value));
+                        blend = extensions.multiScale.BlendFunctions.coloredEdges(parseFloat(crControls.edgeStrength.value));
                         break;
                     case 'tintedLines':
-                        blend = BlendFunctions.tintedLines(parseFloat(crControls.tintDarkness.value));
+                        blend = extensions.multiScale.BlendFunctions.tintedLines(parseFloat(crControls.tintDarkness.value));
                         break;
                     case 'luminosity':
-                        blend = BlendFunctions.luminosity;
+                        blend = extensions.multiScale.BlendFunctions.luminosity;
                         break;
                     case 'lerp':
                         const hex = crControls.lerpColor.value;
                         const r = parseInt(hex.slice(1, 3), 16) / 255;
                         const g = parseInt(hex.slice(3, 5), 16) / 255;
                         const b = parseInt(hex.slice(5, 7), 16) / 255;
-                        blend = BlendFunctions.lerp([r, g, b]);
+                        blend = extensions.multiScale.BlendFunctions.lerp([r, g, b]);
                         break;
                     case 'valueReplace':
-                        blend = BlendFunctions.valueReplace;
+                        blend = extensions.multiScale.BlendFunctions.valueReplace;
                         break;
                     default:
-                        blend = BlendFunctions.coloredEdges(1.0);
+                        blend = extensions.multiScale.BlendFunctions.coloredEdges(1.0);
                 }
             }
             
@@ -1355,32 +1343,32 @@
             
             const maskGamma = parseFloat(crControls.maskGamma.value);
             if (maskGamma !== 1.0) {
-                maskTransformChain.push(MaskTransforms.gamma(maskGamma));
+                maskTransformChain.push(extensions.colorRetention.MaskTransforms.gamma(maskGamma));
             }
             
             const maskContrast = parseFloat(crControls.maskContrast.value);
             if (maskContrast !== 1.0) {
-                maskTransformChain.push(MaskTransforms.contrast(maskContrast));
+                maskTransformChain.push(extensions.colorRetention.MaskTransforms.contrast(maskContrast));
             }
             
             const clampMin = parseFloat(crControls.clampMin.value);
             const clampMax = parseFloat(crControls.clampMax.value);
             if (clampMin > 0 || clampMax < 1) {
-                maskTransformChain.push(MaskTransforms.clamp(clampMin, clampMax));
+                maskTransformChain.push(extensions.colorRetention.MaskTransforms.clamp(clampMin, clampMax));
             }
             
             const maskBlur = parseInt(crControls.maskBlur.value);
             if (maskBlur > 0) {
-                maskTransformChain.push(MaskTransforms.blur(maskBlur));
+                maskTransformChain.push(extensions.colorRetention.MaskTransforms.blur(maskBlur));
             }
             
             const quantize = parseInt(crControls.quantize.value);
             if (quantize > 0) {
-                maskTransformChain.push(MaskTransforms.quantize(quantize));
+                maskTransformChain.push(extensions.colorRetention.MaskTransforms.quantize(quantize));
             }
             
             if (crControls.maskInvert.checked) {
-                maskTransformChain.push(MaskTransforms.invert());
+                maskTransformChain.push(extensions.colorRetention.MaskTransforms.invert());
             }
             
             // Build color transform chain
@@ -1388,32 +1376,32 @@
             
             const colorSat = parseFloat(crControls.colorSat.value);
             if (colorSat !== 1.0) {
-                colorTransformChain.push(ColorTransforms.saturation(colorSat));
+                colorTransformChain.push(extensions.colorRetention.ColorTransforms.saturation(colorSat));
             }
             
             const colorBright = parseFloat(crControls.colorBright.value);
             if (colorBright !== 0) {
-                colorTransformChain.push(ColorTransforms.brightness(colorBright));
+                colorTransformChain.push(extensions.colorRetention.ColorTransforms.brightness(colorBright));
             }
             
             const colorContrast = parseFloat(crControls.colorContrast.value);
             if (colorContrast !== 1.0) {
-                colorTransformChain.push(ColorTransforms.contrast(colorContrast));
+                colorTransformChain.push(extensions.colorRetention.ColorTransforms.contrast(colorContrast));
             }
             
             const hueShift = parseFloat(crControls.hueShift.value);
             if (hueShift !== 0) {
-                colorTransformChain.push(ColorTransforms.hueShift(hueShift));
+                colorTransformChain.push(extensions.colorRetention.ColorTransforms.hueShift(hueShift));
             }
             
             const sepia = parseFloat(crControls.sepia.value);
             if (sepia > 0) {
-                colorTransformChain.push(ColorTransforms.sepia(sepia));
+                colorTransformChain.push(extensions.colorRetention.ColorTransforms.sepia(sepia));
             }
             
             const temp = parseFloat(crControls.temp.value);
             if (temp !== 0) {
-                colorTransformChain.push(ColorTransforms.temperature(temp));
+                colorTransformChain.push(extensions.colorRetention.ColorTransforms.temperature(temp));
             }
             
             // Build post process chain
@@ -1422,31 +1410,31 @@
             const vignette = parseFloat(crControls.vignette.value);
             const vigRadius = parseFloat(crControls.vigRadius.value);
             if (vignette > 0) {
-                postProcessChain.push(PostProcessors.vignette(vignette, vigRadius));
+                postProcessChain.push(extensions.colorRetention.PostProcessors.vignette(vignette, vigRadius));
             }
             
             const grain = parseFloat(crControls.grain.value);
             if (grain > 0) {
-                postProcessChain.push(PostProcessors.grain(grain));
+                postProcessChain.push(extensions.colorRetention.PostProcessors.grain(grain));
             }
             
             const blendOrig = parseFloat(crControls.blendOrig.value);
             if (blendOrig > 0) {
-                postProcessChain.push(PostProcessors.blendOriginal(blendOrig));
+                postProcessChain.push(extensions.colorRetention.PostProcessors.blendOriginal(blendOrig));
             }
             
             const posterize = parseInt(crControls.posterize.value);
             if (posterize > 0) {
-                postProcessChain.push(PostProcessors.posterize(posterize));
+                postProcessChain.push(extensions.colorRetention.PostProcessors.posterize(posterize));
             }
             
             const sharpen = parseFloat(crControls.sharpen.value);
             if (sharpen > 0) {
-                postProcessChain.push(PostProcessors.sharpenEdges(sharpen));
+                postProcessChain.push(extensions.colorRetention.PostProcessors.sharpenEdges(sharpen));
             }
             
             // Always clamp output
-            postProcessChain.push(PostProcessors.clampOutput());
+            postProcessChain.push(extensions.colorRetention.PostProcessors.clampOutput());
             
             // Build config
             const config = { blend };
@@ -1460,7 +1448,7 @@
                 config.postProcessChain = postProcessChain;
             }
             
-            const strategy = new ColorRetentionStrategy(config);
+            const strategy = new extensions.colorRetention.ColorRetentionStrategy(config);
             return strategy.apply({ stylized, originalColor: rgbInput });
         }
 
@@ -1478,7 +1466,7 @@
             
             const fdogResult = await fdog.processDetailed(luminance);
             
-            const strategy = new AntiAliasingStrategy({
+            const strategy = new extensions.AntiAliasingStrategy({
                 sigma: parseFloat(aaControls.sigma.value),
                 stepSize: parseFloat(aaControls.step.value),
             });

@@ -9,24 +9,24 @@
  */
 
 import { 
-  ChannelImage, 
-  DoGConfig, 
-  FDoGConfig,
+  type ChannelImage, 
+  type DoGConfig, 
+  type FDoGConfig,
   DEFAULT_DOG_CONFIG, 
   DEFAULT_ETF_CONFIG,
   DEFAULT_FDOG_CONFIG,
   STYLE_PRESETS,
   FDOG_STYLE_PRESETS,
-  BlurStrategy,
-  DoGImplementation,
-  DoGProcessingResult
-} from './types.js';
-import { DoGProcessor } from './dog.js';
-import { EdgeTangentFlow } from './etf/index.js';
-import { imageDataToLuminance, luminanceToImageData } from './utils.js';
-import { IsotropicBlur } from './blur/isotropic.js';
-import { GradientAlignedBlur } from './blur/gradient-aligned.js';
-import { FlowGuidedBlur } from './blur/flow-guided.js';
+  type BlurStrategy,
+  type DoGImplementation,
+  type DoGProcessingResult
+} from './types';
+import { DoGProcessor } from './processor';
+import { EdgeTangentFlow } from '../etf';
+import { imageDataToLuminance, luminanceToImageData } from '../utils';
+import { IsotropicBlur } from '../blur/isotropic';
+import { GradientAlignedBlur } from '../blur/gradient-aligned';
+import { FlowGuidedBlur } from '../blur/flow-guided';
 
 /**
  * XDoG configuration combining DoG parameters with isotropic blur options

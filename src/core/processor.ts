@@ -9,9 +9,11 @@
  * advanced image stylization" by Winnemöller et al. (2012)
  */
 
-import { BlurStrategy, ChannelImage, DoGConfig, DEFAULT_DOG_CONFIG, DoGProcessingResult } from './types.js';
-import { at, createChannelImage } from './utils.js';
-import { SoftThresholdStrategy, ThresholdConfig, ThresholdStrategy } from './threshold.js';
+import type { BlurStrategy, ChannelImage, DoGConfig, DoGProcessingResult } from './types';
+
+import { DEFAULT_DOG_CONFIG } from './types';
+import { at, createChannelImage } from '../utils';
+import { SoftThresholdStrategy, type ThresholdConfig, type ThresholdStrategy } from './threshold';
 
 /**
  * Difference of Gaussians processor

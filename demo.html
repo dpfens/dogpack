@@ -617,12 +617,9 @@
             FDoG,
             STYLE_PRESETS,
             FDOG_STYLE_PRESETS,
-            createChannelImage,
-            imageDataToLuminance, 
-            luminanceToImageData,
-            PreprocessingPresetsWebGL,
-            tauToP
-        } from './dist/index.js';
+            utilities,
+            preprocess
+        } from './dist/bundle/index.esm.js';
 
         // State
         let currentMode = 'xdog';
@@ -748,7 +745,7 @@
             const mode = preprocessMode.value;
             if (mode === 'none') return grayscale;
             
-            const preprocessFn = PreprocessingPresetsWebGL[mode];
+            const preprocessFn = preprocess.webgl.PreprocessingPresetsWebGL[mode];
             if (preprocessFn) {
                 return preprocessFn(grayscale);
             }
@@ -787,9 +784,9 @@
                     
                     // Extract RGB channels
                     const channels = {
-                        r: createChannelImage(width, height),
-                        g: createChannelImage(width, height),
-                        b: createChannelImage(width, height),
+                        r: utilities.createChannelImage(width, height),
+                        g: utilities.createChannelImage(width, height),
+                        b: utilities.createChannelImage(width, height),
                     };
                     
                     for (let i = 0; i < imageData.data.length; i += 4) {
@@ -824,7 +821,7 @@
                     result = outputImageData;
                 } else {
                     // Original grayscale approach
-                    let grayscale = imageDataToLuminance(imageData);
+                    let grayscale = utilities.imageDataToLuminance(imageData);
                     
                     // Apply preprocessing
                     grayscale = applyPreprocessing(grayscale);
@@ -838,7 +835,7 @@
                         processedResult = await fdog.process(grayscale);
                     }
 
-                    result = luminanceToImageData(processedResult);
+                    result = utilities.luminanceToImageData(processedResult);
                 }
 
                 const outputImageData = result;

@@ -8,8 +8,9 @@
  * Kang et al. (2007) "Coherent Line Drawing"
  */
 
-import { ChannelImage, FlowField, Vec2, ETFConfig, DEFAULT_ETF_CONFIG } from '../types.js';
-import { createChannelImage, normalizeVec2, dotVec2, generateGaussianKernel } from '../utils.js';
+import type { ChannelImage, FlowField, Vec2, ETFConfig } from '../core/types';
+import { DEFAULT_ETF_CONFIG } from '../core/types';
+import { createChannelImage, normalizeVec2, dotVec2, generateGaussianKernel } from '../utils';
 
 /**
  * Structure tensor components at a pixel
@@ -267,7 +268,6 @@ function smoothStructureTensorGaussian(
   height: number,
   sigma: number
 ): StructureTensor {
-  const size = width * height;
   
   // Kernel size based on paper's 2.45σ sampling rule
   const radius = Math.ceil(sigma * 2.45);
@@ -390,7 +390,6 @@ function refineTangentField(
     for (let x = 0; x < width; x++) {
       const idx = y * width + x;
       const currentT = tangents[idx];
-      const currentMag = magnitude[idx];
       
       let sumX = 0;
       let sumY = 0;

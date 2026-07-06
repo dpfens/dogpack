@@ -1,5 +1,3 @@
-import { BlurStrategy, BlurStrategyClass } from "../types";
-
 export class BaseCPUBlur {
     /**
    * Check if isotropic blur is supported

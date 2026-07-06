@@ -7,9 +7,9 @@
  * FIXED: WebGPUIsotropicBlur now supports parallel/concurrent blur operations
  */
 
-import { BlurStrategy, ChannelImage } from '../types.js';
-import { createChannelImage, getPixel,  generateGaussianKernel, computeKernelSize } from '../utils.js';
-import { BaseCPUBlur, BaseWebGLBlur, BaseWebGPUBlur } from './base.js';
+import type { BlurStrategy, ChannelImage } from '../core/types';
+import { createChannelImage, getPixel,  generateGaussianKernel, computeKernelSize } from '../utils';
+import { BaseCPUBlur, BaseWebGLBlur, BaseWebGPUBlur } from './base';
 
 /**
  * Configuration for isotropic Gaussian blur
@@ -41,11 +41,6 @@ export interface FlowGuidedBlurConfig {
    */
   stepSize: number;
 }
-
-const DEFAULT_FLOW_CONFIG: FlowGuidedBlurConfig = {
-  kernelSizeMultiplier: 6,
-  stepSize: 1.0,
-};
 
 /**
  * Standard isotropic Gaussian blur using separable convolution
@@ -569,7 +564,6 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 export class WebGPUIsotropicBlur extends BaseWebGPUBlur implements BlurStrategy {
   private config: WebGPUBlurConfig;
   private resources: WebGPUResources | null = null;
-  private initPromise: Promise<void> | null = null;
   
   // Reusable buffers for compute operations
   private paramsBuffer: GPUBuffer | null = null;

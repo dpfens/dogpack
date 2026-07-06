@@ -17,7 +17,7 @@
 // Types
 // ============================================================================
 
-import { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from './types.js';
+import type { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from '../core/types';
 
 // ============================================================================
 // WebGL Context Management
@@ -75,7 +75,6 @@ function getGL(): WebGL2RenderingContext | null {
     
     // Enable required extensions for float textures
     const ext1 = gl.getExtension('EXT_color_buffer_float');
-    const ext2 = gl.getExtension('OES_texture_float_linear');
     
     if (!ext1) {
       console.warn('EXT_color_buffer_float not available, some features may be limited');
@@ -1023,7 +1022,7 @@ function gaussianBlurCPU(input: ChannelImage, sigma: number): ChannelImage {
     return { data: new Float32Array(input.data), width: input.width, height: input.height };
   }
   
-  const { width, height, data } = input;
+  const { width, height } = input;
   const radius = Math.ceil(sigma * 3);
   const sigma2 = 2 * sigma * sigma;
   

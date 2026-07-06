@@ -5,23 +5,47 @@
   "license": "ISC",
   "author": "",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/types/index.d.ts",
+  "unpkg": "./dist/bundle/index.umd.min.js",
+  "jsdelivr": "./dist/bundle/index.umd.min.js",
+  "browser": "./dist/bundle/index.umd.js",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js"
+    },
+    "./bundle": {
+      "types": "./dist/bundle/index.d.ts",
+      "import": "./dist/bundle/index.esm.js",
+      "require": "./dist/bundle/index.cjs.js"
     }
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsc",
+    "clean": "rimraf dist",
+    "build": "npm run clean && npm run build:all",
+    "build:all": "npm run build:unbundled && npm run build:bundle",
+    "build:unbundled": "npm run build:esm && npm run build:cjs",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build:bundle": "rollup -c rollup.config.mjs",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "devDependencies": {
+    "@rollup/plugin-commonjs": "^28.0.1",
+    "@rollup/plugin-node-resolve": "^15.3.0",
+    "@rollup/plugin-terser": "^0.4.4",
+    "@rollup/plugin-typescript": "^12.1.1",
+    "rimraf": "^6.0.1",
+    "rollup": "^4.25.0",
+    "rollup-plugin-dts": "^6.1.1",
     "@webgpu/types": "^0.1.71",
+    "tslib": "^2.8.1",
     "typescript": "^5.9.3"
   }
 }
