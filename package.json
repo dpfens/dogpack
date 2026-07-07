@@ -1,7 +1,7 @@
 {
   "name": "xfdog",
   "version": "1.0.0",
-  "description": "A TypeScript implementation of Extended Difference-of-Gaussians (XDoG) and Flow-based Difference-of-Gaussians (FDoG) algorithms for artistic line drawing and edge stylization.",
+  "description": "A TypeScript implementation of various Difference-of-Gaussians (DoG) algorithms for artistic line drawing and edge stylization.",
   "license": "ISC",
   "author": "",
   "type": "module",
