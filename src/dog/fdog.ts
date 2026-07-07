@@ -9,134 +9,16 @@
  */
 
 import { 
-  type ChannelImage, 
-  type DoGConfig, 
-  type FDoGConfig,
-  DEFAULT_DOG_CONFIG, 
-  DEFAULT_ETF_CONFIG,
-  DEFAULT_FDOG_CONFIG,
-  STYLE_PRESETS,
-  FDOG_STYLE_PRESETS,
-  type BlurStrategy,
-  type DoGImplementation,
-  type DoGProcessingResult
-} from './types';
-import { DoGProcessor } from './processor';
+  type ChannelImage,
+} from '../types';
+import { DoGProcessor } from '../processor';
 import { EdgeTangentFlow } from '../etf';
 import { imageDataToLuminance, luminanceToImageData } from '../utils';
-import { IsotropicBlur } from '../blur/isotropic';
 import { GradientAlignedBlur } from '../blur/gradient-aligned';
 import { FlowGuidedBlur } from '../blur/flow-guided';
+import { DEFAULT_FDOG_CONFIG, FDOG_STYLE_PRESETS, type DoGImplementation, type FDoGConfig } from './types';
+import { DEFAULT_ETF_CONFIG } from '..';
 
-/**
- * XDoG configuration combining DoG parameters with isotropic blur options
- */
-export interface XDoGConfig extends DoGConfig {
-  /** Kernel size multiplier for Gaussian blur (default: 6) */
-  kernelSizeMultiplier?: number;
-  blurStrategy?: BlurStrategy;
-}
-
-/**
- * XDoG (Extended Difference of Gaussians)
- * 
- * Uses standard isotropic Gaussian blur for edge detection and stylization.
- * Good for general-purpose edge detection and artistic effects.
- * 
- * This implements the reparameterized XDoG from Section 2.5 of the paper,
- * using Equation 7 for the sharpening computation.
- */
-export class XDoG implements DoGImplementation {
-  private processor: DoGProcessor;
-  private config: XDoGConfig;
-  
-  constructor(config: Partial<XDoGConfig> = {}) {
-    const { kernelSizeMultiplier, ...dogConfig } = config;
-    
-    this.config = { ...DEFAULT_DOG_CONFIG, kernelSizeMultiplier: 6, ...config };
-
-    const blurStrategy = new IsotropicBlur({
-      kernelSizeMultiplier: this.config.kernelSizeMultiplier,
-    });
-    
-    this.processor = new DoGProcessor(blurStrategy, dogConfig);
-  }
-  
-  /**
-   * Create XDoG with a preset style
-   */
-  static withPreset(presetName: keyof typeof STYLE_PRESETS): XDoG {
-    return new XDoG(STYLE_PRESETS[presetName]);
-  }
-  
-  /**
-   * Process a grayscale image
-   */
-  async process(input: ChannelImage, overrides: Partial<DoGConfig> = {}): Promise<ChannelImage> {
-    return this.processor.process(input, overrides);
-  }
-  
-  /**
-   * Process without thresholding (returns sharpened image)
-   */
-  async processSharpened(input: ChannelImage, overrides: Partial<DoGConfig> = {}): Promise<ChannelImage> {
-    return this.processor.processNoThreshold(input, overrides);
-  }
-  
-  /**
-   * Get raw DoG response for visualization
-   */
-  async processRawDoG(input: ChannelImage, overrides: Partial<DoGConfig> = {}): Promise<ChannelImage> {
-    return this.processor.processRawDoG(input, overrides);
-  }
-
-  /**
-   * Process and return all intermediate results
-   * 
-   * This is more efficient than calling process(), processSharpened(), and 
-   * processRawDoG() separately as it only performs the blur operations once.
-   * 
-   * Useful for:
-   * - Hatching strategies that need the sharpened image
-   * - Debugging and visualization
-   * - Custom post-processing pipelines
-   */
-  async processDetailed(input: ChannelImage, overrides: Partial<DoGConfig> = {}): Promise<DoGProcessingResult> {
-    return this.processor.processDetailed(input, overrides);
-  }
-  
-  /**
-   * Convenience method to process ImageData directly (e.g., from a canvas)
-   */
-  async processGrayscaleImageData(input: ImageData, overrides: Partial<DoGConfig> = {}): Promise<ImageData> {
-    const grayscale = imageDataToLuminance(input);
-    const result = await this.process(grayscale, overrides);
-    return luminanceToImageData(result);
-  }
-  
-  /**
-   * Get current configuration
-   */
-  getConfig(): Readonly<XDoGConfig> {
-    return { ...this.config, ...this.processor.getConfig() };
-  }
-  
-  /**
-   * Update configuration
-   */
-  setConfig(config: Partial<XDoGConfig>): void {
-    const { kernelSizeMultiplier, ...dogConfig } = config;
-    
-    if (kernelSizeMultiplier !== undefined) {
-      this.config.kernelSizeMultiplier = kernelSizeMultiplier;
-      // Need to recreate blur strategy with new kernel size
-      const blurStrategy = new IsotropicBlur({ kernelSizeMultiplier });
-      this.processor.setBlurStrategy(blurStrategy);
-    }
-    
-    this.processor.setConfig(dogConfig);
-  }
-}
 
 /**
  * FDoG (Flow-based Difference of Gaussians)
@@ -166,6 +48,9 @@ export class FDoG implements DoGImplementation {
       ...config,
     };
   }
+
+  dispose(): void {
+  }
   
   /**
    * Create FDoG with a preset style
@@ -194,6 +79,7 @@ export class FDoG implements DoGImplementation {
     
     // Step 4: Process image (DoG + threshold)
     let result = await processor.process(input);
+    processor.dispose();
     const flowBlur = new FlowGuidedBlur(etf);
     
     // Step 5: Flow-aligned smoothing
@@ -204,7 +90,9 @@ export class FDoG implements DoGImplementation {
     // Step 6: Anti-aliasing
     if (params.sigmaA > 0) {
       result = await flowBlur.blur(result, params.sigmaA);
-    }  
+    }
+    flowBlur.dispose();
+    EdgeTangentFlow.dispose();
     return result;
   }
   
@@ -244,6 +132,7 @@ export class FDoG implements DoGImplementation {
     if (params.sigmaM > 0) {
       const flowBlur = new FlowGuidedBlur(etf);
       smoothed = await flowBlur.blur(thresholded, params.sigmaM);
+      flowBlur.dispose()
     }
     
     // Anti-aliasing
@@ -252,8 +141,9 @@ export class FDoG implements DoGImplementation {
       const flowCls = FlowGuidedBlur;
       const aaBlur = new flowCls(etf);
       result = await aaBlur.blur(smoothed, params.sigmaA);
+      aaBlur.dispose();
     }
-    
+    EdgeTangentFlow.dispose();
     return { result, etf, sharpened, thresholded, smoothed };
   }
   
@@ -283,32 +173,22 @@ export class FDoG implements DoGImplementation {
     const processor = new DoGProcessor(gradientBlur, params);
     
     let result = await processor.process(input);
+    processor.dispose();
 
     const flowCls = FlowGuidedBlur;
     if (params.sigmaM > 0) {
       const flowBlur = new flowCls(etf);
       result = await flowBlur.blur(result, params.sigmaM);
+      flowBlur.dispose();
     }
     
     if (params.sigmaA > 0) {
       const aaBlur = new flowCls(etf);
       result = await aaBlur.blur(result, params.sigmaA);
+      aaBlur.dispose();
     }
     
     return result;
-  }
-  
-  /**
-   * Compute Edge Tangent Flow separately
-   * 
-   * Useful for visualizing the flow field or reusing it across frames.
-   */
-  computeETF(input: ChannelImage, sigmaC?: number): EdgeTangentFlow {
-    const sigma = sigmaC ?? this.config.sigmaC;
-    return EdgeTangentFlow.compute(input, {
-      iterations: DEFAULT_ETF_CONFIG.iterations,
-      kernelSize: Math.ceil(sigma * 2.45) * 2 + 1,
-    }, sigma);
   }
   
   /**
@@ -326,7 +206,10 @@ export class FDoG implements DoGImplementation {
 
     const flowCls = FlowGuidedBlur;
     const aaBlur = new flowCls(etf);
-    return aaBlur.blur(input, sigma);
+    const result = aaBlur.blur(input, sigma);
+    aaBlur.dispose();
+    EdgeTangentFlow.dispose();
+    return result;
   }
   
   /**
@@ -344,16 +227,6 @@ export class FDoG implements DoGImplementation {
   }
 }
 
-/**
- * Convenience function for one-shot XDoG processing
- */
-export async function xdog(
-  input: ChannelImage,
-  config: Partial<XDoGConfig> = {}
-): Promise<ChannelImage> {
-  const processor = new XDoG(config);
-  return processor.process(input);
-}
 
 /**
  * Convenience function for one-shot FDoG processing
@@ -363,5 +236,8 @@ export async function fdog(
   config: Partial<FDoGConfig> = {}
 ): Promise<ChannelImage> {
   const processor = new FDoG(config);
-  return processor.process(input);
+  const result = processor.process(input);
+  processor.dispose();
+  return result;
 }
+ 

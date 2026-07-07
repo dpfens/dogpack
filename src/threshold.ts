@@ -1,5 +1,5 @@
 import type { ChannelImage } from './types';
-import { createChannelImage, at } from "../utils";
+import { createChannelImage, at } from "./utils";
 
 export interface ThresholdStrategy {
   threshold(sharpened: ChannelImage, config: ThresholdConfig): ChannelImage;
@@ -25,6 +25,29 @@ export class SoftThresholdStrategy implements ThresholdStrategy {
     return output;
   }
 }
+
+
+/**
+ * Hard black/white threshold (step function).
+ * Equivalent to φ → ∞ in SoftThresholdStrategy, and to ThresholdModes.hard
+ * in processor.ts, but expressed as a ThresholdStrategy so it can be plugged
+ * into DoGConfig.thresholdStrategy (e.g. as ADoG's default, since the paper's
+ * screentone output is binarized rather than soft-thresholded).
+ */
+export class HardThresholdStrategy implements ThresholdStrategy {
+  threshold(input: ChannelImage, config: ThresholdConfig): ChannelImage {
+    const output = createChannelImage(input.width, input.height);
+    const size = input.width * input.height;
+ 
+    for (let i = 0; i < size; i++) {
+      const eps = at(config.epsilon, i);
+      output.data[i] = input.data[i] >= eps ? 1.0 : 0.0;
+    }
+ 
+    return output;
+  }
+}
+
 
 export class HysteresisThresholdStrategy implements ThresholdStrategy {
   constructor(

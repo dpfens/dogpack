@@ -582,10 +582,19 @@
                         </div>
 
                         <!-- Output -->
+                        <!-- Output -->
                         <div class="mt-4">
                             <div class="form-check form-switch">
                                 <input class="form-check-input" type="checkbox" role="switch" id="useColorToggle">
                                 <label class="form-check-label" for="useColorToggle">Color</label>
+                            </div>
+                            <div class="mt-3" id="colorAmountWrapper" style="display: none;">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label mb-0" for="colorAmount">Color Amount</label>
+                                    <span class="param-value" id="colorAmountValue">0.70</span>
+                                </div>
+                                <input type="range" class="form-range" id="colorAmount"
+                                    min="0" max="1" step="0.01" value="0.7">
                             </div>
                         </div>
                         
@@ -613,10 +622,7 @@
     
     <script type="module">
         import { 
-            XDoG,
-            FDoG,
-            STYLE_PRESETS,
-            FDOG_STYLE_PRESETS,
+            dog,
             utilities,
             preprocess
         } from './dist/bundle/index.esm.js';
@@ -624,6 +630,50 @@
         // State
         let currentMode = 'xdog';
         let loadedImage = null;
+        let fullResResult = null; // holds full-resolution ImageData for download
+
+        function drawDownsampled(destCanvas, imageData) {
+            // Draw the full-res ImageData onto an offscreen canvas first
+            const src = document.createElement('canvas');
+            src.width = imageData.width;
+            src.height = imageData.height;
+            src.getContext('2d').putImageData(imageData, 0, 0);
+
+            // Figure out target display size from the container, preserving aspect ratio
+            const container = destCanvas.parentElement;
+            const dpr = window.devicePixelRatio || 1;
+            const containerW = container.clientWidth * dpr;
+            const containerH = container.clientHeight * dpr;
+
+            // Single uniform scale factor -- same logic as CSS object-fit: contain
+            const scale = Math.min(1, containerW / imageData.width, containerH / imageData.height);
+            const targetW = Math.round(imageData.width * scale);
+            const targetH = Math.round(imageData.height * scale);
+
+            // Step down by halves until close to target size -- avoids single-pass aliasing
+            let cur = src;
+            let w = imageData.width, h = imageData.height;
+            while (w > targetW * 2 && h > targetH * 2) {
+                const next = document.createElement('canvas');
+                w = Math.max(targetW, Math.floor(w / 2));
+                h = Math.max(targetH, Math.floor(h / 2));
+                next.width = w;
+                next.height = h;
+                const nctx = next.getContext('2d');
+                nctx.imageSmoothingEnabled = true;
+                nctx.imageSmoothingQuality = 'high';
+                nctx.drawImage(cur, 0, 0, w, h);
+                cur = next;
+            }
+
+            // Final pass to exact target size
+            destCanvas.width = Math.round(targetW);
+            destCanvas.height = Math.round(targetH);
+            const dctx = destCanvas.getContext('2d');
+            dctx.imageSmoothingEnabled = true;
+            dctx.imageSmoothingQuality = 'high';
+            dctx.drawImage(cur, 0, 0, destCanvas.width, destCanvas.height);
+        }
 
         // DOM Elements
         const dropZone = document.getElementById('dropZone');
@@ -639,10 +689,22 @@
         const fdogParamsSection = document.getElementById('fdogParamsSection');
         const preprocessMode = document.getElementById('preprocessMode');
         const useColorToggle = document.getElementById('useColorToggle');
+        const colorAmountWrapper = document.getElementById('colorAmountWrapper');
+        const colorAmountSlider = document.getElementById('colorAmount');
+        const colorAmountValue = document.getElementById('colorAmountValue');
 
         useColorToggle.addEventListener('change', function() {
+            colorAmountWrapper.style.display = this.checked ? 'block' : 'none';
             processImage();
         })
+
+        colorAmountSlider.addEventListener('input', function() {
+            colorAmountValue.textContent = parseFloat(this.value).toFixed(2);
+        });
+
+        colorAmountSlider.addEventListener('change', function() {
+            processImage();
+        });
 
         // Core parameter sliders
         const sliders = {
@@ -691,7 +753,7 @@
 
         // Apply XDoG preset
         function applyXDoGPreset(presetName) {
-            const preset = STYLE_PRESETS[presetName];
+            const preset = dog.STYLE_PRESETS[presetName];
             if (!preset) return;
 
             sliders.sigma.value = preset.sigma;
@@ -705,7 +767,7 @@
 
         // Apply FDoG preset
         function applyFDoGPreset(presetName) {
-            const preset = FDOG_STYLE_PRESETS[presetName];
+            const preset = dog.FDOG_STYLE_PRESETS[presetName];
             if (!preset) return;
 
             sliders.sigma.value = preset.sigma;
@@ -778,45 +840,55 @@
                 let result;
 
                 if (useColor) {
-                    // Color-aware processing
                     const width = imageData.width;
                     const height = imageData.height;
-                    
+                    const colorAmount = colorAmountSlider ? parseFloat(colorAmountSlider.value) : 0.7;
+
                     // Extract RGB channels
                     const channels = {
                         r: utilities.createChannelImage(width, height),
                         g: utilities.createChannelImage(width, height),
                         b: utilities.createChannelImage(width, height),
                     };
-                    
+
                     for (let i = 0; i < imageData.data.length; i += 4) {
                         const pixelIdx = i / 4;
                         channels.r.data[pixelIdx] = imageData.data[i] / 255;
                         channels.g.data[pixelIdx] = imageData.data[i + 1] / 255;
                         channels.b.data[pixelIdx] = imageData.data[i + 2] / 255;
                     }
-                    
-                    // Process each channel independently
+
                     let processor;
                     if (currentMode === 'xdog') {
-                        processor = new XDoG(params);
+                        processor = new dog.XDoG(params);
                     } else {
-                        processor = new FDoG(params);
+                        processor = new dog.FDoG(params);
                     }
-                    
-                    const [resultR, resultG, resultB] = await Promise.all([
-                        processor.process(channels.r),
-                        processor.process(channels.g),
-                        processor.process(channels.b),
+
+                    // Luminance channel drives the line mask -- epsilon/phi act ONCE here,
+                    // so line heaviness no longer varies per-channel.
+                    const luminance = utilities.imageDataToLuminance(imageData);
+
+                    const [lineMask, sharpR, sharpG, sharpB] = await Promise.all([
+                        processor.process(luminance),          // thresholded structure (0..1)
+                        processor.processSharpened(channels.r), // raw sharpened, no threshold
+                        processor.processSharpened(channels.g),
+                        processor.processSharpened(channels.b),
                     ]);
-                    
-                    // Reconstruct as colored ImageData
+                    processor.dispose();
+
+                    // Blend: mask controls line/white structure, colorAmount controls
+                    // how much hue shows through in the dark/line regions.
                     const outputImageData = new ImageData(width, height);
+                    const sharpened = [sharpR, sharpG, sharpB];
                     for (let i = 0; i < width * height; i++) {
-                        outputImageData.data[i * 4] = Math.round(resultR.data[i] * 255);      // Red
-                        outputImageData.data[i * 4 + 1] = Math.round(resultG.data[i] * 255);  // Green
-                        outputImageData.data[i * 4 + 2] = Math.round(resultB.data[i] * 255);  // Blue
-                        outputImageData.data[i * 4 + 3] = 255;                                 // Alpha
+                        const mask = lineMask.data[i];
+                        for (let c = 0; c < 3; c++) {
+                            const colored = sharpened[c].data[i] * colorAmount + mask * (1 - colorAmount);
+                            const clamped = Math.max(0, Math.min(1, colored));
+                            outputImageData.data[i * 4 + c] = Math.round(clamped * 255);
+                        }
+                        outputImageData.data[i * 4 + 3] = 255;
                     }
                     result = outputImageData;
                 } else {
@@ -828,23 +900,23 @@
 
                     let processedResult;
                     if (currentMode === 'xdog') {
-                        const xdog = new XDoG(params);
+                        const xdog = new dog.XDoG(params);
                         processedResult = await xdog.process(grayscale);
+                        xdog.dispose();
                     } else {
-                        const fdog = new FDoG(params);
+                        const fdog = new dog.FDoG(params);
                         processedResult = await fdog.process(grayscale);
+                        fdog.dispose();
                     }
 
                     result = utilities.luminanceToImageData(processedResult);
                 }
 
                 const outputImageData = result;
+                fullResResult = outputImageData; // keep full-res data around for download
 
-                // Display result
-                resultCanvas.width = outputImageData.width;
-                resultCanvas.height = outputImageData.height;
-                const ctx = resultCanvas.getContext('2d');
-                ctx.putImageData(outputImageData, 0, 0);
+                // Display a properly downsampled preview (avoids aliasing on high-frequency stipple patterns)
+                drawDownsampled(resultCanvas, outputImageData);
 
                 downloadBtn.disabled = false;
             } catch (error) {
@@ -980,9 +1052,15 @@
         processBtn.addEventListener('click', processImage);
 
         downloadBtn.addEventListener('click', () => {
+            if (!fullResResult) return;
+            const exportCanvas = document.createElement('canvas');
+            exportCanvas.width = fullResResult.width;
+            exportCanvas.height = fullResResult.height;
+            exportCanvas.getContext('2d').putImageData(fullResResult, 0, 0);
+
             const link = document.createElement('a');
             link.download = `line-drawing-${currentMode}.png`;
-            link.href = resultCanvas.toDataURL('image/png');
+            link.href = exportCanvas.toDataURL('image/png');
             link.click();
         });
 

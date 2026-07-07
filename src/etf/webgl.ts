@@ -6,8 +6,7 @@
  * tangent extraction on the GPU.
  */
 
-import type { ChannelImage, FlowField, Vec2, ETFConfig } from '../core/types';
-import { DEFAULT_ETF_CONFIG } from '../core/types';
+import { type ChannelImage, type FlowField, type Vec2, type ETFConfig, DEFAULT_ETF_CONFIG } from '../types';
 import { createChannelImage} from '../utils';
 
 /**
@@ -287,7 +286,7 @@ export class EdgeTangentFlowWebGL implements FlowField {
       const canvas = typeof OffscreenCanvas !== 'undefined' 
         ? new OffscreenCanvas(1, 1)
         : document.createElement('canvas');
-      const gl = canvas.getContext('webgl2');
+      const gl = canvas.getContext('webgl2') as WebGL2RenderingContext | null;
       this.supported = gl !== null;
       
       // Check for required extensions/features

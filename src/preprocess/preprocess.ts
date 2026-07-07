@@ -10,7 +10,7 @@
  */
 
 
-import type { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from '../core/types';
+import type { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from '../types';
 import { createChannelImage, getPixel, generateGaussianKernel } from '../utils';
 
 

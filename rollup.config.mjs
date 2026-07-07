@@ -16,7 +16,7 @@ const commonPlugins = [
     tsconfig: './tsconfig.json',
     declaration: false,
     declarationMap: false,
-    outDir: undefined,       // ← let Rollup own the output location
+    outDir: undefined,
     compilerOptions: {
       outDir: undefined,
     },
@@ -26,7 +26,7 @@ const commonPlugins = [
 ];
 
 export default [
-  // UMD bundle (minified) — index only; UMD + WebGPU doesn't make sense
+  // UMD bundle (minified): index only; UMD + WebGPU doesn't make sense
   // since UMD targets script-tag usage and WebGPU has its own async API
   {
     input: 'src/index.ts',
@@ -53,7 +53,7 @@ export default [
     plugins: commonPlugins,
   },
 
-  // ESM bundle — two entrypoints, two output files
+  // ESM bundle: two entrypoints, two output files
   {
     input: {
       index: 'src/index.ts',
@@ -68,7 +68,7 @@ export default [
     plugins: commonPlugins,
   },
 
-  // CJS bundle — two entrypoints, two output files
+  // CJS bundle: two entrypoints, two output files
   {
     input: {
       index: 'src/index.ts',

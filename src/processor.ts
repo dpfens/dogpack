@@ -9,11 +9,12 @@
  * advanced image stylization" by Winnemöller et al. (2012)
  */
 
-import type { BlurStrategy, ChannelImage, DoGConfig, DoGProcessingResult } from './types';
+import type { BlurStrategy, ChannelImage } from './types';
 
-import { DEFAULT_DOG_CONFIG } from './types';
-import { at, createChannelImage } from '../utils';
+import { at, createChannelImage } from './utils';
 import { SoftThresholdStrategy, type ThresholdConfig, type ThresholdStrategy } from './threshold';
+import type { DoGConfig } from './dog';
+import { DEFAULT_DOG_CONFIG, type DoGProcessingResult } from './dog/types';
 
 /**
  * Difference of Gaussians processor
@@ -38,6 +39,10 @@ export class DoGProcessor {
     this.blurStrategy = blurStrategy;
     this.config = { ...DEFAULT_DOG_CONFIG, ...config };
     this.thresholdStrategy = config.thresholdStrategy ?? new SoftThresholdStrategy();
+  }
+
+  dispose(): void {
+    this.blurStrategy.dispose();
   }
   
   /**

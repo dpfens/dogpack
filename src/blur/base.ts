@@ -1,4 +1,6 @@
 export class BaseCPUBlur {
+  dispose(): void {}
+
     /**
    * Check if isotropic blur is supported
    * Always returns true as this is a pure JavaScript implementation

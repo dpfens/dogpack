@@ -8,8 +8,8 @@
  * Kang et al. (2007) "Coherent Line Drawing"
  */
 
-import type { ChannelImage, FlowField, Vec2, ETFConfig } from '../core/types';
-import { DEFAULT_ETF_CONFIG } from '../core/types';
+import type { ChannelImage, FlowField, Vec2, ETFConfig } from '../types';
+import { DEFAULT_ETF_CONFIG } from '../types';
 import { createChannelImage, normalizeVec2, dotVec2, generateGaussianKernel } from '../utils';
 
 /**

@@ -83,13 +83,11 @@
  */
 
 // High-level API
-export * as core from './core'
-export type {BlurStrategy, BlurStrategyClass} from './core/types';
-export { XDoG, FDoG, xdog, fdog } from './core/dog';
-export type { XDoGConfig } from './core/dog';
+export type {BlurStrategy, BlurStrategyClass} from './types';
+export * as dog from './dog';
 
 // Core processor (for advanced usage)
-export { DoGProcessor, ThresholdModes, applyCustomThreshold } from './core/processor';
+export { DoGProcessor, ThresholdModes, applyCustomThreshold } from './processor';
 
 // Blur strategies (for custom configurations)
 export * as blur from './blur';
@@ -108,8 +106,8 @@ export * as preprocess from './preprocess'
 export type {
   ThresholdConfig,
   ThresholdStrategy
-} from './core/threshold';
-export * as threshold from './core/threshold'
+} from './threshold';
+export * as threshold from './threshold'
 
 // Types
 export type {
@@ -117,21 +115,15 @@ export type {
   ChannelImage,
   RGBImage,
   FlowField,
-  DoGConfig,
   ETFConfig,
-  FDoGConfig,
   BilateralFilterConfig,
   MedianFilterConfig,
   KuwaharaFilterConfig
-} from './core/types';
+} from './types';
 
-export { 
-  DEFAULT_DOG_CONFIG, 
-  DEFAULT_ETF_CONFIG,
-  DEFAULT_FDOG_CONFIG,
-  STYLE_PRESETS,
-  FDOG_STYLE_PRESETS,
-} from './core/types';
+export {
+  DEFAULT_ETF_CONFIG
+} from './types';
 
 // Utilities
 export * as utilities from './utils';

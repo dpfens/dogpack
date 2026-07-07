@@ -1,108 +1,5 @@
-/**
- * Core types for XDoG/FDoG line drawing implementation
- * 
- * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including 
- * advanced image stylization" by Winnemöller et al. (2012)
- */
-
-import { SoftThresholdStrategy, type ThresholdStrategy } from "./threshold";
-
-/**
- * Simple 2D vector
- */
-export interface Vec2 {
-  x: number;
-  y: number;
-}
-
-/**
- * Single-channel image representation
- * Using a flat Float32Array for performance and future GPU compatibility
- * Values are normalized to 0-1 range
- */
-export interface ChannelImage {
-  data: Float32Array;
-  width: number;
-  height: number;
-}
-
-/**
- * RGB image representation
- */
-export interface RGBImage {
-  data: Float32Array; // Interleaved RGB, length = width * height * 3
-  width: number;
-  height: number;
-}
-
-/**
- * Abstract blur strategy interface
- * Implementations provide different blur algorithms (isotropic, flow-guided, etc.)
- */
-export interface BlurStrategy {
-  /**
-   * Apply blur to an image with the given sigma
-   * @param input Source image
-   * @param sigma Blur radius (standard deviation)
-   * @returns Blurred image
-   */
-  blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
-}
-
-/**
- * Static interface for blur strategy classes
- * Used to check runtime availability before instantiation
- */
-export interface BlurStrategyClass {
-  /**
-   * Check if this blur strategy is supported in the current environment
-   * @returns true if the strategy can be used, false otherwise
-   */
-  isSupported(): boolean;
-  
-  /**
-   * Get a human-readable reason if the strategy is not supported
-   * @returns undefined if supported, or a string explaining why it's not
-   */
-  getUnsupportedReason?(): string | undefined;
-}
-
-
-/**
- * Flow field representing edge tangent directions at each pixel
- */
-export interface FlowField {
-  getTangent(x: number, y: number): Vec2;
-  readonly width: number;
-  readonly height: number;
-}
-
-export interface BilateralFilterConfig {
-  /** Spatial sigma - controls the size of the neighborhood (default: 3) */
-  sigmaSpatial: number;
-  
-  /** Range/intensity sigma - controls sensitivity to intensity differences (default: 0.1) */
-  sigmaRange: number;
-  
-  /** Kernel radius multiplier (default: 2, meaning radius = sigmaSpatial * 2) */
-  radiusMultiplier?: number;
-}
-
-/**
- * Configuration for median filter
- */
-export interface MedianFilterConfig {
-  /** Radius of the filter (default: 2, meaning 5x5 kernel) */
-  radius: number;
-}
-
-/**
- * Configuration for Kuwahara filter
- */
-export interface KuwaharaFilterConfig {
-  /** Radius of the filter (default: 3) */
-  radius: number;
-}
+import { HardThresholdStrategy, SoftThresholdStrategy, type ThresholdStrategy } from "../threshold";
+import type { BlurStrategy, ChannelImage } from "../types";
 
 /**
  * Configuration for Difference of Gaussians processing
@@ -161,24 +58,14 @@ export interface DoGConfig {
 }
 
 /**
- * Configuration for Edge Tangent Flow computation
- * 
- * The ETF is computed from the smoothed structure tensor of image gradients.
- * See Section 2.6 of the paper.
+ * XDoG configuration combining DoG parameters with isotropic blur options
  */
-export interface ETFConfig {
-  /** 
-   * Number of refinement iterations for the tangent field (default: 3)
-   * More iterations increase line coherence but add computation time
-   */
-  iterations: number;
-  
-  /** 
-   * Kernel size for structure tensor smoothing (default: 5)
-   * Paper uses Gaussian smoothing with sampling within 2.45 * σc
-   */
-  kernelSize: number;
+export interface XDoGConfig extends DoGConfig {
+  /** Kernel size multiplier for Gaussian blur (default: 6) */
+  kernelSizeMultiplier?: number;
+  blurStrategy?: BlurStrategy;
 }
+
 
 /**
  * Extended configuration for Flow-based DoG (FDoG)
@@ -219,6 +106,72 @@ export interface FDoGConfig extends DoGConfig {
   sigmaA: number;
 }
 
+/**
+ * Configuration for Adaptive Difference of Gaussians (ADoG)
+ * 
+ * Based on Section 3.2, Eqs. (3)-(6) of "Gaussian Image Binarization"
+ * (Kang & Stamoulis, 2021). ADoG modifies the DoG contrast-sensitivity
+ * parameter to be a function of local tone, producing a screentoning effect
+ * whose primitive density is inversely proportional to brightness.
+ * 
+ * Note: 'sigma' (inherited from DoGConfig) plays the role of σc, and
+ * 'k' plays the role of the σs/σc ratio (σs = k * σc), matching the
+ * paper's defaults of σc = 1.0 and σs = 1.6σc.
+ */
+export interface ADoGConfig extends DoGConfig {
+  /**
+   * τ: minimum contrast sensitivity (default: 0.99)
+   * ρ(x) ranges within [τ, 1]. Higher values produce noisier responses.
+   * Paper restricts τ to [0.97, 1.0].
+   */
+  tau: number;
+
+  /**
+   * s: controls the steepness of tone-dependent falloff in ρ(x) (Eq. 5)
+   * and in the adaptive noise scale σ(x) (Eq. 6) (default: 2.0)
+   * Larger s concentrates the density transition into darker tones.
+   */
+  s: number;
+
+  /**
+   * Adaptive noise scale factor 'c' in Eq. (6) (default: 0.01)
+   * Set to 0 to disable noise injection entirely (Eq. 6 is optional --
+   * see Fig. 8 in the paper for the effect of enabling it).
+   */
+  noiseScaleC: number;
+
+  /**
+   * Kernel size multiplier for the isotropic Gaussian blur (default: 6)
+   * Same meaning as XDoGConfig's kernelSizeMultiplier.
+   */
+  kernelSizeMultiplier?: number;
+}
+
+/**
+ * Configuration for Hybrid Difference of Gaussians (HDoG)
+ * 
+ * Combines FDoG (line drawing) with two ADoG passes at different scales,
+ * per Eq. (9): HDoG = FDoG ∧ ADoG_s ∧ ADoG_s'
+ */
+export interface HDoGConfig {
+  /** Configuration passed to the internal FDoG instance */
+  fdog: Partial<FDoGConfig>;
+
+  /**
+   * Configuration passed to the primary ADoG instance (uses its own 's').
+   * The secondary ADoG pass reuses this config but overrides 's' with
+   * s * adogSecondaryScaleFactor (Eq. 9).
+   */
+  adog: Partial<ADoGConfig>;
+
+  /**
+   * s' = adogSecondaryScaleFactor * s, per Eq. (9) (default: 4)
+   * Generates additional screentone in the darkest regions without
+   * affecting brighter ones (paper empirically sets s' = 4s).
+   */
+  adogSecondaryScaleFactor: number;
+}
+
 
 export interface DoGProcessingResult {
   /** Final thresholded output */
@@ -230,13 +183,60 @@ export interface DoGProcessingResult {
 }
 
 /**
- * Interface for DoG processors (XDoG or FDoG)
+ * Result of HDoG processing.
+ * 
+ * Structurally compatible with DoGProcessingResult (result and sharpened
+ * are present), so this satisfies DoGImplementation.processDetailed()'s
+ * return type. `sharpened` is set to the FDoG pass's sharpened image as a
+ * representative value -- HDoG has no single "sharpened" stage of its own,
+ * since it combines three already-binarized outputs. Callers holding a
+ * concrete HDoG get the full per-pass breakdown via fdogResult /
+ * adogPrimaryResult / adogSecondaryResult.
+ */
+export interface HDoGProcessingResult extends DoGProcessingResult {
+  fdogResult: ChannelImage;
+  adogPrimaryResult: ChannelImage;
+  adogSecondaryResult: ChannelImage;
+}
+
+
+/**
+ * Result of ADoG processing, extending the standard DoGProcessingResult
+ * with ADoG-specific intermediate artifacts.
+ * 
+ * This is structurally compatible with DoGProcessingResult (result,
+ * sharpened, and rawDoG are all present with matching types), so it
+ * satisfies DoGImplementation.processDetailed()'s return type. Callers
+ * holding a concrete ADoG (rather than the generic DoGImplementation
+ * interface) additionally get rhoMap and noisyInput; nothing is lost, it's
+ * just not visible through the narrower interface type.
+ * 
+ * Field mapping vs. XDoG/FDoG's use of "sharpened"/"rawDoG":
+ *   - rawDoG: the UNWEIGHTED response G_σc - G_σs (ρ ≡ 1), i.e. standard
+ *     DoG -- this is what Fig. 7(b) in the paper compares against.
+ *   - sharpened: the ρ(x)-WEIGHTED response (Eq. 4), pre-threshold. It's
+ *     not an unsharp-mask "sharpened" image the way XDoG uses the term,
+ *     but it plays the same structural role (pre-threshold DoG response).
+ */
+export interface ADoGProcessingResult extends DoGProcessingResult {
+  /** Per-pixel adaptive contrast sensitivity ρ(x), Eq. (5) */
+  rhoMap: ChannelImage;
+  /** Input after adaptive noise injection (Eq. 6), or the original input if noiseScaleC === 0 */
+  noisyInput: ChannelImage;
+}
+
+
+
+/**
+ * Interface for DoG processors (XDoG, FDoG, ADoG, or HDoG)
  */
 export interface DoGImplementation {
   process(input: ChannelImage, overrides?: Partial<DoGConfig>): Promise<ChannelImage>;
 
   /** Process and return all intermediate results (avoids redundant blur operations) */
   processDetailed(input: ChannelImage, overrides?: Partial<DoGConfig>): Promise<DoGProcessingResult>;
+
+  dispose(): void;
 }
 
 /**
@@ -253,14 +253,6 @@ export const DEFAULT_DOG_CONFIG: DoGConfig = {
 };
 
 /**
- * Default ETF configuration values
- */
-export const DEFAULT_ETF_CONFIG: ETFConfig = {
-  iterations: 3,
-  kernelSize: 5,
-};
-
-/**
  * Default FDoG configuration values
  * Based on Table A.1 in the paper
  */
@@ -269,6 +261,32 @@ export const DEFAULT_FDOG_CONFIG: FDoGConfig = {
   sigmaC: 2.5,   // Structure tensor smoothing
   sigmaM: 4.0,   // Flow-aligned smoothing  
   sigmaA: 1.0,   // Anti-aliasing
+};
+
+/**
+ * Default ADoG configuration values
+ * Based on Section 3.2 of "Gaussian Image Binarization"
+ * (σc = 1.0, σs = 1.6σc, τ = 0.99, s = 2.0, noise c = 0.01)
+ */
+export const DEFAULT_ADOG_CONFIG: ADoGConfig = {
+  ...DEFAULT_DOG_CONFIG,
+  sigma: 1.0,               // σc
+  k: 1.6,                   // σs = k * σc
+  tau: 0.99,
+  s: 2.0,
+  noiseScaleC: 0.01,
+  kernelSizeMultiplier: 6,
+  thresholdStrategy: new HardThresholdStrategy(), // ADoG binarizes; hard threshold matches the paper's step-function output
+};
+
+/**
+ * Default HDoG configuration values
+ * s' defaults to 4s per the paper's empirical setting (Eq. 9)
+ */
+export const DEFAULT_HDOG_CONFIG: HDoGConfig = {
+  fdog: {},
+  adog: {},
+  adogSecondaryScaleFactor: 4,
 };
 
 /**
@@ -369,4 +387,16 @@ export const FDOG_STYLE_PRESETS = {
     sigmaM: 3.2,
     sigmaA: 0.75,
   } as FDoGConfig,
+} as const;
+
+/**
+ * Preset ADoG configurations
+ * (No presets given directly in the paper's tables beyond the defaults
+ * above; add named presets here as you tune them, e.g. denser/lighter
+ * screentone variants.)
+ */
+export const ADOG_STYLE_PRESETS = {
+  standard: {
+    ...DEFAULT_ADOG_CONFIG,
+  } as ADoGConfig,
 } as const;

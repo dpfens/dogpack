@@ -5,7 +5,7 @@
  * Used for the DoG computation in FDoG, where we want to blur across
  * edges but not along them.
  */
-import type { BlurStrategy, ChannelImage, FlowField } from '../core/types';
+import type { BlurStrategy, ChannelImage, FlowField } from '../types';
 import { createChannelImage, getPixelBilinear, generateGaussianKernel } from '../utils';
 import { BaseCPUBlur } from './base';
 
@@ -40,6 +40,8 @@ export class CPUGradientAlignedBlur extends BaseCPUBlur implements BlurStrategy 
     super();
     this.config = { ...DEFAULT_FLOW_CONFIG, ...config };
   }
+
+  dispose(): void {}
   
   setFlowField(flowField: FlowField): void {
     this.flowField = flowField;

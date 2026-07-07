@@ -1,5 +1,5 @@
-import type { FDoGConfig, ChannelImage } from "../core/types";
-import { FDoG, XDoG } from "../core/dog";
+import type { ChannelImage } from "../types";
+import { FDoG, XDoG, type FDoGConfig } from "../dog";
 import type { ExtensionStrategy } from "./base";
 
 /**
@@ -171,14 +171,12 @@ export class NaturalMediaStrategy implements ExtensionStrategy<
   ): Promise<ChannelImage> {
     const mergedConfig = { ...this.config, ...configOverride };
     const resolved = new NaturalMediaStrategy(mergedConfig).getResolvedConfig();
-    
-    if (resolved.useFlow) {
-      const fdog = new FDoG(resolved as Partial<FDoGConfig>);
-      return fdog.process(input);
-    } else {
-      const xdog = new XDoG(resolved);
-      return xdog.process(input);
-    }
+    const dog = resolved.useFlow
+      ? new FDoG(resolved as Partial<FDoGConfig>)
+      : new XDoG(resolved);
+    const result = dog.process(input);
+    dog.dispose();
+    return result;
   }
   
   /**

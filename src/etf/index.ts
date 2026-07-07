@@ -1,4 +1,4 @@
-import type { ETFConfig, FlowField, ChannelImage, Vec2 } from "../core/types";
+import type { ETFConfig, FlowField, ChannelImage, Vec2 } from "../types";
 import { EdgeTangentFlowWebGL } from "./webgl";
 import { EdgeTangentFlow as EdgeTangentFlowCPU } from "./cpu";
 
