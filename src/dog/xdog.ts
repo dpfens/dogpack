@@ -10,11 +10,11 @@
 
 import { 
   type ChannelImage,
-} from '../types';
-import { DoGProcessor } from '../processor';
-import { imageDataToLuminance, luminanceToImageData } from '../utils';
-import { IsotropicBlur } from '../blur/isotropic';
-import { DEFAULT_DOG_CONFIG, STYLE_PRESETS, type DoGConfig, type DoGImplementation, type DoGProcessingResult, type XDoGConfig } from './types';
+} from '../types.js';
+import { DoGProcessor } from '../processor.js';
+import { imageDataToLuminance, luminanceToImageData } from '../utils/index.js';
+import { IsotropicBlur } from '../blur/isotropic.js';
+import { DEFAULT_DOG_CONFIG, STYLE_PRESETS, type DoGConfig, type DoGImplementation, type DoGProcessingResult, type XDoGConfig } from './types.js';
 
 /**
  * XDoG (Extended Difference of Gaussians)

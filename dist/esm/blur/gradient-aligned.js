@@ -1,5 +1,5 @@
-import { createChannelImage, getPixelBilinear, generateGaussianKernel } from '../utils';
-import { BaseCPUBlur } from './base';
+import { createChannelImage, getPixelBilinear, generateGaussianKernel } from '../utils/index.js';
+import { BaseCPUBlur } from './base.js';
 const DEFAULT_FLOW_CONFIG = {
     kernelSizeMultiplier: 6,
     stepSize: 1.0,

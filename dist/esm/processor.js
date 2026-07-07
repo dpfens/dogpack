@@ -8,9 +8,9 @@
  * "XDoG: An eXtended difference-of-Gaussians compendium including
  * advanced image stylization" by Winnemöller et al. (2012)
  */
-import { at, createChannelImage } from './utils';
-import { SoftThresholdStrategy } from './threshold';
-import { DEFAULT_DOG_CONFIG } from './dog/types';
+import { at, createChannelImage } from './utils/index.js';
+import { SoftThresholdStrategy } from './threshold.js';
+import { DEFAULT_DOG_CONFIG } from './dog/types.js';
 /**
  * Difference of Gaussians processor
  *

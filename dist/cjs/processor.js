@@ -12,9 +12,9 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ThresholdModes = exports.DoGProcessor = void 0;
 exports.applyCustomThreshold = applyCustomThreshold;
-const utils_1 = require("./utils");
-const threshold_1 = require("./threshold");
-const types_1 = require("./dog/types");
+const index_js_1 = require("./utils/index.js");
+const threshold_js_1 = require("./threshold.js");
+const types_js_1 = require("./dog/types.js");
 /**
  * Difference of Gaussians processor
  *
@@ -35,8 +35,8 @@ class DoGProcessor {
     thresholdStrategy;
     constructor(blurStrategy, config = {}) {
         this.blurStrategy = blurStrategy;
-        this.config = { ...types_1.DEFAULT_DOG_CONFIG, ...config };
-        this.thresholdStrategy = config.thresholdStrategy ?? new threshold_1.SoftThresholdStrategy();
+        this.config = { ...types_js_1.DEFAULT_DOG_CONFIG, ...config };
+        this.thresholdStrategy = config.thresholdStrategy ?? new threshold_js_1.SoftThresholdStrategy();
     }
     dispose() {
         this.blurStrategy.dispose();
@@ -140,7 +140,7 @@ class DoGProcessor {
      * This is the standard DoG without any weighting
      */
     computeDoG(blur1, blur2) {
-        const output = (0, utils_1.createChannelImage)(blur1.width, blur1.height);
+        const output = (0, index_js_1.createChannelImage)(blur1.width, blur1.height);
         const size = blur1.width * blur1.height;
         for (let i = 0; i < size; i++) {
             output.data[i] = blur1.data[i] - blur2.data[i];
@@ -160,10 +160,10 @@ class DoGProcessor {
      * @param p Sharpening strength (p ≈ 20 typical, p ≈ 100 for woodcut)
      */
     computeSharpening(blur1, blur2, p) {
-        const output = (0, utils_1.createChannelImage)(blur1.width, blur1.height);
+        const output = (0, index_js_1.createChannelImage)(blur1.width, blur1.height);
         const size = blur1.width * blur1.height;
         for (let i = 0; i < size; i++) {
-            const pValue = (0, utils_1.at)(p, i);
+            const pValue = (0, index_js_1.at)(p, i);
             output.data[i] = (1 + pValue) * blur1.data[i] - pValue * blur2.data[i];
         }
         return output;
@@ -246,7 +246,7 @@ exports.ThresholdModes = {
  * Apply a custom threshold function to a grayscale image
  */
 function applyCustomThreshold(input, thresholdFn) {
-    const output = (0, utils_1.createChannelImage)(input.width, input.height);
+    const output = (0, index_js_1.createChannelImage)(input.width, input.height);
     const size = input.width * input.height;
     for (let i = 0; i < size; i++) {
         output.data[i] = thresholdFn(input.data[i]);

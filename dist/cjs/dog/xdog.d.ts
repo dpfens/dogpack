@@ -7,8 +7,8 @@
  * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
  * advanced image stylization" by Winnemöller et al. (2012)
  */
-import { type ChannelImage } from '../types';
-import { STYLE_PRESETS, type DoGConfig, type DoGImplementation, type DoGProcessingResult, type XDoGConfig } from './types';
+import { type ChannelImage } from '../types.js';
+import { STYLE_PRESETS, type DoGConfig, type DoGImplementation, type DoGProcessingResult, type XDoGConfig } from './types.js';
 /**
  * XDoG (Extended Difference of Gaussians)
  *

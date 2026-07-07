@@ -1,5 +1,5 @@
-import type { ChannelImage } from "../types.js";
-import { createChannelImage } from "../utils.js";
+import type { ChannelImage } from '../types.js';
+import { createChannelImage } from '../utils/index.js';
 
 /**
  * Edge-preserving smoothing filter. Standalone preprocessing utility —

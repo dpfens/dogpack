@@ -81,19 +81,19 @@
  * const result = await xdog.process(cleaned);
  * ```
  */
-export * as dog from './dog';
+export * as dog from './dog/index.js';
 // Core processor (for advanced usage)
-export { DoGProcessor, ThresholdModes, applyCustomThreshold } from './processor';
+export { DoGProcessor, ThresholdModes, applyCustomThreshold } from './processor.js';
 // Blur strategies (for custom configurations)
-export * as blur from './blur';
+export * as blur from './blur/index.js';
 // Edge Tangent Flow (for visualization or custom pipelines)
-export { EdgeTangentFlow } from './etf';
+export { EdgeTangentFlow } from './etf/index.js';
 // Preprocessing
-export * as preprocess from './preprocess';
-export * as threshold from './threshold';
-export { DEFAULT_ETF_CONFIG } from './types';
+export * as preprocess from './preprocess/index.js';
+export * as threshold from './threshold.js';
+export { DEFAULT_ETF_CONFIG } from './types.js';
 // Utilities
-export * as utilities from './utils';
+export * as utilities from './utils/index.js';
 // Extensions (composable strategies for advanced stylization)
-export * as extensions from './extensions';
+export * as extensions from './extensions/index.js';
 //# sourceMappingURL=index.js.map

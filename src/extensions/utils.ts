@@ -2,9 +2,9 @@
 // Utility Functions
 // =============================================================================
 
-import type { ChannelImage } from "../types";
-import { createChannelImage } from "../utils";
-import type { RGBImage } from "./base";
+import type { ChannelImage } from '../types.js';
+import { createChannelImage } from '../utils/index.js';
+import type { RGBImage } from './base.js';
 
 /**
  * Convert ImageData to RGBImage

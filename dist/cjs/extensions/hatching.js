@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.HatchingStrategy = void 0;
-const utils_1 = require("../utils");
+const index_js_1 = require("../utils/index.js");
 const DEFAULT_HATCHING_CONFIG = {
     thresholdLevels: [0.3, 0.5, 0.7],
     p: 20,
@@ -56,7 +56,7 @@ class HatchingStrategy {
             // Each mask covers "below this threshold"
             // Darkest areas activate ALL masks, lightest activate NONE
             for (let i = 0; i < levels.length; i++) {
-                const mask = (0, utils_1.createChannelImage)(width, height);
+                const mask = (0, index_js_1.createChannelImage)(width, height);
                 const threshold = levels[i];
                 for (let j = 0; j < width * height; j++) {
                     const val = sharpened.data[j];
@@ -75,7 +75,7 @@ class HatchingStrategy {
                 masks.push(mask);
             }
             // Add a final "base" mask that's always slightly active for paper texture
-            const baseMask = (0, utils_1.createChannelImage)(width, height);
+            const baseMask = (0, index_js_1.createChannelImage)(width, height);
             for (let j = 0; j < width * height; j++) {
                 baseMask.data[j] = 0.0; // No hatching in lightest areas
             }
@@ -84,7 +84,7 @@ class HatchingStrategy {
         else {
             // Non-cumulative: independent bands (original behavior, but fixed)
             for (let i = 0; i <= levels.length; i++) {
-                const mask = (0, utils_1.createChannelImage)(width, height);
+                const mask = (0, index_js_1.createChannelImage)(width, height);
                 const lowerBound = i === 0 ? 0 : levels[i - 1];
                 const upperBound = i === levels.length ? 1 : levels[i];
                 const bandCenter = (lowerBound + upperBound) / 2;
@@ -114,7 +114,7 @@ class HatchingStrategy {
         const { width, height } = sharpened;
         // Generate masks
         const masks = this.generateMasks(sharpened, cfg);
-        const output = (0, utils_1.createChannelImage)(width, height);
+        const output = (0, index_js_1.createChannelImage)(width, height);
         if (!cfg.textures || cfg.textures.length === 0) {
             // Simple tonal bands without textures
             // Map input luminance to output with quantized bands
@@ -146,7 +146,7 @@ class HatchingStrategy {
                 for (let x = 0; x < width; x++) {
                     const idx = y * width + x;
                     // Start with paper/white
-                    let value = cfg.paperTexture ? (0, utils_1.getPixel)(cfg.paperTexture, x, y) : 1.0;
+                    let value = cfg.paperTexture ? (0, index_js_1.getPixel)(cfg.paperTexture, x, y) : 1.0;
                     if (cfg.cumulative) {
                         // Tonal art maps: darker areas accumulate more hatching
                         // Apply textures from lightest to darkest, darkening where masks are active
@@ -200,7 +200,7 @@ class HatchingStrategy {
         // Tile the texture
         const tx = ((rx % data.width) + data.width) % data.width;
         const ty = ((ry % data.height) + data.height) % data.height;
-        return (0, utils_1.getPixelBilinear)(data, tx, ty);
+        return (0, index_js_1.getPixelBilinear)(data, tx, ty);
     }
     /**
      * Generate a simple procedural hatching texture
@@ -209,7 +209,7 @@ class HatchingStrategy {
      * The rotation parameter rotates the SAMPLING, not the line pattern itself.
      */
     static generateHatchTexture(width, height, spacing, thickness, rotation = 0) {
-        const data = (0, utils_1.createChannelImage)(width, height);
+        const data = (0, index_js_1.createChannelImage)(width, height);
         // Create horizontal lines (rotation is applied during sampling)
         for (let y = 0; y < height; y++) {
             for (let x = 0; x < width; x++) {
@@ -236,7 +236,7 @@ class HatchingStrategy {
      * Generate a cross-hatching texture (two overlapping line patterns)
      */
     static generateCrossHatchTexture(width, height, spacing, thickness, angle1 = 0, angle2 = Math.PI / 2) {
-        const data = (0, utils_1.createChannelImage)(width, height);
+        const data = (0, index_js_1.createChannelImage)(width, height);
         for (let y = 0; y < height; y++) {
             for (let x = 0; x < width; x++) {
                 // First set of lines

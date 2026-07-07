@@ -1,4 +1,4 @@
-import type { ETFConfig, FlowField, ChannelImage, Vec2 } from "../types";
+import type { ETFConfig, FlowField, ChannelImage, Vec2 } from '../types.js';
 /**
  * Unified Edge Tangent Flow that automatically selects the best implementation
  */

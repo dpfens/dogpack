@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.NaturalMediaStrategy = void 0;
-const dog_1 = require("../dog");
+const index_js_1 = require("../dog/index.js");
 /**
  * Natural Media Strategy
  *
@@ -119,8 +119,8 @@ class NaturalMediaStrategy {
         const mergedConfig = { ...this.config, ...configOverride };
         const resolved = new NaturalMediaStrategy(mergedConfig).getResolvedConfig();
         const dog = resolved.useFlow
-            ? new dog_1.FDoG(resolved)
-            : new dog_1.XDoG(resolved);
+            ? new index_js_1.FDoG(resolved)
+            : new index_js_1.XDoG(resolved);
         const result = dog.process(input);
         dog.dispose();
         return result;

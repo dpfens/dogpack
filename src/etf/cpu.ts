@@ -8,9 +8,9 @@
  * Kang et al. (2007) "Coherent Line Drawing"
  */
 
-import type { ChannelImage, FlowField, Vec2, ETFConfig } from '../types';
-import { DEFAULT_ETF_CONFIG } from '../types';
-import { createChannelImage, normalizeVec2, dotVec2, generateGaussianKernel } from '../utils';
+import type { ChannelImage, FlowField, Vec2, ETFConfig } from '../types.js';
+import { DEFAULT_ETF_CONFIG } from '../types.js';
+import { createChannelImage, normalizeVec2, dotVec2, generateGaussianKernel } from '../utils/index.js';
 
 /**
  * Structure tensor components at a pixel

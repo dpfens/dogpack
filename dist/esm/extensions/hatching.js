@@ -1,4 +1,4 @@
-import { createChannelImage, getPixel, getPixelBilinear } from "../utils";
+import { createChannelImage, getPixel, getPixelBilinear } from '../utils/index.js';
 const DEFAULT_HATCHING_CONFIG = {
     thresholdLevels: [0.3, 0.5, 0.7],
     p: 20,

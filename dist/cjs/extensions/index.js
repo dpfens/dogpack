@@ -21,16 +21,16 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.grayscaleToRGB = exports.rgbToImageData = exports.imageDataToRGB = exports.multiScale = exports.NaturalMediaStrategy = exports.HatchingStrategy = exports.colorRetention = exports.AntiAliasingStrategy = void 0;
-var anti_alias_1 = require("./anti-alias");
-Object.defineProperty(exports, "AntiAliasingStrategy", { enumerable: true, get: function () { return anti_alias_1.AntiAliasingStrategy; } });
-exports.colorRetention = require("./color-retention");
-var hatching_1 = require("./hatching");
-Object.defineProperty(exports, "HatchingStrategy", { enumerable: true, get: function () { return hatching_1.HatchingStrategy; } });
-var natural_media_1 = require("./natural-media");
-Object.defineProperty(exports, "NaturalMediaStrategy", { enumerable: true, get: function () { return natural_media_1.NaturalMediaStrategy; } });
-exports.multiScale = require("./multi-scale");
-var utils_1 = require("./utils");
-Object.defineProperty(exports, "imageDataToRGB", { enumerable: true, get: function () { return utils_1.imageDataToRGB; } });
-Object.defineProperty(exports, "rgbToImageData", { enumerable: true, get: function () { return utils_1.rgbToImageData; } });
-Object.defineProperty(exports, "grayscaleToRGB", { enumerable: true, get: function () { return utils_1.grayscaleToRGB; } });
+var anti_alias_js_1 = require("./anti-alias.js");
+Object.defineProperty(exports, "AntiAliasingStrategy", { enumerable: true, get: function () { return anti_alias_js_1.AntiAliasingStrategy; } });
+exports.colorRetention = require("./color-retention.js");
+var hatching_js_1 = require("./hatching.js");
+Object.defineProperty(exports, "HatchingStrategy", { enumerable: true, get: function () { return hatching_js_1.HatchingStrategy; } });
+var natural_media_js_1 = require("./natural-media.js");
+Object.defineProperty(exports, "NaturalMediaStrategy", { enumerable: true, get: function () { return natural_media_js_1.NaturalMediaStrategy; } });
+exports.multiScale = require("./multi-scale.js");
+var utils_js_1 = require("./utils.js");
+Object.defineProperty(exports, "imageDataToRGB", { enumerable: true, get: function () { return utils_js_1.imageDataToRGB; } });
+Object.defineProperty(exports, "rgbToImageData", { enumerable: true, get: function () { return utils_js_1.rgbToImageData; } });
+Object.defineProperty(exports, "grayscaleToRGB", { enumerable: true, get: function () { return utils_js_1.grayscaleToRGB; } });
 //# sourceMappingURL=index.js.map

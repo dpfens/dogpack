@@ -39,7 +39,7 @@ export declare function imageDataToLuminance(imageData: ImageData): ChannelImage
  * Convert grayscale image to ImageData (for canvas display)
  * Assumes input is in 0-1 range
  */
-export declare function grayscaleToImageData(gray: ChannelImage): ImageData;
+export declare function luminanceToImageData(gray: ChannelImage): ImageData;
 /**
  * Normalize a 2D vector
  */
@@ -76,4 +76,31 @@ export declare function clamp(value: number, min: number, max: number): number;
  * Linear interpolation
  */
 export declare function lerp(a: number, b: number, t: number): number;
+/**
+ * Reads a value that may be a scalar (uniform) or a per-pixel ChannelImage.
+ */
+export declare function at(value: number | ChannelImage, i: number): number;
+/**
+ * Sample a single value from a standard normal distribution N(0, 1)
+ * using the Box-Muller transform.
+ *
+ * Used by ADoG's adaptive noise injection (Eq. 6): the sampled value is
+ * scaled by a tone-dependent sigma(x) and added to the input luminance.
+ */
+export declare function gaussianSample(): number;
+/**
+ * Pixel-wise logical AND across N binarized (0/1) ChannelImages.
+ *
+ * Generalizes Eq. (7)/(9) from "Gaussian Image Binarization":
+ *   HDoG = FDoG ∧ ADoG_s ∧ ADoG_s'
+ *
+ * Since binarized images only contain 0 or 1, logical AND is equivalent to
+ * taking the minimum across images (no De Morgan's / inversion needed here
+ * -- see the paper's Eq. (8) for why AND and "invert-OR-invert" coincide;
+ * this just implements AND directly).
+ *
+ * All images must have matching dimensions; this is not checked here for
+ * performance -- validate upstream if inputs could mismatch.
+ */
+export declare function andCombine(images: ChannelImage[]): ChannelImage;
 //# sourceMappingURL=index.d.ts.map

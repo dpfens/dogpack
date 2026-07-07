@@ -8,7 +8,7 @@
  * preprocessing for "indication" - attenuating weak edges while
  * preserving strong edges.
  */
-import type { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from '../types';
+import type { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from '../types.js';
 /**
  * Bilateral Filter
  *

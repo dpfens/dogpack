@@ -8,8 +8,8 @@ exports.FDoGBlur = void 0;
  * 1. Apply DoG across edges (gradient-aligned)
  * 2. Smooth the result along edges (flow-aligned)
  */
-const gradient_aligned_1 = require("./gradient-aligned");
-const flow_guided_1 = require("./flow-guided");
+const gradient_aligned_js_1 = require("./gradient-aligned.js");
+const flow_guided_js_1 = require("./flow-guided.js");
 class FDoGBlur {
     gradientBlur;
     flowBlur;
@@ -26,8 +26,8 @@ class FDoGBlur {
      * @param config Additional configuration
      */
     constructor(flowField, sigmaM, config = {}) {
-        this.gradientBlur = new gradient_aligned_1.GradientAlignedBlur(flowField, config);
-        this.flowBlur = new flow_guided_1.FlowGuidedBlur(flowField, config);
+        this.gradientBlur = new gradient_aligned_js_1.GradientAlignedBlur(flowField, config);
+        this.flowBlur = new flow_guided_js_1.FlowGuidedBlur(flowField, config);
         this.sigmaM = sigmaM;
     }
     dispose() {

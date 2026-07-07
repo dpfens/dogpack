@@ -9,16 +9,15 @@
  */
 
 import { 
+  DEFAULT_ETF_CONFIG,
   type ChannelImage,
-} from '../types';
-import { DoGProcessor } from '../processor';
-import { EdgeTangentFlow } from '../etf';
-import { imageDataToLuminance, luminanceToImageData } from '../utils';
-import { GradientAlignedBlur } from '../blur/gradient-aligned';
-import { FlowGuidedBlur } from '../blur/flow-guided';
-import { DEFAULT_FDOG_CONFIG, FDOG_STYLE_PRESETS, type DoGImplementation, type FDoGConfig } from './types';
-import { DEFAULT_ETF_CONFIG } from '..';
-
+} from '../types.js';
+import { DoGProcessor } from '../processor.js';
+import { EdgeTangentFlow } from '../etf/index.js';
+import { imageDataToLuminance, luminanceToImageData } from '../utils/index.js';
+import { GradientAlignedBlur } from '../blur/gradient-aligned.js';
+import { FlowGuidedBlur } from '../blur/flow-guided.js';
+import { DEFAULT_FDOG_CONFIG, FDOG_STYLE_PRESETS, type DoGImplementation, type FDoGConfig } from './types.js';
 
 /**
  * FDoG (Flow-based Difference of Gaussians)

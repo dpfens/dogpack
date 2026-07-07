@@ -1,4 +1,4 @@
-import { createChannelImage, at } from "./utils";
+import { createChannelImage, at } from "./utils/index.js";
 export class SoftThresholdStrategy {
     threshold(sharpened, config) {
         const output = createChannelImage(sharpened.width, sharpened.height);

@@ -7,8 +7,8 @@
  * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
  * advanced image stylization" by Winnemöller et al. (2012)
  */
-import { type ChannelImage } from '../types';
-import { type DoGImplementation, type HDoGConfig, type HDoGProcessingResult } from './types';
+import { type ChannelImage } from '../types.js';
+import { type DoGImplementation, type HDoGConfig, type HDoGProcessingResult } from './types.js';
 export declare class HDoG implements DoGImplementation {
     private fdog;
     private adogPrimary;

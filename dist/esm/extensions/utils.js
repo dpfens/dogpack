@@ -1,7 +1,7 @@
 // =============================================================================
 // Utility Functions
 // =============================================================================
-import { createChannelImage } from "../utils";
+import { createChannelImage } from '../utils/index.js';
 /**
  * Convert ImageData to RGBImage
  */

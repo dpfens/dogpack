@@ -18,16 +18,16 @@
  * - Extensions accept pre-processed results or raw images
  * - Chainable pipeline architecture
  */
-export type { DoGResult, ExtensionStrategy } from './base';
-export { AntiAliasingStrategy } from './anti-alias';
-export type { AntiAliasingConfig } from './anti-alias';
-export * as colorRetention from './color-retention';
-export type { Color, ColorRetentionConfig, ColorTransformFn, MaskTransformFn, PostProcessFn } from './color-retention';
-export { HatchingStrategy } from './hatching';
-export type { HatchTexture, HatchingConfig } from './hatching';
-export { NaturalMediaStrategy } from './natural-media';
-export type { NaturalMediaConfig, NaturalMediaStyle } from './natural-media';
-export * as multiScale from './multi-scale';
-export type { BlendContext, BlendFunction, BuiltinBlendMode, MultiScaleConfig, MultiScaleLayer } from './multi-scale';
-export { imageDataToRGB, rgbToImageData, grayscaleToRGB } from './utils';
+export type { DoGResult, ExtensionStrategy } from './base.js';
+export { AntiAliasingStrategy } from './anti-alias.js';
+export type { AntiAliasingConfig } from './anti-alias.js';
+export * as colorRetention from './color-retention.js';
+export type { Color, ColorRetentionConfig, ColorTransformFn, MaskTransformFn, PostProcessFn } from './color-retention.js';
+export { HatchingStrategy } from './hatching.js';
+export type { HatchTexture, HatchingConfig } from './hatching.js';
+export { NaturalMediaStrategy } from './natural-media.js';
+export type { NaturalMediaConfig, NaturalMediaStyle } from './natural-media.js';
+export * as multiScale from './multi-scale.js';
+export type { BlendContext, BlendFunction, BuiltinBlendMode, MultiScaleConfig, MultiScaleLayer } from './multi-scale.js';
+export { imageDataToRGB, rgbToImageData, grayscaleToRGB } from './utils.js';
 //# sourceMappingURL=index.d.ts.map

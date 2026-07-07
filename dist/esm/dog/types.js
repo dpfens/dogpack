@@ -1,4 +1,4 @@
-import { HardThresholdStrategy, SoftThresholdStrategy } from "../threshold";
+import { HardThresholdStrategy, SoftThresholdStrategy } from '../threshold.js';
 /**
  * Default DoG configuration values
  * Based on paper's recommendations and Appendix A parameter ranges

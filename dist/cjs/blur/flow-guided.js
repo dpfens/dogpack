@@ -1,14 +1,14 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.FlowGuidedBlur = exports.WebGPUFlowGuidedBlur = exports.WebGLFlowGuidedBlur = exports.CPUFlowGuidedBlur = void 0;
-const utils_1 = require("../utils");
-const webgl_1 = require("../utils/webgl");
-const base_1 = require("./base");
+const index_js_1 = require("../utils/index.js");
+const webgl_js_1 = require("../utils/webgl.js");
+const base_js_1 = require("./base.js");
 const DEFAULT_FLOW_CONFIG = {
     kernelSizeMultiplier: 6,
     stepSize: 1.0,
 };
-class CPUFlowGuidedBlur extends base_1.BaseCPUBlur {
+class CPUFlowGuidedBlur extends base_js_1.BaseCPUBlur {
     flowField;
     config;
     constructor(flowField, config = {}) {
@@ -30,13 +30,13 @@ class CPUFlowGuidedBlur extends base_1.BaseCPUBlur {
                 height: input.height,
             };
         }
-        const output = (0, utils_1.createChannelImage)(input.width, input.height);
+        const output = (0, index_js_1.createChannelImage)(input.width, input.height);
         // Number of samples along the flow line
         // Paper samples at 2× sigma in each direction
         const halfSamples = Math.ceil(sigma * 2 / this.config.stepSize);
         const numSamples = halfSamples * 2 + 1;
         // Generate 1D Gaussian weights
-        const weights = (0, utils_1.generateGaussianKernel)(sigma, numSamples);
+        const weights = (0, index_js_1.generateGaussianKernel)(sigma, numSamples);
         for (let y = 0; y < input.height; y++) {
             for (let x = 0; x < input.width; x++) {
                 const value = this.sampleAlongFlow(input, x, y, halfSamples, weights);
@@ -56,7 +56,7 @@ class CPUFlowGuidedBlur extends base_1.BaseCPUBlur {
         let sum = 0;
         let weightSum = 0;
         // Sample at center (index = halfSamples)
-        sum += (0, utils_1.getPixelBilinear)(input, startX, startY) * weights[halfSamples];
+        sum += (0, index_js_1.getPixelBilinear)(input, startX, startY) * weights[halfSamples];
         weightSum += weights[halfSamples];
         // Sample in positive flow direction
         let px = startX;
@@ -72,7 +72,7 @@ class CPUFlowGuidedBlur extends base_1.BaseCPUBlur {
                 break;
             }
             const idx = halfSamples + i;
-            const value = (0, utils_1.getPixelBilinear)(input, px, py);
+            const value = (0, index_js_1.getPixelBilinear)(input, px, py);
             sum += value * weights[idx];
             weightSum += weights[idx];
         }
@@ -90,7 +90,7 @@ class CPUFlowGuidedBlur extends base_1.BaseCPUBlur {
                 break;
             }
             const idx = halfSamples - i;
-            const value = (0, utils_1.getPixelBilinear)(input, px, py);
+            const value = (0, index_js_1.getPixelBilinear)(input, px, py);
             sum += value * weights[idx];
             weightSum += weights[idx];
         }
@@ -176,7 +176,7 @@ const DEFAULT_WEBGL_CONFIG = {
  * WebGL2-accelerated flow-guided blur
  * Uses line integral convolution along edge tangent directions
  */
-class WebGLFlowGuidedBlur extends base_1.BaseWebGLBlur {
+class WebGLFlowGuidedBlur extends base_js_1.BaseWebGLBlur {
     config;
     flowField;
     resources = null;
@@ -203,7 +203,7 @@ class WebGLFlowGuidedBlur extends base_1.BaseWebGLBlur {
         const gl = canvas.getContext('webgl2');
         if (!gl)
             throw new Error('WebGL2 is not supported');
-        const program = (0, webgl_1.createProgram)(gl, VERTEX_SHADER, FLOW_BLUR_SHADER);
+        const program = (0, webgl_js_1.createProgram)(gl, VERTEX_SHADER, FLOW_BLUR_SHADER);
         const quadBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
@@ -284,7 +284,7 @@ class WebGLFlowGuidedBlur extends base_1.BaseWebGLBlur {
         const { width, height } = input;
         this.ensureTextureSize(gl, width, height);
         const kernelSize = Math.min(this.config.maxKernelSize, Math.max(3, Math.floor(sigma * this.config.kernelSizeMultiplier) | 1));
-        const kernel = (0, utils_1.generateGaussianKernel)(sigma, kernelSize);
+        const kernel = (0, index_js_1.generateGaussianKernel)(sigma, kernelSize);
         const paddedKernel = new Float32Array(64);
         paddedKernel.set(kernel);
         const inputRGBA = new Uint8Array(width * height * 4);
@@ -321,7 +321,7 @@ class WebGLFlowGuidedBlur extends base_1.BaseWebGLBlur {
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
         const outputRGBA = new Uint8Array(width * height * 4);
         gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, outputRGBA);
-        const output = (0, utils_1.createChannelImage)(width, height);
+        const output = (0, index_js_1.createChannelImage)(width, height);
         for (let i = 0; i < output.data.length; i++) {
             output.data[i] = outputRGBA[i * 4] / 255;
         }
@@ -444,7 +444,7 @@ const DEFAULT_WEBGPU_CONFIG = {
 /**
  * WebGPU-accelerated flow-guided blur
  */
-class WebGPUFlowGuidedBlur extends base_1.BaseWebGPUBlur {
+class WebGPUFlowGuidedBlur extends base_js_1.BaseWebGPUBlur {
     config;
     flowField;
     resources = null;
@@ -570,7 +570,7 @@ class WebGPUFlowGuidedBlur extends base_1.BaseWebGPUBlur {
         const { width, height } = input;
         const pixelCount = width * height;
         const kernelSize = Math.min(this.config.maxKernelSize, Math.max(3, Math.floor(sigma * this.config.kernelSizeMultiplier) | 1));
-        const kernel = (0, utils_1.generateGaussianKernel)(sigma, kernelSize);
+        const kernel = (0, index_js_1.generateGaussianKernel)(sigma, kernelSize);
         this.ensureBuffers(device, width, height, kernelSize);
         device.queue.writeBuffer(this.paramsBuffer, 0, new Uint32Array([width, height, kernelSize, 0]));
         device.queue.writeBuffer(this.kernelBuffer, 0, new Float32Array(kernel));

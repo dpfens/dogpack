@@ -1,5 +1,5 @@
-import { EdgeTangentFlowWebGL } from "./webgl";
-import { EdgeTangentFlow as EdgeTangentFlowCPU } from "./cpu";
+import { EdgeTangentFlowWebGL } from './webgl.js';
+import { EdgeTangentFlow as EdgeTangentFlowCPU } from './cpu.js';
 /**
  * Unified Edge Tangent Flow that automatically selects the best implementation
  */

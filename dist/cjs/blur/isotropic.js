@@ -9,8 +9,8 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.IsotropicBlur = exports.WebGPUIsotropicBlur = exports.WebGLIsotropicBlur = exports.CPUIsotropicBlur = void 0;
-const utils_1 = require("../utils");
-const base_1 = require("./base");
+const index_js_1 = require("../utils/index.js");
+const base_js_1 = require("./base.js");
 const DEFAULT_ISOTROPIC_CONFIG = {
     kernelSizeMultiplier: 6,
 };
@@ -18,7 +18,7 @@ const DEFAULT_ISOTROPIC_CONFIG = {
  * Standard isotropic Gaussian blur using separable convolution
  * This is the blur used in basic XDoG
  */
-class CPUIsotropicBlur extends base_1.BaseCPUBlur {
+class CPUIsotropicBlur extends base_js_1.BaseCPUBlur {
     config;
     constructor(config = {}) {
         super();
@@ -35,29 +35,29 @@ class CPUIsotropicBlur extends base_1.BaseCPUBlur {
             };
         }
         // Compute kernel size (odd number)
-        const kernelSize = (0, utils_1.computeKernelSize)(sigma, this.config.kernelSizeMultiplier);
-        const kernel = (0, utils_1.generateGaussianKernel)(sigma, kernelSize);
+        const kernelSize = (0, index_js_1.computeKernelSize)(sigma, this.config.kernelSizeMultiplier);
+        const kernel = (0, index_js_1.generateGaussianKernel)(sigma, kernelSize);
         const halfKernel = Math.floor(kernelSize / 2);
         // Separable convolution: horizontal pass
-        const temp = (0, utils_1.createChannelImage)(input.width, input.height);
+        const temp = (0, index_js_1.createChannelImage)(input.width, input.height);
         for (let y = 0; y < input.height; y++) {
             for (let x = 0; x < input.width; x++) {
                 let sum = 0;
                 for (let k = 0; k < kernelSize; k++) {
                     const sampleX = x + k - halfKernel;
-                    sum += (0, utils_1.getPixel)(input, sampleX, y) * kernel[k];
+                    sum += (0, index_js_1.getPixel)(input, sampleX, y) * kernel[k];
                 }
                 temp.data[y * input.width + x] = sum;
             }
         }
         // Separable convolution: vertical pass
-        const output = (0, utils_1.createChannelImage)(input.width, input.height);
+        const output = (0, index_js_1.createChannelImage)(input.width, input.height);
         for (let y = 0; y < input.height; y++) {
             for (let x = 0; x < input.width; x++) {
                 let sum = 0;
                 for (let k = 0; k < kernelSize; k++) {
                     const sampleY = y + k - halfKernel;
-                    sum += (0, utils_1.getPixel)(temp, x, sampleY) * kernel[k];
+                    sum += (0, index_js_1.getPixel)(temp, x, sampleY) * kernel[k];
                 }
                 output.data[y * input.width + x] = sum;
             }
@@ -185,7 +185,7 @@ const DEFAULT_WEBGL_CONFIG = {
  * WebGL2-accelerated isotropic Gaussian blur
  * Uses separable convolution with two passes (horizontal + vertical)
  */
-class WebGLIsotropicBlur extends base_1.BaseWebGLBlur {
+class WebGLIsotropicBlur extends base_js_1.BaseWebGLBlur {
     config;
     resources = null;
     currentWidth = 0;
@@ -234,7 +234,7 @@ class WebGLIsotropicBlur extends base_1.BaseWebGLBlur {
         const { gl } = resources;
         const { width, height } = input;
         const kernelSize = Math.min(this.config.maxKernelSize, Math.max(3, Math.floor(sigma * this.config.kernelSizeMultiplier) | 1));
-        const kernel = (0, utils_1.generateGaussianKernel)(sigma, kernelSize);
+        const kernel = (0, index_js_1.generateGaussianKernel)(sigma, kernelSize);
         // Create or reuse textures
         if (this.currentWidth !== width || this.currentHeight !== height) {
             this.textures.forEach(t => gl.deleteTexture(t));
@@ -415,7 +415,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
  * FIXED: Now supports concurrent/parallel blur calls by creating
  * separate staging buffers for each operation instead of reusing one.
  */
-class WebGPUIsotropicBlur extends base_1.BaseWebGPUBlur {
+class WebGPUIsotropicBlur extends base_js_1.BaseWebGPUBlur {
     config;
     resources = null;
     // Reusable buffers for compute operations
@@ -534,7 +534,7 @@ class WebGPUIsotropicBlur extends base_1.BaseWebGPUBlur {
         const pixelCount = width * height;
         // Compute kernel
         const kernelSize = Math.min(this.config.maxKernelSize, Math.max(3, Math.floor(sigma * this.config.kernelSizeMultiplier) | 1));
-        const kernel = (0, utils_1.generateGaussianKernel)(sigma, kernelSize);
+        const kernel = (0, index_js_1.generateGaussianKernel)(sigma, kernelSize);
         // Ensure buffers
         this.ensureBuffers(device, pixelCount, kernelSize);
         // Upload data

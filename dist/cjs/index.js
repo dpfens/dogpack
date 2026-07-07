@@ -84,24 +84,24 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.extensions = exports.utilities = exports.DEFAULT_ETF_CONFIG = exports.threshold = exports.preprocess = exports.EdgeTangentFlow = exports.blur = exports.applyCustomThreshold = exports.ThresholdModes = exports.DoGProcessor = exports.dog = void 0;
-exports.dog = require("./dog");
+exports.dog = require("./dog/index.js");
 // Core processor (for advanced usage)
-var processor_1 = require("./processor");
-Object.defineProperty(exports, "DoGProcessor", { enumerable: true, get: function () { return processor_1.DoGProcessor; } });
-Object.defineProperty(exports, "ThresholdModes", { enumerable: true, get: function () { return processor_1.ThresholdModes; } });
-Object.defineProperty(exports, "applyCustomThreshold", { enumerable: true, get: function () { return processor_1.applyCustomThreshold; } });
+var processor_js_1 = require("./processor.js");
+Object.defineProperty(exports, "DoGProcessor", { enumerable: true, get: function () { return processor_js_1.DoGProcessor; } });
+Object.defineProperty(exports, "ThresholdModes", { enumerable: true, get: function () { return processor_js_1.ThresholdModes; } });
+Object.defineProperty(exports, "applyCustomThreshold", { enumerable: true, get: function () { return processor_js_1.applyCustomThreshold; } });
 // Blur strategies (for custom configurations)
-exports.blur = require("./blur");
+exports.blur = require("./blur/index.js");
 // Edge Tangent Flow (for visualization or custom pipelines)
-var etf_1 = require("./etf");
-Object.defineProperty(exports, "EdgeTangentFlow", { enumerable: true, get: function () { return etf_1.EdgeTangentFlow; } });
+var index_js_1 = require("./etf/index.js");
+Object.defineProperty(exports, "EdgeTangentFlow", { enumerable: true, get: function () { return index_js_1.EdgeTangentFlow; } });
 // Preprocessing
-exports.preprocess = require("./preprocess");
-exports.threshold = require("./threshold");
-var types_1 = require("./types");
-Object.defineProperty(exports, "DEFAULT_ETF_CONFIG", { enumerable: true, get: function () { return types_1.DEFAULT_ETF_CONFIG; } });
+exports.preprocess = require("./preprocess/index.js");
+exports.threshold = require("./threshold.js");
+var types_js_1 = require("./types.js");
+Object.defineProperty(exports, "DEFAULT_ETF_CONFIG", { enumerable: true, get: function () { return types_js_1.DEFAULT_ETF_CONFIG; } });
 // Utilities
-exports.utilities = require("./utils");
+exports.utilities = require("./utils/index.js");
 // Extensions (composable strategies for advanced stylization)
-exports.extensions = require("./extensions");
+exports.extensions = require("./extensions/index.js");
 //# sourceMappingURL=index.js.map

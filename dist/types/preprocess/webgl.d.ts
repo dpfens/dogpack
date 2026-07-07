@@ -12,7 +12,7 @@
  * - Contrast Enhancement
  * - Quantization
  */
-import type { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from '../types';
+import type { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from '../types.js';
 export declare function bilateralFilterWebGL(input: ChannelImage, config: BilateralFilterConfig): ChannelImage;
 export declare function gaussianBlurWebGL(input: ChannelImage, sigma?: number): ChannelImage;
 export declare function medianFilterWebGL(input: ChannelImage, config: MedianFilterConfig): ChannelImage;

@@ -1,5 +1,5 @@
-import type { ChannelImage } from "../types";
-import type { ExtensionStrategy } from "./base";
+import type { ChannelImage } from '../types.js';
+import type { ExtensionStrategy } from './base.js';
 /**
  * Hatching texture specification
  */

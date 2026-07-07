@@ -7,11 +7,11 @@
  * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
  * advanced image stylization" by Winnemöller et al. (2012)
  */
-import {} from '../types';
-import { DoGProcessor } from '../processor';
-import { imageDataToLuminance, luminanceToImageData } from '../utils';
-import { IsotropicBlur } from '../blur/isotropic';
-import { DEFAULT_DOG_CONFIG, STYLE_PRESETS } from './types';
+import {} from '../types.js';
+import { DoGProcessor } from '../processor.js';
+import { imageDataToLuminance, luminanceToImageData } from '../utils/index.js';
+import { IsotropicBlur } from '../blur/isotropic.js';
+import { DEFAULT_DOG_CONFIG, STYLE_PRESETS } from './types.js';
 /**
  * XDoG (Extended Difference of Gaussians)
  *

@@ -17,7 +17,7 @@ exports.kuwaharaFilter = kuwaharaFilter;
 exports.gaussianBlur = gaussianBlur;
 exports.enhanceContrast = enhanceContrast;
 exports.quantize = quantize;
-const utils_1 = require("../utils");
+const index_js_1 = require("../utils/index.js");
 const DEFAULT_BILATERAL_CONFIG = {
     sigmaSpatial: 3,
     sigmaRange: 0.1,
@@ -45,7 +45,7 @@ const DEFAULT_KUWAHARA_CONFIG = {
 function bilateralFilter(input, config = {}) {
     const cfg = { ...DEFAULT_BILATERAL_CONFIG, ...config };
     const { width, height } = input;
-    const output = (0, utils_1.createChannelImage)(width, height);
+    const output = (0, index_js_1.createChannelImage)(width, height);
     const radius = Math.ceil(cfg.sigmaSpatial * (cfg.radiusMultiplier ?? 2));
     const sigmaSpatial2 = 2 * cfg.sigmaSpatial * cfg.sigmaSpatial;
     const sigmaRange2 = 2 * cfg.sigmaRange * cfg.sigmaRange;
@@ -59,7 +59,7 @@ function bilateralFilter(input, config = {}) {
     }
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
-            const centerValue = (0, utils_1.getPixel)(input, x, y);
+            const centerValue = (0, index_js_1.getPixel)(input, x, y);
             let sum = 0;
             let weightSum = 0;
             let idx = 0;
@@ -67,7 +67,7 @@ function bilateralFilter(input, config = {}) {
                 for (let dx = -radius; dx <= radius; dx++) {
                     const nx = x + dx;
                     const ny = y + dy;
-                    const neighborValue = (0, utils_1.getPixel)(input, nx, ny);
+                    const neighborValue = (0, index_js_1.getPixel)(input, nx, ny);
                     // Range weight based on intensity difference
                     const intensityDiff = neighborValue - centerValue;
                     const rangeWeight = Math.exp(-(intensityDiff * intensityDiff) / sigmaRange2);
@@ -92,7 +92,7 @@ function bilateralFilter(input, config = {}) {
 function medianFilter(input, config = {}) {
     const cfg = { ...DEFAULT_MEDIAN_CONFIG, ...config };
     const { width, height } = input;
-    const output = (0, utils_1.createChannelImage)(width, height);
+    const output = (0, index_js_1.createChannelImage)(width, height);
     const radius = cfg.radius;
     const kernelSize = (2 * radius + 1) * (2 * radius + 1);
     const values = new Array(kernelSize);
@@ -101,7 +101,7 @@ function medianFilter(input, config = {}) {
             let idx = 0;
             for (let dy = -radius; dy <= radius; dy++) {
                 for (let dx = -radius; dx <= radius; dx++) {
-                    values[idx++] = (0, utils_1.getPixel)(input, x + dx, y + dy);
+                    values[idx++] = (0, index_js_1.getPixel)(input, x + dx, y + dy);
                 }
             }
             // Sort and take median
@@ -122,7 +122,7 @@ function medianFilter(input, config = {}) {
 function kuwaharaFilter(input, config = {}) {
     const cfg = { ...DEFAULT_KUWAHARA_CONFIG, ...config };
     const { width, height } = input;
-    const output = (0, utils_1.createChannelImage)(width, height);
+    const output = (0, index_js_1.createChannelImage)(width, height);
     const r = cfg.radius;
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
@@ -134,14 +134,14 @@ function kuwaharaFilter(input, config = {}) {
                 { startX: 0, endX: r, startY: 0, endY: r },
             ];
             let minVariance = Infinity;
-            let bestMean = (0, utils_1.getPixel)(input, x, y);
+            let bestMean = (0, index_js_1.getPixel)(input, x, y);
             for (const q of quadrants) {
                 let sum = 0;
                 let sumSq = 0;
                 let count = 0;
                 for (let dy = q.startY; dy <= q.endY; dy++) {
                     for (let dx = q.startX; dx <= q.endX; dx++) {
-                        const val = (0, utils_1.getPixel)(input, x + dx, y + dy);
+                        const val = (0, index_js_1.getPixel)(input, x + dx, y + dy);
                         sum += val;
                         sumSq += val * val;
                         count++;
@@ -172,25 +172,25 @@ function gaussianBlur(input, sigma = 1.0) {
     }
     const radius = Math.ceil(sigma * 3);
     const kernelSize = radius * 2 + 1;
-    const kernel = (0, utils_1.generateGaussianKernel)(sigma, kernelSize);
+    const kernel = (0, index_js_1.generateGaussianKernel)(sigma, kernelSize);
     // Horizontal pass
-    const temp = (0, utils_1.createChannelImage)(width, height);
+    const temp = (0, index_js_1.createChannelImage)(width, height);
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
             let val = 0;
             for (let k = 0; k < kernelSize; k++) {
-                val += (0, utils_1.getPixel)(input, x + k - radius, y) * kernel[k];
+                val += (0, index_js_1.getPixel)(input, x + k - radius, y) * kernel[k];
             }
             temp.data[y * width + x] = val;
         }
     }
     // Vertical pass
-    const output = (0, utils_1.createChannelImage)(width, height);
+    const output = (0, index_js_1.createChannelImage)(width, height);
     for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
             let val = 0;
             for (let k = 0; k < kernelSize; k++) {
-                val += (0, utils_1.getPixel)(temp, x, y + k - radius) * kernel[k];
+                val += (0, index_js_1.getPixel)(temp, x, y + k - radius) * kernel[k];
             }
             output.data[y * width + x] = val;
         }
@@ -205,7 +205,7 @@ function gaussianBlur(input, sigma = 1.0) {
  */
 function enhanceContrast(input, blackPoint = 0.01, whitePoint = 0.99) {
     const { width, height, data } = input;
-    const output = (0, utils_1.createChannelImage)(width, height);
+    const output = (0, index_js_1.createChannelImage)(width, height);
     const size = width * height;
     // Find histogram percentiles
     const sorted = new Float32Array(data).sort();
@@ -228,7 +228,7 @@ function enhanceContrast(input, blackPoint = 0.01, whitePoint = 0.99) {
  */
 function quantize(input, levels = 8) {
     const { width, height, data } = input;
-    const output = (0, utils_1.createChannelImage)(width, height);
+    const output = (0, index_js_1.createChannelImage)(width, height);
     const size = width * height;
     const step = 1 / (levels - 1);
     for (let i = 0; i < size; i++) {

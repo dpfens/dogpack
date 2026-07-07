@@ -11,16 +11,16 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ADoG = void 0;
 exports.adog = adog;
-const utils_1 = require("../utils");
-const isotropic_1 = require("../blur/isotropic");
-const utils_2 = require("../utils");
-const types_1 = require("./types");
+const index_js_1 = require("../utils/index.js");
+const isotropic_js_1 = require("../blur/isotropic.js");
+const index_js_2 = require("../utils/index.js");
+const types_js_1 = require("./types.js");
 class ADoG {
     config;
     blurStrategy;
     constructor(config = {}) {
-        this.config = { ...types_1.DEFAULT_ADOG_CONFIG, kernelSizeMultiplier: 6, ...config };
-        this.blurStrategy = new isotropic_1.IsotropicBlur({
+        this.config = { ...types_js_1.DEFAULT_ADOG_CONFIG, kernelSizeMultiplier: 6, ...config };
+        this.blurStrategy = new isotropic_js_1.IsotropicBlur({
             kernelSizeMultiplier: this.config.kernelSizeMultiplier,
         });
     }
@@ -77,9 +77,9 @@ class ADoG {
      * matching XDoG/FDoG's convenience method of the same name.
      */
     async processGrayscaleImageData(input, overrides = {}) {
-        const grayscale = (0, utils_1.imageDataToLuminance)(input);
+        const grayscale = (0, index_js_1.imageDataToLuminance)(input);
         const result = await this.process(grayscale, overrides);
-        return (0, utils_1.luminanceToImageData)(result);
+        return (0, index_js_1.luminanceToImageData)(result);
     }
     /**
      * Get current configuration
@@ -92,13 +92,13 @@ class ADoG {
      */
     setConfig(config) {
         if (config.kernelSizeMultiplier !== undefined) {
-            this.blurStrategy = new isotropic_1.IsotropicBlur({ kernelSizeMultiplier: config.kernelSizeMultiplier });
+            this.blurStrategy = new isotropic_js_1.IsotropicBlur({ kernelSizeMultiplier: config.kernelSizeMultiplier });
         }
         this.config = { ...this.config, ...config };
     }
     /** Eq. (5): rho(x) = tau + (1 - tau) * (1 - tanh(s * I(x))) */
     computeRhoMap(input, tau, s) {
-        const output = (0, utils_1.createChannelImage)(input.width, input.height);
+        const output = (0, index_js_1.createChannelImage)(input.width, input.height);
         for (let i = 0; i < input.data.length; i++) {
             output.data[i] = tau + (1 - tau) * (1 - Math.tanh(s * input.data[i]));
         }
@@ -106,16 +106,16 @@ class ADoG {
     }
     /** Eq. (6): sigma(x) = c * (1 - tanh(s * I(x))); sampled noise ~ N(0,1) * sigma(x) added to I(x) */
     injectAdaptiveNoise(input, c, s) {
-        const output = (0, utils_1.createChannelImage)(input.width, input.height);
+        const output = (0, index_js_1.createChannelImage)(input.width, input.height);
         for (let i = 0; i < input.data.length; i++) {
             const sigma = c * (1 - Math.tanh(s * input.data[i]));
-            output.data[i] = input.data[i] + sigma * (0, utils_2.gaussianSample)();
+            output.data[i] = input.data[i] + sigma * (0, index_js_2.gaussianSample)();
         }
         return output;
     }
     /** Eq. (3)/(4): ADoG(x) = G_sigmaC(x) - rho(x) * G_sigmaS(x) */
     computeWeightedDoG(blurC, blurS, rho) {
-        const output = (0, utils_1.createChannelImage)(blurC.width, blurC.height);
+        const output = (0, index_js_1.createChannelImage)(blurC.width, blurC.height);
         for (let i = 0; i < blurC.data.length; i++) {
             output.data[i] = blurC.data[i] - rho.data[i] * blurS.data[i];
         }
@@ -123,7 +123,7 @@ class ADoG {
     }
     /** Standard (non-adaptive) DoG: G_sigmaC(x) - G_sigmaS(x), i.e. rho == 1 everywhere */
     computeUnweightedDoG(blurC, blurS) {
-        const output = (0, utils_1.createChannelImage)(blurC.width, blurC.height);
+        const output = (0, index_js_1.createChannelImage)(blurC.width, blurC.height);
         for (let i = 0; i < blurC.data.length; i++) {
             output.data[i] = blurC.data[i] - blurS.data[i];
         }

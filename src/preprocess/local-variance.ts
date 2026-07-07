@@ -191,6 +191,8 @@
  * @see {@link LocalVariancePreprocessorOptimized} for faster computation using separable filters
  */
 
+import type { ChannelImage } from "../types.js";
+
 /**
  * Local Variance Texture Detection Preprocessor
  * 
@@ -228,11 +230,6 @@
  * Using a flat Float32Array for performance and future GPU compatibility
  * Values are normalized to 0-1 range
  */
-export interface ChannelImage {
-  data: Float32Array;
-  width: number;
-  height: number;
-}
 
 /**
  * Configuration for Local Variance Texture Detection

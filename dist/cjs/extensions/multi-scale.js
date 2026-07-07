@@ -11,8 +11,8 @@ exports.MultiScaleStrategy = exports.BlendFunctions = exports.blendPriority = ex
 exports.createPercentileBlend = createPercentileBlend;
 exports.createMixedBlend = createMixedBlend;
 exports.createGammaCorrectedBlend = createGammaCorrectedBlend;
-const dog_1 = require("../dog");
-const utils_1 = require("../utils");
+const index_js_1 = require("../dog/index.js");
+const index_js_2 = require("../utils/index.js");
 // =============================================================================
 // Built-in Blend Functions
 // =============================================================================
@@ -338,7 +338,7 @@ class MultiScaleStrategy {
         return this.blendLayers(layerResults, this.config.layers, blend, width, height);
     }
     blendLayers(layers, layerConfigs, blend, width, height) {
-        const output = (0, utils_1.createChannelImage)(width, height);
+        const output = (0, index_js_2.createChannelImage)(width, height);
         // Pre-compute normalized weights
         const totalWeight = layerConfigs.reduce((sum, l) => sum + l.weight, 0);
         const normalizedWeights = layerConfigs.map(l => l.weight / totalWeight);
@@ -372,26 +372,26 @@ class MultiScaleStrategy {
             case 'detailed':
                 return new MultiScaleStrategy({
                     layers: [
-                        { processor: new dog_1.XDoG({ sigma: 0.4, p: 25, phi: 50 }), weight: 2 },
-                        { processor: new dog_1.XDoG({ sigma: 1.0, p: 20, phi: 50 }), weight: 1 },
+                        { processor: new index_js_1.XDoG({ sigma: 0.4, p: 25, phi: 50 }), weight: 2 },
+                        { processor: new index_js_1.XDoG({ sigma: 1.0, p: 20, phi: 50 }), weight: 1 },
                     ],
                     blend: exports.BlendFunctions.min,
                 });
             case 'balanced':
                 return new MultiScaleStrategy({
                     layers: [
-                        { processor: new dog_1.XDoG({ sigma: 0.8, p: 20 }), weight: 1 },
-                        { processor: new dog_1.FDoG({ sigma: 1.6, sigmaM: 3.0 }), weight: 2 },
-                        { processor: new dog_1.FDoG({ sigma: 3.2, sigmaM: 5.0 }), weight: 1 },
+                        { processor: new index_js_1.XDoG({ sigma: 0.8, p: 20 }), weight: 1 },
+                        { processor: new index_js_1.FDoG({ sigma: 1.6, sigmaM: 3.0 }), weight: 2 },
+                        { processor: new index_js_1.FDoG({ sigma: 3.2, sigmaM: 5.0 }), weight: 1 },
                     ],
                     blend: exports.BlendFunctions.average,
                 });
             case 'abstract':
                 return new MultiScaleStrategy({
                     layers: [
-                        { processor: new dog_1.FDoG({ sigma: 2.0, sigmaM: 4.0 }), weight: 1 },
-                        { processor: new dog_1.FDoG({ sigma: 5.0, sigmaM: 6.0 }), weight: 2 },
-                        { processor: new dog_1.FDoG({ sigma: 10.0, sigmaM: 8.0 }), weight: 1 },
+                        { processor: new index_js_1.FDoG({ sigma: 2.0, sigmaM: 4.0 }), weight: 1 },
+                        { processor: new index_js_1.FDoG({ sigma: 5.0, sigmaM: 6.0 }), weight: 2 },
+                        { processor: new index_js_1.FDoG({ sigma: 10.0, sigmaM: 8.0 }), weight: 1 },
                     ],
                     blend: exports.BlendFunctions.max,
                 });

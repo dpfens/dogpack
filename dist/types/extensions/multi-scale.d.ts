@@ -5,9 +5,9 @@
  * 1. Use the provided blend functions (average, min, max, multiply)
  * 2. Supply their own custom blend function
  */
-import type { DoGImplementation } from '../dog/types';
-import type { ChannelImage } from '../types';
-import type { ExtensionStrategy } from './base';
+import type { DoGImplementation } from '../dog/types.js';
+import type { ChannelImage } from '../types.js';
+import type { ExtensionStrategy } from './base.js';
 /**
  * Context provided to blend functions for each pixel
  */

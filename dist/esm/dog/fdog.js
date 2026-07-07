@@ -7,14 +7,13 @@
  * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
  * advanced image stylization" by Winnemöller et al. (2012)
  */
-import {} from '../types';
-import { DoGProcessor } from '../processor';
-import { EdgeTangentFlow } from '../etf';
-import { imageDataToLuminance, luminanceToImageData } from '../utils';
-import { GradientAlignedBlur } from '../blur/gradient-aligned';
-import { FlowGuidedBlur } from '../blur/flow-guided';
-import { DEFAULT_FDOG_CONFIG, FDOG_STYLE_PRESETS } from './types';
-import { DEFAULT_ETF_CONFIG } from '..';
+import { DEFAULT_ETF_CONFIG, } from '../types.js';
+import { DoGProcessor } from '../processor.js';
+import { EdgeTangentFlow } from '../etf/index.js';
+import { imageDataToLuminance, luminanceToImageData } from '../utils/index.js';
+import { GradientAlignedBlur } from '../blur/gradient-aligned.js';
+import { FlowGuidedBlur } from '../blur/flow-guided.js';
+import { DEFAULT_FDOG_CONFIG, FDOG_STYLE_PRESETS } from './types.js';
 /**
  * FDoG (Flow-based Difference of Gaussians)
  *

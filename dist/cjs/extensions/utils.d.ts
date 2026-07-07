@@ -1,5 +1,5 @@
-import type { ChannelImage } from "../types";
-import type { RGBImage } from "./base";
+import type { ChannelImage } from '../types.js';
+import type { RGBImage } from './base.js';
 /**
  * Convert ImageData to RGBImage
  */

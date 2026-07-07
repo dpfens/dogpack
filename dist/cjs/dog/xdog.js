@@ -11,10 +11,10 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.XDoG = void 0;
 exports.xdog = xdog;
-const processor_1 = require("../processor");
-const utils_1 = require("../utils");
-const isotropic_1 = require("../blur/isotropic");
-const types_1 = require("./types");
+const processor_js_1 = require("../processor.js");
+const index_js_1 = require("../utils/index.js");
+const isotropic_js_1 = require("../blur/isotropic.js");
+const types_js_1 = require("./types.js");
 /**
  * XDoG (Extended Difference of Gaussians)
  *
@@ -29,11 +29,11 @@ class XDoG {
     config;
     constructor(config = {}) {
         const { kernelSizeMultiplier, ...dogConfig } = config;
-        this.config = { ...types_1.DEFAULT_DOG_CONFIG, kernelSizeMultiplier: 6, ...config };
-        const blurStrategy = new isotropic_1.IsotropicBlur({
+        this.config = { ...types_js_1.DEFAULT_DOG_CONFIG, kernelSizeMultiplier: 6, ...config };
+        const blurStrategy = new isotropic_js_1.IsotropicBlur({
             kernelSizeMultiplier: this.config.kernelSizeMultiplier,
         });
-        this.processor = new processor_1.DoGProcessor(blurStrategy, dogConfig);
+        this.processor = new processor_js_1.DoGProcessor(blurStrategy, dogConfig);
     }
     dispose() {
         this.processor.dispose();
@@ -42,7 +42,7 @@ class XDoG {
      * Create XDoG with a preset style
      */
     static withPreset(presetName) {
-        return new XDoG(types_1.STYLE_PRESETS[presetName]);
+        return new XDoG(types_js_1.STYLE_PRESETS[presetName]);
     }
     /**
      * Process a grayscale image
@@ -80,9 +80,9 @@ class XDoG {
      * Convenience method to process ImageData directly (e.g., from a canvas)
      */
     async processGrayscaleImageData(input, overrides = {}) {
-        const grayscale = (0, utils_1.imageDataToLuminance)(input);
+        const grayscale = (0, index_js_1.imageDataToLuminance)(input);
         const result = await this.process(grayscale, overrides);
-        return (0, utils_1.luminanceToImageData)(result);
+        return (0, index_js_1.luminanceToImageData)(result);
     }
     /**
      * Get current configuration
@@ -98,7 +98,7 @@ class XDoG {
         if (kernelSizeMultiplier !== undefined) {
             this.config.kernelSizeMultiplier = kernelSizeMultiplier;
             // Need to recreate blur strategy with new kernel size
-            const blurStrategy = new isotropic_1.IsotropicBlur({ kernelSizeMultiplier });
+            const blurStrategy = new isotropic_js_1.IsotropicBlur({ kernelSizeMultiplier });
             this.processor.setBlurStrategy(blurStrategy);
         }
         this.processor.setConfig(dogConfig);

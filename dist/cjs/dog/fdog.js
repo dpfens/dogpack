@@ -11,13 +11,13 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.FDoG = void 0;
 exports.fdog = fdog;
-const processor_1 = require("../processor");
-const etf_1 = require("../etf");
-const utils_1 = require("../utils");
-const gradient_aligned_1 = require("../blur/gradient-aligned");
-const flow_guided_1 = require("../blur/flow-guided");
-const types_1 = require("./types");
-const __1 = require("..");
+const types_js_1 = require("../types.js");
+const processor_js_1 = require("../processor.js");
+const index_js_1 = require("../etf/index.js");
+const index_js_2 = require("../utils/index.js");
+const gradient_aligned_js_1 = require("../blur/gradient-aligned.js");
+const flow_guided_js_1 = require("../blur/flow-guided.js");
+const types_js_2 = require("./types.js");
 /**
  * FDoG (Flow-based Difference of Gaussians)
  *
@@ -41,7 +41,7 @@ class FDoG {
     config;
     constructor(config = {}) {
         this.config = {
-            ...types_1.DEFAULT_FDOG_CONFIG,
+            ...types_js_2.DEFAULT_FDOG_CONFIG,
             ...config,
         };
     }
@@ -51,7 +51,7 @@ class FDoG {
      * Create FDoG with a preset style
      */
     static withPreset(presetName) {
-        return new FDoG(types_1.FDOG_STYLE_PRESETS[presetName]);
+        return new FDoG(types_js_2.FDOG_STYLE_PRESETS[presetName]);
     }
     /**
      * Process a grayscale image
@@ -62,16 +62,16 @@ class FDoG {
     async process(input, overrides = {}) {
         const params = { ...this.config, ...overrides };
         // Step 1: Compute Edge Tangent Flow
-        const etf = etf_1.EdgeTangentFlow.compute(input, {
-            iterations: __1.DEFAULT_ETF_CONFIG.iterations,
+        const etf = index_js_1.EdgeTangentFlow.compute(input, {
+            iterations: types_js_1.DEFAULT_ETF_CONFIG.iterations,
             kernelSize: Math.ceil(params.sigmaC * 2.45) * 2 + 1,
         }, params.sigmaC);
-        const gradientBlur = new gradient_aligned_1.GradientAlignedBlur(etf);
-        const processor = new processor_1.DoGProcessor(gradientBlur, params);
+        const gradientBlur = new gradient_aligned_js_1.GradientAlignedBlur(etf);
+        const processor = new processor_js_1.DoGProcessor(gradientBlur, params);
         // Step 4: Process image (DoG + threshold)
         let result = await processor.process(input);
         processor.dispose();
-        const flowBlur = new flow_guided_1.FlowGuidedBlur(etf);
+        const flowBlur = new flow_guided_js_1.FlowGuidedBlur(etf);
         // Step 5: Flow-aligned smoothing
         if (params.sigmaM > 0) {
             result = await flowBlur.blur(result, params.sigmaM);
@@ -81,7 +81,7 @@ class FDoG {
             result = await flowBlur.blur(result, params.sigmaA);
         }
         flowBlur.dispose();
-        etf_1.EdgeTangentFlow.dispose();
+        index_js_1.EdgeTangentFlow.dispose();
         return result;
     }
     /**
@@ -90,13 +90,13 @@ class FDoG {
     async processDetailed(input, overrides = {}) {
         const params = { ...this.config, ...overrides };
         // Compute ETF
-        const etf = etf_1.EdgeTangentFlow.compute(input, {
-            iterations: __1.DEFAULT_ETF_CONFIG.iterations,
+        const etf = index_js_1.EdgeTangentFlow.compute(input, {
+            iterations: types_js_1.DEFAULT_ETF_CONFIG.iterations,
             kernelSize: Math.ceil(params.sigmaC * 2.45) * 2 + 1,
         }, params.sigmaC);
         // Create blur strategies
-        const gradientBlur = new gradient_aligned_1.GradientAlignedBlur(etf);
-        const processor = new processor_1.DoGProcessor(gradientBlur, params);
+        const gradientBlur = new gradient_aligned_js_1.GradientAlignedBlur(etf);
+        const processor = new processor_js_1.DoGProcessor(gradientBlur, params);
         // Get intermediate results
         const [sharpened, thresholded] = await Promise.all([
             processor.processNoThreshold(input),
@@ -105,28 +105,28 @@ class FDoG {
         // Flow-aligned smoothing
         let smoothed = thresholded;
         if (params.sigmaM > 0) {
-            const flowBlur = new flow_guided_1.FlowGuidedBlur(etf);
+            const flowBlur = new flow_guided_js_1.FlowGuidedBlur(etf);
             smoothed = await flowBlur.blur(thresholded, params.sigmaM);
             flowBlur.dispose();
         }
         // Anti-aliasing
         let result = smoothed;
         if (params.sigmaA > 0) {
-            const flowCls = flow_guided_1.FlowGuidedBlur;
+            const flowCls = flow_guided_js_1.FlowGuidedBlur;
             const aaBlur = new flowCls(etf);
             result = await aaBlur.blur(smoothed, params.sigmaA);
             aaBlur.dispose();
         }
-        etf_1.EdgeTangentFlow.dispose();
+        index_js_1.EdgeTangentFlow.dispose();
         return { result, etf, sharpened, thresholded, smoothed };
     }
     /**
      * Convenience method to process ImageData directly
      */
     async processGrayscaleImageData(input, overrides = {}) {
-        const grayscale = (0, utils_1.imageDataToLuminance)(input);
+        const grayscale = (0, index_js_2.imageDataToLuminance)(input);
         const result = await this.process(grayscale, overrides);
-        return (0, utils_1.luminanceToImageData)(result);
+        return (0, index_js_2.luminanceToImageData)(result);
     }
     /**
      * Process with a pre-computed ETF
@@ -136,11 +136,11 @@ class FDoG {
      */
     async processWithETF(input, etf, overrides = {}) {
         const params = { ...this.config, ...overrides };
-        const gradientBlur = new gradient_aligned_1.GradientAlignedBlur(etf);
-        const processor = new processor_1.DoGProcessor(gradientBlur, params);
+        const gradientBlur = new gradient_aligned_js_1.GradientAlignedBlur(etf);
+        const processor = new processor_js_1.DoGProcessor(gradientBlur, params);
         let result = await processor.process(input);
         processor.dispose();
-        const flowCls = flow_guided_1.FlowGuidedBlur;
+        const flowCls = flow_guided_js_1.FlowGuidedBlur;
         if (params.sigmaM > 0) {
             const flowBlur = new flowCls(etf);
             result = await flowBlur.blur(result, params.sigmaM);
@@ -161,11 +161,11 @@ class FDoG {
         if (sigma <= 0) {
             return { data: new Float32Array(input.data), width: input.width, height: input.height };
         }
-        const flowCls = flow_guided_1.FlowGuidedBlur;
+        const flowCls = flow_guided_js_1.FlowGuidedBlur;
         const aaBlur = new flowCls(etf);
         const result = aaBlur.blur(input, sigma);
         aaBlur.dispose();
-        etf_1.EdgeTangentFlow.dispose();
+        index_js_1.EdgeTangentFlow.dispose();
         return result;
     }
     /**

@@ -1,4 +1,4 @@
-import { FlowGuidedBlur } from "../blur/index";
+import { FlowGuidedBlur } from '../blur/index.js';
 const DEFAULT_AA_CONFIG = {
     sigma: 1.0,
     stepSize: 0.5,

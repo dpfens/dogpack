@@ -17,7 +17,7 @@ interface Vec2 {
  * Using a flat Float32Array for performance and future GPU compatibility
  * Values are normalized to 0-1 range
  */
-interface ChannelImage$1 {
+interface ChannelImage {
     data: Float32Array;
     width: number;
     height: number;
@@ -41,7 +41,7 @@ interface BlurStrategy {
      * @param sigma Blur radius (standard deviation)
      * @returns Blurred image
      */
-    blur(input: ChannelImage$1, sigma: number): Promise<ChannelImage$1>;
+    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
     dispose(): void;
 }
 /**
@@ -114,14 +114,14 @@ interface ETFConfig {
 declare const DEFAULT_ETF_CONFIG: ETFConfig;
 
 interface ThresholdStrategy {
-    threshold(sharpened: ChannelImage$1, config: ThresholdConfig): ChannelImage$1;
+    threshold(sharpened: ChannelImage, config: ThresholdConfig): ChannelImage;
 }
 interface ThresholdConfig {
-    epsilon: number | ChannelImage$1;
-    phi: number | ChannelImage$1;
+    epsilon: number | ChannelImage;
+    phi: number | ChannelImage;
 }
 declare class SoftThresholdStrategy implements ThresholdStrategy {
-    threshold(sharpened: ChannelImage$1, config: ThresholdConfig): ChannelImage$1;
+    threshold(sharpened: ChannelImage, config: ThresholdConfig): ChannelImage;
 }
 /**
  * Hard black/white threshold (step function).
@@ -131,13 +131,13 @@ declare class SoftThresholdStrategy implements ThresholdStrategy {
  * screentone output is binarized rather than soft-thresholded).
  */
 declare class HardThresholdStrategy implements ThresholdStrategy {
-    threshold(input: ChannelImage$1, config: ThresholdConfig): ChannelImage$1;
+    threshold(input: ChannelImage, config: ThresholdConfig): ChannelImage;
 }
 declare class HysteresisThresholdStrategy implements ThresholdStrategy {
     private readonly highOffset;
     private readonly lowOffset;
     constructor(highOffset?: number, lowOffset?: number);
-    threshold(sharpened: ChannelImage$1, config: ThresholdConfig): ChannelImage$1;
+    threshold(sharpened: ChannelImage, config: ThresholdConfig): ChannelImage;
     private floodFill;
 }
 
@@ -186,14 +186,14 @@ interface DoGConfig {
      * Note: This replaces the original τ parameter. The relationship is:
      * p = τ / (τ - 1), or equivalently τ = p / (p + 1)
      */
-    p: number | ChannelImage$1;
+    p: number | ChannelImage;
     /**
      * Threshold for white vs black transition (default: 0.5)
      * Values above this become white, values below follow the soft threshold
      * Should be in 0-1 range for normalized images
      * Paper's Appendix A shows values around 0.72-0.88 (normalized from 0-100)
      */
-    epsilon: number | ChannelImage$1;
+    epsilon: number | ChannelImage;
     /**
      * Sharpness of the soft threshold / tanh steepness (default: 10)
      * Controls the transition sharpness between black and white
@@ -201,7 +201,7 @@ interface DoGConfig {
      * - φ ≈ 1-10: Moderate transitions
      * - φ >> 10: Hard black/white threshold (approaches step function)
      */
-    phi: number | ChannelImage$1;
+    phi: number | ChannelImage;
     thresholdStrategy: ThresholdStrategy;
 }
 /**
@@ -307,11 +307,11 @@ interface HDoGConfig {
 }
 interface DoGProcessingResult {
     /** Final thresholded output */
-    result: ChannelImage$1;
+    result: ChannelImage;
     /** Sharpened image before thresholding */
-    sharpened: ChannelImage$1;
+    sharpened: ChannelImage;
     /** Raw DoG response (blur1 - blur2) */
-    rawDoG?: ChannelImage$1;
+    rawDoG?: ChannelImage;
 }
 /**
  * Result of HDoG processing.
@@ -325,9 +325,9 @@ interface DoGProcessingResult {
  * adogPrimaryResult / adogSecondaryResult.
  */
 interface HDoGProcessingResult extends DoGProcessingResult {
-    fdogResult: ChannelImage$1;
-    adogPrimaryResult: ChannelImage$1;
-    adogSecondaryResult: ChannelImage$1;
+    fdogResult: ChannelImage;
+    adogPrimaryResult: ChannelImage;
+    adogSecondaryResult: ChannelImage;
 }
 /**
  * Result of ADoG processing, extending the standard DoGProcessingResult
@@ -349,17 +349,17 @@ interface HDoGProcessingResult extends DoGProcessingResult {
  */
 interface ADoGProcessingResult extends DoGProcessingResult {
     /** Per-pixel adaptive contrast sensitivity ρ(x), Eq. (5) */
-    rhoMap: ChannelImage$1;
+    rhoMap: ChannelImage;
     /** Input after adaptive noise injection (Eq. 6), or the original input if noiseScaleC === 0 */
-    noisyInput: ChannelImage$1;
+    noisyInput: ChannelImage;
 }
 /**
  * Interface for DoG processors (XDoG, FDoG, ADoG, or HDoG)
  */
 interface DoGImplementation {
-    process(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<ChannelImage$1>;
+    process(input: ChannelImage, overrides?: Partial<DoGConfig>): Promise<ChannelImage>;
     /** Process and return all intermediate results (avoids redundant blur operations) */
-    processDetailed(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<DoGProcessingResult>;
+    processDetailed(input: ChannelImage, overrides?: Partial<DoGConfig>): Promise<DoGProcessingResult>;
     dispose(): void;
 }
 /**
@@ -471,15 +471,15 @@ declare class XDoG implements DoGImplementation {
     /**
      * Process a grayscale image
      */
-    process(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<ChannelImage$1>;
+    process(input: ChannelImage, overrides?: Partial<DoGConfig>): Promise<ChannelImage>;
     /**
      * Process without thresholding (returns sharpened image)
      */
-    processSharpened(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<ChannelImage$1>;
+    processSharpened(input: ChannelImage, overrides?: Partial<DoGConfig>): Promise<ChannelImage>;
     /**
      * Get raw DoG response for visualization
      */
-    processRawDoG(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<ChannelImage$1>;
+    processRawDoG(input: ChannelImage, overrides?: Partial<DoGConfig>): Promise<ChannelImage>;
     /**
      * Process and return all intermediate results
      *
@@ -491,7 +491,7 @@ declare class XDoG implements DoGImplementation {
      * - Debugging and visualization
      * - Custom post-processing pipelines
      */
-    processDetailed(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<DoGProcessingResult>;
+    processDetailed(input: ChannelImage, overrides?: Partial<DoGConfig>): Promise<DoGProcessingResult>;
     /**
      * Convenience method to process ImageData directly (e.g., from a canvas)
      */
@@ -508,7 +508,7 @@ declare class XDoG implements DoGImplementation {
 /**
  * Convenience function for one-shot XDoG processing
  */
-declare function xdog(input: ChannelImage$1, config?: Partial<XDoGConfig>): Promise<ChannelImage$1>;
+declare function xdog(input: ChannelImage, config?: Partial<XDoGConfig>): Promise<ChannelImage>;
 
 /**
  * Unified Edge Tangent Flow that automatically selects the best implementation
@@ -520,7 +520,7 @@ declare class EdgeTangentFlow implements FlowField {
     private constructor();
     getTangent(x: number, y: number): Vec2;
     getTangentArray(): Float32Array;
-    visualize(): ChannelImage$1;
+    visualize(): ChannelImage;
     /**
      * Check if WebGL acceleration is available
      */
@@ -533,7 +533,7 @@ declare class EdgeTangentFlow implements FlowField {
      * @param sigmaC Structure tensor smoothing sigma
      * @param forceImpl Force a specific implementation ('cpu' | 'webgl' | 'auto')
      */
-    static compute(input: ChannelImage$1, config?: Partial<ETFConfig>, sigmaC?: number, forceImpl?: 'cpu' | 'webgl' | 'auto'): EdgeTangentFlow;
+    static compute(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number, forceImpl?: 'cpu' | 'webgl' | 'auto'): EdgeTangentFlow;
     /**
      * Cleanup WebGL resources
      */
@@ -583,16 +583,16 @@ declare class FDoG implements DoGImplementation {
      * Unlike XDoG, FDoG computes a new flow field for each image,
      * so the full pipeline runs fresh each time.
      */
-    process(input: ChannelImage$1, overrides?: Partial<FDoGConfig>): Promise<ChannelImage$1>;
+    process(input: ChannelImage, overrides?: Partial<FDoGConfig>): Promise<ChannelImage>;
     /**
      * Process with more control over individual stages
      */
-    processDetailed(input: ChannelImage$1, overrides?: Partial<FDoGConfig>): Promise<{
-        result: ChannelImage$1;
+    processDetailed(input: ChannelImage, overrides?: Partial<FDoGConfig>): Promise<{
+        result: ChannelImage;
         etf: EdgeTangentFlow;
-        sharpened: ChannelImage$1;
-        thresholded: ChannelImage$1;
-        smoothed: ChannelImage$1;
+        sharpened: ChannelImage;
+        thresholded: ChannelImage;
+        smoothed: ChannelImage;
     }>;
     /**
      * Convenience method to process ImageData directly
@@ -604,11 +604,11 @@ declare class FDoG implements DoGImplementation {
      * Useful when processing multiple frames of video where the ETF
      * can be computed once and reused, or interpolated between keyframes.
      */
-    processWithETF(input: ChannelImage$1, etf: EdgeTangentFlow, overrides?: Partial<FDoGConfig>): Promise<ChannelImage$1>;
+    processWithETF(input: ChannelImage, etf: EdgeTangentFlow, overrides?: Partial<FDoGConfig>): Promise<ChannelImage>;
     /**
      * Apply only the anti-aliasing pass to an already-processed image
      */
-    applyAntiAliasing(input: ChannelImage$1, etf: EdgeTangentFlow, sigmaA?: number): Promise<ChannelImage$1>;
+    applyAntiAliasing(input: ChannelImage, etf: EdgeTangentFlow, sigmaA?: number): Promise<ChannelImage>;
     /**
      * Get current configuration
      */
@@ -621,7 +621,7 @@ declare class FDoG implements DoGImplementation {
 /**
  * Convenience function for one-shot FDoG processing
  */
-declare function fdog(input: ChannelImage$1, config?: Partial<FDoGConfig>): Promise<ChannelImage$1>;
+declare function fdog(input: ChannelImage, config?: Partial<FDoGConfig>): Promise<ChannelImage>;
 
 /**
  * High-level XDoG and FDoG implementations
@@ -651,8 +651,8 @@ declare class ADoG implements DoGImplementation {
      * overridable when the caller has a concrete ADoG reference. No data is
      * lost; this only affects what's type-checkable through the narrower view.
      */
-    process(input: ChannelImage$1, overrides?: Partial<ADoGConfig>): Promise<ChannelImage$1>;
-    processDetailed(input: ChannelImage$1, overrides?: Partial<ADoGConfig>): Promise<ADoGProcessingResult>;
+    process(input: ChannelImage, overrides?: Partial<ADoGConfig>): Promise<ChannelImage>;
+    processDetailed(input: ChannelImage, overrides?: Partial<ADoGConfig>): Promise<ADoGProcessingResult>;
     /**
      * Convenience method to process ImageData directly (e.g., from a canvas),
      * matching XDoG/FDoG's convenience method of the same name.
@@ -679,7 +679,7 @@ declare class ADoG implements DoGImplementation {
  * Convenience function for one-shot ADoG processing, matching xdog()/fdog()
  * in dog.ts
  */
-declare function adog(input: ChannelImage$1, config?: Partial<ADoGConfig>): Promise<ChannelImage$1>;
+declare function adog(input: ChannelImage, config?: Partial<ADoGConfig>): Promise<ChannelImage>;
 
 /**
  * High-level XDoG and FDoG implementations
@@ -709,45 +709,45 @@ declare class HDoG implements DoGImplementation {
      * method (e.g. processWithConfig(input, HDoGConfig overrides)) rather than
      * overloading `process`.
      */
-    process(input: ChannelImage$1): Promise<ChannelImage$1>;
-    processDetailed(input: ChannelImage$1): Promise<HDoGProcessingResult>;
+    process(input: ChannelImage): Promise<ChannelImage>;
+    processDetailed(input: ChannelImage): Promise<HDoGProcessingResult>;
 }
 /**
  * Convenience function for one-shot HDoG processing, matching xdog()/fdog()
  * in dog.ts and adog() in adog.ts
  */
-declare function hdog(input: ChannelImage$1, config?: Partial<HDoGConfig>): Promise<ChannelImage$1>;
+declare function hdog(input: ChannelImage, config?: Partial<HDoGConfig>): Promise<ChannelImage>;
 
-declare const index$3_ADOG_STYLE_PRESETS: typeof ADOG_STYLE_PRESETS;
-type index$3_ADoG = ADoG;
-declare const index$3_ADoG: typeof ADoG;
-type index$3_ADoGConfig = ADoGConfig;
-type index$3_ADoGProcessingResult = ADoGProcessingResult;
-declare const index$3_DEFAULT_ADOG_CONFIG: typeof DEFAULT_ADOG_CONFIG;
-declare const index$3_DEFAULT_DOG_CONFIG: typeof DEFAULT_DOG_CONFIG;
-declare const index$3_DEFAULT_FDOG_CONFIG: typeof DEFAULT_FDOG_CONFIG;
-declare const index$3_DEFAULT_HDOG_CONFIG: typeof DEFAULT_HDOG_CONFIG;
-type index$3_DoGConfig = DoGConfig;
-type index$3_DoGImplementation = DoGImplementation;
-declare const index$3_FDOG_STYLE_PRESETS: typeof FDOG_STYLE_PRESETS;
-type index$3_FDoG = FDoG;
-declare const index$3_FDoG: typeof FDoG;
-type index$3_FDoGConfig = FDoGConfig;
-type index$3_HDoG = HDoG;
-declare const index$3_HDoG: typeof HDoG;
-type index$3_HDoGConfig = HDoGConfig;
-type index$3_HDoGProcessingResult = HDoGProcessingResult;
-declare const index$3_STYLE_PRESETS: typeof STYLE_PRESETS;
-type index$3_XDoG = XDoG;
-declare const index$3_XDoG: typeof XDoG;
-type index$3_XDoGConfig = XDoGConfig;
-declare const index$3_adog: typeof adog;
-declare const index$3_fdog: typeof fdog;
-declare const index$3_hdog: typeof hdog;
-declare const index$3_xdog: typeof xdog;
-declare namespace index$3 {
-  export { index$3_ADOG_STYLE_PRESETS as ADOG_STYLE_PRESETS, index$3_ADoG as ADoG, index$3_DEFAULT_ADOG_CONFIG as DEFAULT_ADOG_CONFIG, index$3_DEFAULT_DOG_CONFIG as DEFAULT_DOG_CONFIG, index$3_DEFAULT_FDOG_CONFIG as DEFAULT_FDOG_CONFIG, index$3_DEFAULT_HDOG_CONFIG as DEFAULT_HDOG_CONFIG, index$3_FDOG_STYLE_PRESETS as FDOG_STYLE_PRESETS, index$3_FDoG as FDoG, index$3_HDoG as HDoG, index$3_STYLE_PRESETS as STYLE_PRESETS, index$3_XDoG as XDoG, index$3_adog as adog, index$3_fdog as fdog, index$3_hdog as hdog, index$3_xdog as xdog };
-  export type { index$3_ADoGConfig as ADoGConfig, index$3_ADoGProcessingResult as ADoGProcessingResult, index$3_DoGConfig as DoGConfig, index$3_DoGImplementation as DoGImplementation, index$3_FDoGConfig as FDoGConfig, index$3_HDoGConfig as HDoGConfig, index$3_HDoGProcessingResult as HDoGProcessingResult, index$3_XDoGConfig as XDoGConfig };
+declare const index$4_ADOG_STYLE_PRESETS: typeof ADOG_STYLE_PRESETS;
+type index$4_ADoG = ADoG;
+declare const index$4_ADoG: typeof ADoG;
+type index$4_ADoGConfig = ADoGConfig;
+type index$4_ADoGProcessingResult = ADoGProcessingResult;
+declare const index$4_DEFAULT_ADOG_CONFIG: typeof DEFAULT_ADOG_CONFIG;
+declare const index$4_DEFAULT_DOG_CONFIG: typeof DEFAULT_DOG_CONFIG;
+declare const index$4_DEFAULT_FDOG_CONFIG: typeof DEFAULT_FDOG_CONFIG;
+declare const index$4_DEFAULT_HDOG_CONFIG: typeof DEFAULT_HDOG_CONFIG;
+type index$4_DoGConfig = DoGConfig;
+type index$4_DoGImplementation = DoGImplementation;
+declare const index$4_FDOG_STYLE_PRESETS: typeof FDOG_STYLE_PRESETS;
+type index$4_FDoG = FDoG;
+declare const index$4_FDoG: typeof FDoG;
+type index$4_FDoGConfig = FDoGConfig;
+type index$4_HDoG = HDoG;
+declare const index$4_HDoG: typeof HDoG;
+type index$4_HDoGConfig = HDoGConfig;
+type index$4_HDoGProcessingResult = HDoGProcessingResult;
+declare const index$4_STYLE_PRESETS: typeof STYLE_PRESETS;
+type index$4_XDoG = XDoG;
+declare const index$4_XDoG: typeof XDoG;
+type index$4_XDoGConfig = XDoGConfig;
+declare const index$4_adog: typeof adog;
+declare const index$4_fdog: typeof fdog;
+declare const index$4_hdog: typeof hdog;
+declare const index$4_xdog: typeof xdog;
+declare namespace index$4 {
+  export { index$4_ADOG_STYLE_PRESETS as ADOG_STYLE_PRESETS, index$4_ADoG as ADoG, index$4_DEFAULT_ADOG_CONFIG as DEFAULT_ADOG_CONFIG, index$4_DEFAULT_DOG_CONFIG as DEFAULT_DOG_CONFIG, index$4_DEFAULT_FDOG_CONFIG as DEFAULT_FDOG_CONFIG, index$4_DEFAULT_HDOG_CONFIG as DEFAULT_HDOG_CONFIG, index$4_FDOG_STYLE_PRESETS as FDOG_STYLE_PRESETS, index$4_FDoG as FDoG, index$4_HDoG as HDoG, index$4_STYLE_PRESETS as STYLE_PRESETS, index$4_XDoG as XDoG, index$4_adog as adog, index$4_fdog as fdog, index$4_hdog as hdog, index$4_xdog as xdog };
+  export type { index$4_ADoGConfig as ADoGConfig, index$4_ADoGProcessingResult as ADoGProcessingResult, index$4_DoGConfig as DoGConfig, index$4_DoGImplementation as DoGImplementation, index$4_FDoGConfig as FDoGConfig, index$4_HDoGConfig as HDoGConfig, index$4_HDoGProcessingResult as HDoGProcessingResult, index$4_XDoGConfig as XDoGConfig };
 }
 
 /**
@@ -793,17 +793,17 @@ declare class DoGProcessor {
      * @param overrides Optional parameter overrides for this call
      * @returns Processed image with edges detected and stylized
      */
-    process(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<ChannelImage$1>;
+    process(input: ChannelImage, overrides?: Partial<DoGConfig>): Promise<ChannelImage>;
     /**
      * Process without thresholding - returns the sharpened image
      * Useful for debugging or custom post-processing
      */
-    processNoThreshold(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<ChannelImage$1>;
+    processNoThreshold(input: ChannelImage, overrides?: Partial<DoGConfig>): Promise<ChannelImage>;
     /**
      * Get the raw DoG response (without sharpening or thresholding)
      * Useful for visualization and debugging
      */
-    processRawDoG(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<ChannelImage$1>;
+    processRawDoG(input: ChannelImage, overrides?: Partial<DoGConfig>): Promise<ChannelImage>;
     /**
      * Process and return all intermediate results in a single pass
      *
@@ -814,7 +814,7 @@ declare class DoGProcessor {
      * @param overrides Optional parameter overrides for this call
      * @returns Object containing result, sharpened, and rawDoG images
      */
-    processDetailed(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<DoGProcessingResult>;
+    processDetailed(input: ChannelImage, overrides?: Partial<DoGConfig>): Promise<DoGProcessingResult>;
     /**
      * Get current configuration
      */
@@ -896,7 +896,7 @@ declare const ThresholdModes: {
 /**
  * Apply a custom threshold function to a grayscale image
  */
-declare function applyCustomThreshold(input: ChannelImage$1, thresholdFn: (value: number) => number): ChannelImage$1;
+declare function applyCustomThreshold(input: ChannelImage, thresholdFn: (value: number) => number): ChannelImage;
 
 declare class BaseCPUBlur {
     dispose(): void;
@@ -984,7 +984,7 @@ declare class CPUIsotropicBlur extends BaseCPUBlur implements BlurStrategy {
     private config;
     constructor(config?: Partial<BaseIsotropicBlurConfig>);
     dispose(): void;
-    blur(input: ChannelImage$1, sigma: number): Promise<ChannelImage$1>;
+    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
 }
 /**
  * Configuration for WebGL blur
@@ -1008,7 +1008,7 @@ declare class WebGLIsotropicBlur extends BaseWebGLBlur implements BlurStrategy {
     private textures;
     constructor(config?: Partial<WebGLBlurConfig>);
     private initResources;
-    blur(input: ChannelImage$1, sigma: number): Promise<ChannelImage$1>;
+    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
     private blurPass;
     dispose(): void;
 }
@@ -1054,7 +1054,7 @@ declare class WebGPUIsotropicBlur extends BaseWebGPUBlur implements BlurStrategy
      * reusing a single one. This prevents "Buffer already has an outstanding
      * map pending" errors when blur() is called in parallel.
      */
-    blur(input: ChannelImage$1, sigma: number): Promise<ChannelImage$1>;
+    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
     /**
      * Clean up GPU resources
      */
@@ -1065,7 +1065,7 @@ declare class IsotropicBlur implements BlurStrategy {
     instance: BlurStrategy;
     constructor(config: Partial<IsotropicBlurConfig>);
     dispose(): void;
-    blur(input: ChannelImage$1, sigma: number): Promise<ChannelImage$1>;
+    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
 }
 
 /**
@@ -1102,7 +1102,7 @@ declare class CPUFlowGuidedBlur extends BaseCPUBlur implements BlurStrategy, Flo
      * Update the flow field (e.g., when processing a new image)
      */
     setFlowField(flowField: FlowField): void;
-    blur(input: ChannelImage$1, sigma: number): Promise<ChannelImage$1>;
+    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
     /**
      * Sample along the flow direction using line integral convolution
      *
@@ -1131,7 +1131,7 @@ declare class WebGLFlowGuidedBlur extends BaseWebGLBlur implements BlurStrategy,
      * Update the flow field (e.g., when processing a new image)
      */
     setFlowField(flowField: FlowField): void;
-    blur(input: ChannelImage$1, sigma: number): Promise<ChannelImage$1>;
+    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
     dispose(): void;
 }
 /**
@@ -1174,7 +1174,7 @@ declare class WebGPUFlowGuidedBlur extends BaseWebGPUBlur implements BlurStrateg
      * Update the flow field (e.g., when processing a new image)
      */
     setFlowField(flowField: FlowField): void;
-    blur(input: ChannelImage$1, sigma: number): Promise<ChannelImage$1>;
+    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
     dispose(): void;
 }
 type FlowGuidedBlurConfig = CPUFlowGuidedBlurConfig | GLGPUBlurConfig;
@@ -1182,7 +1182,7 @@ declare class FlowGuidedBlur implements BlurStrategy {
     instance: BlurStrategy & FlowGuidedBlurStrategy;
     constructor(flowField: FlowField, config?: Partial<FlowGuidedBlurConfig>);
     dispose(): void;
-    blur(input: ChannelImage$1, sigma: number): Promise<ChannelImage$1>;
+    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
     /**
      * Update the flow field (e.g., when processing a new image)
      */
@@ -1214,35 +1214,35 @@ interface GradientAlignedBlurConfig {
 declare class GradientAlignedBlur implements BlurStrategy {
     private instance;
     constructor(flowField: FlowField, config?: Partial<GradientAlignedBlurConfig>);
-    blur(input: ChannelImage$1, sigma: number): Promise<ChannelImage$1>;
+    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
     setFlowField(flowField: FlowField): void;
     dispose(): void;
 }
 
-type index$2_CPUFlowGuidedBlur = CPUFlowGuidedBlur;
-declare const index$2_CPUFlowGuidedBlur: typeof CPUFlowGuidedBlur;
-type index$2_CPUIsotropicBlur = CPUIsotropicBlur;
-declare const index$2_CPUIsotropicBlur: typeof CPUIsotropicBlur;
-type index$2_FlowGuidedBlur = FlowGuidedBlur;
-declare const index$2_FlowGuidedBlur: typeof FlowGuidedBlur;
-type index$2_FlowGuidedBlurConfig = FlowGuidedBlurConfig;
-type index$2_GradientAlignedBlur = GradientAlignedBlur;
-declare const index$2_GradientAlignedBlur: typeof GradientAlignedBlur;
-type index$2_GradientAlignedBlurConfig = GradientAlignedBlurConfig;
-type index$2_IsotropicBlur = IsotropicBlur;
-declare const index$2_IsotropicBlur: typeof IsotropicBlur;
-type index$2_IsotropicBlurConfig = IsotropicBlurConfig;
-type index$2_WebGLFlowGuidedBlur = WebGLFlowGuidedBlur;
-declare const index$2_WebGLFlowGuidedBlur: typeof WebGLFlowGuidedBlur;
-type index$2_WebGLIsotropicBlur = WebGLIsotropicBlur;
-declare const index$2_WebGLIsotropicBlur: typeof WebGLIsotropicBlur;
-type index$2_WebGPUFlowGuidedBlur = WebGPUFlowGuidedBlur;
-declare const index$2_WebGPUFlowGuidedBlur: typeof WebGPUFlowGuidedBlur;
-type index$2_WebGPUIsotropicBlur = WebGPUIsotropicBlur;
-declare const index$2_WebGPUIsotropicBlur: typeof WebGPUIsotropicBlur;
-declare namespace index$2 {
-  export { index$2_CPUFlowGuidedBlur as CPUFlowGuidedBlur, index$2_CPUIsotropicBlur as CPUIsotropicBlur, index$2_FlowGuidedBlur as FlowGuidedBlur, index$2_GradientAlignedBlur as GradientAlignedBlur, index$2_IsotropicBlur as IsotropicBlur, index$2_WebGLFlowGuidedBlur as WebGLFlowGuidedBlur, index$2_WebGLIsotropicBlur as WebGLIsotropicBlur, index$2_WebGPUFlowGuidedBlur as WebGPUFlowGuidedBlur, index$2_WebGPUIsotropicBlur as WebGPUIsotropicBlur };
-  export type { index$2_FlowGuidedBlurConfig as FlowGuidedBlurConfig, index$2_GradientAlignedBlurConfig as GradientAlignedBlurConfig, index$2_IsotropicBlurConfig as IsotropicBlurConfig };
+type index$3_CPUFlowGuidedBlur = CPUFlowGuidedBlur;
+declare const index$3_CPUFlowGuidedBlur: typeof CPUFlowGuidedBlur;
+type index$3_CPUIsotropicBlur = CPUIsotropicBlur;
+declare const index$3_CPUIsotropicBlur: typeof CPUIsotropicBlur;
+type index$3_FlowGuidedBlur = FlowGuidedBlur;
+declare const index$3_FlowGuidedBlur: typeof FlowGuidedBlur;
+type index$3_FlowGuidedBlurConfig = FlowGuidedBlurConfig;
+type index$3_GradientAlignedBlur = GradientAlignedBlur;
+declare const index$3_GradientAlignedBlur: typeof GradientAlignedBlur;
+type index$3_GradientAlignedBlurConfig = GradientAlignedBlurConfig;
+type index$3_IsotropicBlur = IsotropicBlur;
+declare const index$3_IsotropicBlur: typeof IsotropicBlur;
+type index$3_IsotropicBlurConfig = IsotropicBlurConfig;
+type index$3_WebGLFlowGuidedBlur = WebGLFlowGuidedBlur;
+declare const index$3_WebGLFlowGuidedBlur: typeof WebGLFlowGuidedBlur;
+type index$3_WebGLIsotropicBlur = WebGLIsotropicBlur;
+declare const index$3_WebGLIsotropicBlur: typeof WebGLIsotropicBlur;
+type index$3_WebGPUFlowGuidedBlur = WebGPUFlowGuidedBlur;
+declare const index$3_WebGPUFlowGuidedBlur: typeof WebGPUFlowGuidedBlur;
+type index$3_WebGPUIsotropicBlur = WebGPUIsotropicBlur;
+declare const index$3_WebGPUIsotropicBlur: typeof WebGPUIsotropicBlur;
+declare namespace index$3 {
+  export { index$3_CPUFlowGuidedBlur as CPUFlowGuidedBlur, index$3_CPUIsotropicBlur as CPUIsotropicBlur, index$3_FlowGuidedBlur as FlowGuidedBlur, index$3_GradientAlignedBlur as GradientAlignedBlur, index$3_IsotropicBlur as IsotropicBlur, index$3_WebGLFlowGuidedBlur as WebGLFlowGuidedBlur, index$3_WebGLIsotropicBlur as WebGLIsotropicBlur, index$3_WebGPUFlowGuidedBlur as WebGPUFlowGuidedBlur, index$3_WebGPUIsotropicBlur as WebGPUIsotropicBlur };
+  export type { index$3_FlowGuidedBlurConfig as FlowGuidedBlurConfig, index$3_GradientAlignedBlurConfig as GradientAlignedBlurConfig, index$3_IsotropicBlurConfig as IsotropicBlurConfig };
 }
 
 /**
@@ -1437,6 +1437,7 @@ declare namespace index$2 {
  * @see {@link LocalVarianceConfig} for configuration options
  * @see {@link LocalVariancePreprocessorOptimized} for faster computation using separable filters
  */
+
 /**
  * Local Variance Texture Detection Preprocessor
  *
@@ -1473,11 +1474,6 @@ declare namespace index$2 {
  * Using a flat Float32Array for performance and future GPU compatibility
  * Values are normalized to 0-1 range
  */
-interface ChannelImage {
-    data: Float32Array;
-    width: number;
-    height: number;
-}
 /**
  * Configuration for Local Variance Texture Detection
  *
@@ -1640,14 +1636,14 @@ declare class LocalVariancePreprocessorOptimized {
  * "prioritization mechanism" for indication - attenuating weak edges
  * while supporting strong edges.
  */
-declare function bilateralFilter(input: ChannelImage$1, config?: Partial<BilateralFilterConfig>): ChannelImage$1;
+declare function bilateralFilter(input: ChannelImage, config?: Partial<BilateralFilterConfig>): ChannelImage;
 /**
  * Median Filter
  *
  * Replaces each pixel with the median of its neighborhood.
  * Excellent for removing salt-and-pepper noise and small texture details.
  */
-declare function medianFilter(input: ChannelImage$1, config?: Partial<MedianFilterConfig>): ChannelImage$1;
+declare function medianFilter(input: ChannelImage, config?: Partial<MedianFilterConfig>): ChannelImage;
 /**
  * Kuwahara Filter
  *
@@ -1656,28 +1652,28 @@ declare function medianFilter(input: ChannelImage$1, config?: Partial<MedianFilt
  * lowest variance, and uses its mean. Creates flat regions with
  * preserved edges - great for a more stylized look.
  */
-declare function kuwaharaFilter(input: ChannelImage$1, config?: Partial<KuwaharaFilterConfig>): ChannelImage$1;
+declare function kuwaharaFilter(input: ChannelImage, config?: Partial<KuwaharaFilterConfig>): ChannelImage;
 /**
  * Gaussian Blur
  *
  * Simple Gaussian smoothing. Less edge-preserving than bilateral,
  * but faster. Good for very noisy images or when used with small sigma.
  */
-declare function gaussianBlur(input: ChannelImage$1, sigma?: number): ChannelImage$1;
+declare function gaussianBlur(input: ChannelImage, sigma?: number): ChannelImage;
 /**
  * Contrast Enhancement
  *
  * Stretches the histogram to use the full 0-1 range.
  * Can help make edges more distinct before processing.
  */
-declare function enhanceContrast(input: ChannelImage$1, blackPoint?: number, whitePoint?: number): ChannelImage$1;
+declare function enhanceContrast(input: ChannelImage, blackPoint?: number, whitePoint?: number): ChannelImage;
 /**
  * Quantize to reduce color levels
  *
  * Reduces the number of intensity levels, creating a posterized effect.
  * Can help reduce noise by grouping similar intensities together.
  */
-declare function quantize(input: ChannelImage$1, levels?: number): ChannelImage$1;
+declare function quantize(input: ChannelImage, levels?: number): ChannelImage;
 /**
  * Preset preprocessing pipelines for common use cases
  */
@@ -1686,27 +1682,27 @@ declare const PreprocessingPresets: {
      * Light preprocessing - minimal smoothing
      * Good for: Clean studio photos, illustrations
      */
-    light: (input: ChannelImage$1) => ChannelImage$1;
+    light: (input: ChannelImage) => ChannelImage;
     /**
      * Standard preprocessing - balanced smoothing
      * Good for: Most outdoor photos, portraits
      */
-    standard: (input: ChannelImage$1) => ChannelImage$1;
+    standard: (input: ChannelImage) => ChannelImage;
     /**
      * Heavy preprocessing - aggressive noise removal
      * Good for: Very textured images (grass, foliage, fabric)
      */
-    heavy: (input: ChannelImage$1) => ChannelImage$1;
+    heavy: (input: ChannelImage) => ChannelImage;
     /**
      * Artistic preprocessing - painterly smoothing
      * Good for: Stylized/artistic output
      */
-    artistic: (input: ChannelImage$1) => ChannelImage$1;
+    artistic: (input: ChannelImage) => ChannelImage;
     /**
      * Photo preprocessing - for photos with grass/nature
      * Good for: Landscape, outdoor scenes
      */
-    nature: (input: ChannelImage$1) => ChannelImage$1;
+    nature: (input: ChannelImage) => ChannelImage;
 };
 /**
  * Convenience class for chaining preprocessing operations
@@ -1740,7 +1736,7 @@ declare class Preprocessor {
     /**
      * Apply all operations in sequence
      */
-    apply(input: ChannelImage$1): ChannelImage$1;
+    apply(input: ChannelImage): ChannelImage;
     /**
      * Clear all operations
      */
@@ -1762,18 +1758,18 @@ declare class Preprocessor {
  * - Quantization
  */
 
-declare function bilateralFilterWebGL(input: ChannelImage$1, config: BilateralFilterConfig): ChannelImage$1;
-declare function gaussianBlurWebGL(input: ChannelImage$1, sigma?: number): ChannelImage$1;
-declare function medianFilterWebGL(input: ChannelImage$1, config: MedianFilterConfig): ChannelImage$1;
-declare function kuwaharaFilterWebGL(input: ChannelImage$1, config: KuwaharaFilterConfig): ChannelImage$1;
-declare function enhanceContrastWebGL(input: ChannelImage$1, blackPoint?: number, whitePoint?: number): ChannelImage$1;
-declare function quantizeWebGL(input: ChannelImage$1, levels?: number): ChannelImage$1;
+declare function bilateralFilterWebGL(input: ChannelImage, config: BilateralFilterConfig): ChannelImage;
+declare function gaussianBlurWebGL(input: ChannelImage, sigma?: number): ChannelImage;
+declare function medianFilterWebGL(input: ChannelImage, config: MedianFilterConfig): ChannelImage;
+declare function kuwaharaFilterWebGL(input: ChannelImage, config: KuwaharaFilterConfig): ChannelImage;
+declare function enhanceContrastWebGL(input: ChannelImage, blackPoint?: number, whitePoint?: number): ChannelImage;
+declare function quantizeWebGL(input: ChannelImage, levels?: number): ChannelImage;
 declare const PreprocessingPresetsWebGL: {
-    light: (input: ChannelImage$1) => ChannelImage$1;
-    standard: (input: ChannelImage$1) => ChannelImage$1;
-    heavy: (input: ChannelImage$1) => ChannelImage$1;
-    artistic: (input: ChannelImage$1) => ChannelImage$1;
-    nature: (input: ChannelImage$1) => ChannelImage$1;
+    light: (input: ChannelImage) => ChannelImage;
+    standard: (input: ChannelImage) => ChannelImage;
+    heavy: (input: ChannelImage) => ChannelImage;
+    artistic: (input: ChannelImage) => ChannelImage;
+    nature: (input: ChannelImage) => ChannelImage;
 };
 declare class PreprocessorWebGL {
     private operations;
@@ -1783,7 +1779,7 @@ declare class PreprocessorWebGL {
     gaussian(sigma?: number): this;
     contrast(blackPoint?: number, whitePoint?: number): this;
     quantize(levels?: number): this;
-    apply(input: ChannelImage$1): ChannelImage$1;
+    apply(input: ChannelImage): ChannelImage;
     clear(): this;
 }
 /**
@@ -1829,24 +1825,24 @@ declare namespace webgl {
   };
 }
 
-type index$1_LocalVarianceConfig = LocalVarianceConfig;
-type index$1_LocalVariancePreprocessor = LocalVariancePreprocessor;
-declare const index$1_LocalVariancePreprocessor: typeof LocalVariancePreprocessor;
-type index$1_LocalVariancePreprocessorOptimized = LocalVariancePreprocessorOptimized;
-declare const index$1_LocalVariancePreprocessorOptimized: typeof LocalVariancePreprocessorOptimized;
-declare const index$1_PreprocessingPresets: typeof PreprocessingPresets;
-type index$1_Preprocessor = Preprocessor;
-declare const index$1_Preprocessor: typeof Preprocessor;
-declare const index$1_bilateralFilter: typeof bilateralFilter;
-declare const index$1_enhanceContrast: typeof enhanceContrast;
-declare const index$1_gaussianBlur: typeof gaussianBlur;
-declare const index$1_kuwaharaFilter: typeof kuwaharaFilter;
-declare const index$1_medianFilter: typeof medianFilter;
-declare const index$1_quantize: typeof quantize;
-declare const index$1_webgl: typeof webgl;
-declare namespace index$1 {
-  export { index$1_LocalVariancePreprocessor as LocalVariancePreprocessor, index$1_LocalVariancePreprocessorOptimized as LocalVariancePreprocessorOptimized, index$1_PreprocessingPresets as PreprocessingPresets, index$1_Preprocessor as Preprocessor, index$1_bilateralFilter as bilateralFilter, index$1_enhanceContrast as enhanceContrast, index$1_gaussianBlur as gaussianBlur, index$1_kuwaharaFilter as kuwaharaFilter, index$1_medianFilter as medianFilter, index$1_quantize as quantize, index$1_webgl as webgl };
-  export type { index$1_LocalVarianceConfig as LocalVarianceConfig };
+type index$2_LocalVarianceConfig = LocalVarianceConfig;
+type index$2_LocalVariancePreprocessor = LocalVariancePreprocessor;
+declare const index$2_LocalVariancePreprocessor: typeof LocalVariancePreprocessor;
+type index$2_LocalVariancePreprocessorOptimized = LocalVariancePreprocessorOptimized;
+declare const index$2_LocalVariancePreprocessorOptimized: typeof LocalVariancePreprocessorOptimized;
+declare const index$2_PreprocessingPresets: typeof PreprocessingPresets;
+type index$2_Preprocessor = Preprocessor;
+declare const index$2_Preprocessor: typeof Preprocessor;
+declare const index$2_bilateralFilter: typeof bilateralFilter;
+declare const index$2_enhanceContrast: typeof enhanceContrast;
+declare const index$2_gaussianBlur: typeof gaussianBlur;
+declare const index$2_kuwaharaFilter: typeof kuwaharaFilter;
+declare const index$2_medianFilter: typeof medianFilter;
+declare const index$2_quantize: typeof quantize;
+declare const index$2_webgl: typeof webgl;
+declare namespace index$2 {
+  export { index$2_LocalVariancePreprocessor as LocalVariancePreprocessor, index$2_LocalVariancePreprocessorOptimized as LocalVariancePreprocessorOptimized, index$2_PreprocessingPresets as PreprocessingPresets, index$2_Preprocessor as Preprocessor, index$2_bilateralFilter as bilateralFilter, index$2_enhanceContrast as enhanceContrast, index$2_gaussianBlur as gaussianBlur, index$2_kuwaharaFilter as kuwaharaFilter, index$2_medianFilter as medianFilter, index$2_quantize as quantize, index$2_webgl as webgl };
+  export type { index$2_LocalVarianceConfig as LocalVarianceConfig };
 }
 
 /**
@@ -1856,23 +1852,23 @@ declare namespace index$1 {
 /**
  * Create a new grayscale image with given dimensions
  */
-declare function createChannelImage(width: number, height: number): ChannelImage$1;
+declare function createChannelImage(width: number, height: number): ChannelImage;
 /**
  * Clone a grayscale image
  */
-declare function cloneChannelImage(image: ChannelImage$1): ChannelImage$1;
+declare function cloneChannelImage(image: ChannelImage): ChannelImage;
 /**
  * Get pixel value with bounds checking (clamps to edge)
  */
-declare function getPixel(image: ChannelImage$1, x: number, y: number): number;
+declare function getPixel(image: ChannelImage, x: number, y: number): number;
 /**
  * Get pixel value with bilinear interpolation for sub-pixel sampling
  */
-declare function getPixelBilinear(image: ChannelImage$1, x: number, y: number): number;
+declare function getPixelBilinear(image: ChannelImage, x: number, y: number): number;
 /**
  * Set pixel value
  */
-declare function setPixel(image: ChannelImage$1, x: number, y: number, value: number): void;
+declare function setPixel(image: ChannelImage, x: number, y: number, value: number): void;
 /**
  * Get pixel index for coordinates
  */
@@ -1880,17 +1876,17 @@ declare function getIndex(width: number, x: number, y: number): number;
 /**
  * Convert RGB image to grayscale using luminance formula
  */
-declare function rgbToGrayscale(rgb: RGBImage$1): ChannelImage$1;
+declare function rgbToGrayscale(rgb: RGBImage$1): ChannelImage;
 /**
  * Convert ImageData (from canvas) to grayscale image
  * Assumes values are in 0-255 range, normalizes to 0-1
  */
-declare function imageDataToLuminance(imageData: ImageData): ChannelImage$1;
+declare function imageDataToLuminance(imageData: ImageData): ChannelImage;
 /**
  * Convert grayscale image to ImageData (for canvas display)
  * Assumes input is in 0-1 range
  */
-declare function luminanceToImageData(gray: ChannelImage$1): ImageData;
+declare function luminanceToImageData(gray: ChannelImage): ImageData;
 /**
  * Normalize a 2D vector
  */
@@ -1930,17 +1926,7 @@ declare function lerp(a: number, b: number, t: number): number;
 /**
  * Reads a value that may be a scalar (uniform) or a per-pixel ChannelImage.
  */
-declare function at(value: number | ChannelImage$1, i: number): number;
-/**
- * Convert from the original τ parameterization to the new p parameterization
- * τ = p / (p + 1), so p = τ / (1 - τ)
- */
-declare function tauToP(tau: number): number;
-/**
- * Convert from p parameterization back to τ
- * p = τ / (1 - τ), so τ = p / (p + 1)
- */
-declare function pToTau(p: number): number;
+declare function at(value: number | ChannelImage, i: number): number;
 /**
  * Sample a single value from a standard normal distribution N(0, 1)
  * using the Box-Muller transform.
@@ -1963,52 +1949,48 @@ declare function gaussianSample(): number;
  * All images must have matching dimensions; this is not checked here for
  * performance -- validate upstream if inputs could mismatch.
  */
-declare function andCombine(images: ChannelImage$1[]): ChannelImage$1;
+declare function andCombine(images: ChannelImage[]): ChannelImage;
 
-declare const utils_andCombine: typeof andCombine;
-declare const utils_at: typeof at;
-declare const utils_clamp: typeof clamp;
-declare const utils_cloneChannelImage: typeof cloneChannelImage;
-declare const utils_computeKernelSize: typeof computeKernelSize;
-declare const utils_createChannelImage: typeof createChannelImage;
-declare const utils_dotVec2: typeof dotVec2;
-declare const utils_gaussianSample: typeof gaussianSample;
-declare const utils_generateGaussianKernel: typeof generateGaussianKernel;
-declare const utils_getIndex: typeof getIndex;
-declare const utils_getPixel: typeof getPixel;
-declare const utils_getPixelBilinear: typeof getPixelBilinear;
-declare const utils_imageDataToLuminance: typeof imageDataToLuminance;
-declare const utils_lerp: typeof lerp;
-declare const utils_luminanceToImageData: typeof luminanceToImageData;
-declare const utils_normalizeVec2: typeof normalizeVec2;
-declare const utils_pToTau: typeof pToTau;
-declare const utils_perpendicular: typeof perpendicular;
-declare const utils_rgbToGrayscale: typeof rgbToGrayscale;
-declare const utils_setPixel: typeof setPixel;
-declare const utils_tauToP: typeof tauToP;
-declare namespace utils {
+declare const index$1_andCombine: typeof andCombine;
+declare const index$1_at: typeof at;
+declare const index$1_clamp: typeof clamp;
+declare const index$1_cloneChannelImage: typeof cloneChannelImage;
+declare const index$1_computeKernelSize: typeof computeKernelSize;
+declare const index$1_createChannelImage: typeof createChannelImage;
+declare const index$1_dotVec2: typeof dotVec2;
+declare const index$1_gaussianSample: typeof gaussianSample;
+declare const index$1_generateGaussianKernel: typeof generateGaussianKernel;
+declare const index$1_getIndex: typeof getIndex;
+declare const index$1_getPixel: typeof getPixel;
+declare const index$1_getPixelBilinear: typeof getPixelBilinear;
+declare const index$1_imageDataToLuminance: typeof imageDataToLuminance;
+declare const index$1_lerp: typeof lerp;
+declare const index$1_luminanceToImageData: typeof luminanceToImageData;
+declare const index$1_normalizeVec2: typeof normalizeVec2;
+declare const index$1_perpendicular: typeof perpendicular;
+declare const index$1_rgbToGrayscale: typeof rgbToGrayscale;
+declare const index$1_setPixel: typeof setPixel;
+declare namespace index$1 {
   export {
-    utils_andCombine as andCombine,
-    utils_at as at,
-    utils_clamp as clamp,
-    utils_cloneChannelImage as cloneChannelImage,
-    utils_computeKernelSize as computeKernelSize,
-    utils_createChannelImage as createChannelImage,
-    utils_dotVec2 as dotVec2,
-    utils_gaussianSample as gaussianSample,
-    utils_generateGaussianKernel as generateGaussianKernel,
-    utils_getIndex as getIndex,
-    utils_getPixel as getPixel,
-    utils_getPixelBilinear as getPixelBilinear,
-    utils_imageDataToLuminance as imageDataToLuminance,
-    utils_lerp as lerp,
-    utils_luminanceToImageData as luminanceToImageData,
-    utils_normalizeVec2 as normalizeVec2,
-    utils_pToTau as pToTau,
-    utils_perpendicular as perpendicular,
-    utils_rgbToGrayscale as rgbToGrayscale,
-    utils_setPixel as setPixel,
-    utils_tauToP as tauToP,
+    index$1_andCombine as andCombine,
+    index$1_at as at,
+    index$1_clamp as clamp,
+    index$1_cloneChannelImage as cloneChannelImage,
+    index$1_computeKernelSize as computeKernelSize,
+    index$1_createChannelImage as createChannelImage,
+    index$1_dotVec2 as dotVec2,
+    index$1_gaussianSample as gaussianSample,
+    index$1_generateGaussianKernel as generateGaussianKernel,
+    index$1_getIndex as getIndex,
+    index$1_getPixel as getPixel,
+    index$1_getPixelBilinear as getPixelBilinear,
+    index$1_imageDataToLuminance as imageDataToLuminance,
+    index$1_lerp as lerp,
+    index$1_luminanceToImageData as luminanceToImageData,
+    index$1_normalizeVec2 as normalizeVec2,
+    index$1_perpendicular as perpendicular,
+    index$1_rgbToGrayscale as rgbToGrayscale,
+    index$1_setPixel as setPixel,
   };
 }
 
@@ -2033,13 +2015,13 @@ interface RGBImage {
  */
 interface DoGResult {
     /** The final processed image */
-    image: ChannelImage$1;
+    image: ChannelImage;
     /** The sharpened image before thresholding (if available) */
-    sharpened?: ChannelImage$1;
+    sharpened?: ChannelImage;
     /** Edge tangent flow (only from FDoG) */
     etf?: EdgeTangentFlow;
     /** The original grayscale input */
-    originalGray?: ChannelImage$1;
+    originalGray?: ChannelImage;
     /** The original color input (if provided) */
     originalColor?: RGBImage;
 }
@@ -2082,15 +2064,15 @@ interface AntiAliasingConfig {
  * ```
  */
 declare class AntiAliasingStrategy implements ExtensionStrategy<AntiAliasingConfig, {
-    image: ChannelImage$1;
+    image: ChannelImage;
     etf: FlowField;
-}, ChannelImage$1> {
+}, ChannelImage> {
     private config;
     constructor(config?: Partial<AntiAliasingConfig>);
     apply(input: {
-        image: ChannelImage$1;
+        image: ChannelImage;
         etf: FlowField;
-    }, configOverride?: Partial<AntiAliasingConfig>): Promise<ChannelImage$1>;
+    }, configOverride?: Partial<AntiAliasingConfig>): Promise<ChannelImage>;
     /**
      * Create anti-aliasing with preset intensity
      */
@@ -2246,7 +2228,7 @@ type PostProcessFn = (color: Color, originalColor: Color, mask: number, ctx: Pix
  * Global pre-processing hook (runs once before pixel iteration)
  * Useful for computing histograms, statistics, or initializing state
  */
-type PreProcessHook = (stylized: ChannelImage$1, originalColor: RGBImage, state: Map<string, unknown>) => void;
+type PreProcessHook = (stylized: ChannelImage, originalColor: RGBImage, state: Map<string, unknown>) => void;
 /**
  * Global post-processing hook (runs once after pixel iteration)
  * Useful for normalization, filtering, or multi-pass effects
@@ -2347,7 +2329,7 @@ declare class ColorRetentionStrategy {
     private config;
     constructor(config: ColorRetentionConfig);
     apply(input: {
-        stylized: ChannelImage$1;
+        stylized: ChannelImage;
         originalColor: RGBImage;
     }, configOverride?: Partial<ColorRetentionConfig>): Promise<RGBImage>;
     private buildMaskTransformChain;
@@ -2593,7 +2575,7 @@ declare namespace colorRetention {
  */
 interface HatchTexture {
     /** Grayscale texture data (tiled as needed) */
-    data: ChannelImage$1;
+    data: ChannelImage;
     /** Rotation angle in radians (0 = horizontal) */
     rotation: number;
 }
@@ -2618,7 +2600,7 @@ interface HatchingConfig {
     /**
      * Background/paper texture (optional)
      */
-    paperTexture?: ChannelImage$1;
+    paperTexture?: ChannelImage;
     /**
      * Sharpening strength for threshold masks (default: 20)
      */
@@ -2659,9 +2641,9 @@ interface HatchingConfig {
  * ```
  */
 declare class HatchingStrategy implements ExtensionStrategy<HatchingConfig, {
-    sharpened: ChannelImage$1;
-    original?: ChannelImage$1;
-}, ChannelImage$1> {
+    sharpened: ChannelImage;
+    original?: ChannelImage;
+}, ChannelImage> {
     private config;
     constructor(config?: Partial<HatchingConfig>);
     /**
@@ -2675,11 +2657,11 @@ declare class HatchingStrategy implements ExtensionStrategy<HatchingConfig, {
      * Each darker mask is a SUBSET of the lighter masks, creating the
      * cumulative effect where dark areas have more hatching.
      */
-    generateMasks(sharpened: ChannelImage$1, configOverride?: Partial<HatchingConfig>): ChannelImage$1[];
+    generateMasks(sharpened: ChannelImage, configOverride?: Partial<HatchingConfig>): ChannelImage[];
     apply(input: {
-        sharpened: ChannelImage$1;
-        original?: ChannelImage$1;
-    }, configOverride?: Partial<HatchingConfig>): Promise<ChannelImage$1>;
+        sharpened: ChannelImage;
+        original?: ChannelImage;
+    }, configOverride?: Partial<HatchingConfig>): Promise<ChannelImage>;
     /**
      * Sample a texture with tiling and rotation
      */
@@ -2738,7 +2720,7 @@ interface NaturalMediaConfig {
  * const result = await naturalMedia.apply(input);
  * ```
  */
-declare class NaturalMediaStrategy implements ExtensionStrategy<NaturalMediaConfig, ChannelImage$1, ChannelImage$1> {
+declare class NaturalMediaStrategy implements ExtensionStrategy<NaturalMediaConfig, ChannelImage, ChannelImage> {
     private config;
     /**
      * Style presets from Section 5.2 and Table A.1
@@ -2759,7 +2741,7 @@ declare class NaturalMediaStrategy implements ExtensionStrategy<NaturalMediaConf
     getResolvedConfig(): Partial<FDoGConfig> & {
         useFlow: boolean;
     };
-    apply(input: ChannelImage$1, configOverride?: Partial<NaturalMediaConfig>): Promise<ChannelImage$1>;
+    apply(input: ChannelImage, configOverride?: Partial<NaturalMediaConfig>): Promise<ChannelImage>;
     /**
      * Create strategy for a specific style
      */
@@ -3013,10 +2995,10 @@ interface MultiScaleConfig {
  * };
  * ```
  */
-declare class MultiScaleStrategy implements ExtensionStrategy<MultiScaleConfig, ChannelImage$1, ChannelImage$1> {
+declare class MultiScaleStrategy implements ExtensionStrategy<MultiScaleConfig, ChannelImage, ChannelImage> {
     private config;
     constructor(config: MultiScaleConfig);
-    apply(input: ChannelImage$1, configOverride?: Partial<Pick<MultiScaleConfig, 'blend'>>): Promise<ChannelImage$1>;
+    apply(input: ChannelImage, configOverride?: Partial<Pick<MultiScaleConfig, 'blend'>>): Promise<ChannelImage>;
     private blendLayers;
     /**
      * Create a preset multi-scale configuration
@@ -3121,7 +3103,7 @@ declare function rgbToImageData(rgb: RGBImage): ImageData;
 /**
  * Convert grayscale to RGB (same value in all channels)
  */
-declare function grayscaleToRGB(gray: ChannelImage$1): RGBImage;
+declare function grayscaleToRGB(gray: ChannelImage): RGBImage;
 
 /**
  * XDoG/FDoG Extensions Module
@@ -3177,5 +3159,5 @@ declare namespace index {
   export type { index_AntiAliasingConfig as AntiAliasingConfig, index_BlendContext as BlendContext, index_BlendFunction as BlendFunction, index_BuiltinBlendMode as BuiltinBlendMode, index_Color as Color, index_ColorRetentionConfig as ColorRetentionConfig, index_ColorTransformFn as ColorTransformFn, index_DoGResult as DoGResult, index_ExtensionStrategy as ExtensionStrategy, index_HatchTexture as HatchTexture, index_HatchingConfig as HatchingConfig, index_MaskTransformFn as MaskTransformFn, index_MultiScaleConfig as MultiScaleConfig, index_MultiScaleLayer as MultiScaleLayer, index_NaturalMediaConfig as NaturalMediaConfig, index_NaturalMediaStyle as NaturalMediaStyle, index_PostProcessFn as PostProcessFn };
 }
 
-export { DEFAULT_ETF_CONFIG, DoGProcessor, EdgeTangentFlow, ThresholdModes, applyCustomThreshold, index$2 as blur, index$3 as dog, index as extensions, index$1 as preprocess, threshold, utils as utilities };
-export type { AntiAliasingConfig, BilateralFilterConfig, BlendFunction, BlurStrategy, BlurStrategyClass, ChannelImage$1 as ChannelImage, ColorRetentionConfig, ColorTransformFn, DoGResult, ETFConfig, ExtensionStrategy, FlowField, FlowGuidedBlurConfig, HatchTexture, HatchingConfig, IsotropicBlurConfig, KuwaharaFilterConfig, MaskTransformFn, MedianFilterConfig, MultiScaleConfig, MultiScaleLayer, NaturalMediaConfig, NaturalMediaStyle, PostProcessFn, RGBImage$1 as RGBImage, ThresholdConfig, ThresholdStrategy, Vec2 };
+export { DEFAULT_ETF_CONFIG, DoGProcessor, EdgeTangentFlow, ThresholdModes, applyCustomThreshold, index$3 as blur, index$4 as dog, index as extensions, index$2 as preprocess, threshold, index$1 as utilities };
+export type { AntiAliasingConfig, BilateralFilterConfig, BlendFunction, BlurStrategy, BlurStrategyClass, ChannelImage, ColorRetentionConfig, ColorTransformFn, DoGResult, ETFConfig, ExtensionStrategy, FlowField, FlowGuidedBlurConfig, HatchTexture, HatchingConfig, IsotropicBlurConfig, KuwaharaFilterConfig, MaskTransformFn, MedianFilterConfig, MultiScaleConfig, MultiScaleLayer, NaturalMediaConfig, NaturalMediaStyle, PostProcessFn, RGBImage$1 as RGBImage, ThresholdConfig, ThresholdStrategy, Vec2 };

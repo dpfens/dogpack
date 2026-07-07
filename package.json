@@ -5,6 +5,7 @@
   "license": "ISC",
   "author": "",
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/cjs/index.js",
   "module": "./dist/esm/index.js",
   "types": "./dist/types/index.d.ts",
@@ -19,8 +20,56 @@
     },
     "./bundle": {
       "types": "./dist/bundle/index.d.ts",
-      "import": "./dist/bundle/index.esm.js",
-      "require": "./dist/bundle/index.cjs.js"
+      "import": "./dist/bundle/index.mjs",
+      "require": "./dist/bundle/index.cjs"
+    },
+    "./dog": {
+      "types": "./dist/types/dog/index.d.ts",
+      "import": "./dist/esm/dog/index.js",
+      "require": "./dist/cjs/dog/index.js"
+    },
+    "./blur": {
+      "types": "./dist/types/blur/index.d.ts",
+      "import": "./dist/esm/blur/index.js",
+      "require": "./dist/cjs/blur/index.js"
+    },
+    "./etf": {
+      "types": "./dist/types/etf/index.d.ts",
+      "import": "./dist/esm/etf/index.js",
+      "require": "./dist/cjs/etf/index.js"
+    },
+    "./extensions": {
+      "types": "./dist/types/extensions/index.d.ts",
+      "import": "./dist/esm/extensions/index.js",
+      "require": "./dist/cjs/extensions/index.js"
+    },
+    "./preprocess": {
+      "types": "./dist/types/preprocess/index.d.ts",
+      "import": "./dist/esm/preprocess/index.js",
+      "require": "./dist/cjs/preprocess/index.js"
+    },
+    "./threshold": {
+      "types": "./dist/types/threshold.d.ts",
+      "import": "./dist/esm/threshold.js",
+      "require": "./dist/cjs/threshold.js"
+    },
+    "./utils": {
+      "types": "./dist/types/utils/index.d.ts",
+      "import": "./dist/esm/utils/index.js",
+      "require": "./dist/cjs/utils/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "bundle": ["./dist/bundle/index.d.ts"],
+      "dog": ["./dist/types/dog/index.d.ts"],
+      "blur": ["./dist/types/blur/index.d.ts"],
+      "etf": ["./dist/types/etf/index.d.ts"],
+      "extensions": ["./dist/types/extensions/index.d.ts"],
+      "preprocess": ["./dist/types/preprocess/index.d.ts"],
+      "threshold": ["./dist/types/threshold.d.ts"],
+      "utils": ["./dist/types/utils/index.d.ts"]
     }
   },
   "files": [
@@ -32,7 +81,7 @@
     "build:all": "npm run build:unbundled && npm run build:bundle",
     "build:unbundled": "npm run build:esm && npm run build:cjs",
     "build:esm": "tsc -p tsconfig.esm.json",
-    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build:cjs": "tsc -p tsconfig.cjs.json && node scripts/mark-cjs.mjs",
     "build:bundle": "rollup -c rollup.config.mjs",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

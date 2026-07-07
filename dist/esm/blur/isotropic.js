@@ -6,8 +6,8 @@
  *
  * FIXED: WebGPUIsotropicBlur now supports parallel/concurrent blur operations
  */
-import { createChannelImage, getPixel, generateGaussianKernel, computeKernelSize } from '../utils';
-import { BaseCPUBlur, BaseWebGLBlur, BaseWebGPUBlur } from './base';
+import { createChannelImage, getPixel, generateGaussianKernel, computeKernelSize } from '../utils/index.js';
+import { BaseCPUBlur, BaseWebGLBlur, BaseWebGPUBlur } from './base.js';
 const DEFAULT_ISOTROPIC_CONFIG = {
     kernelSizeMultiplier: 6,
 };

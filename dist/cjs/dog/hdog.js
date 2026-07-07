@@ -11,24 +11,24 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.HDoG = void 0;
 exports.hdog = hdog;
-const utils_1 = require("../utils");
-const adog_1 = require("./adog");
-const fdog_1 = require("./fdog");
-const types_1 = require("./types");
+const index_js_1 = require("../utils/index.js");
+const adog_js_1 = require("./adog.js");
+const fdog_js_1 = require("./fdog.js");
+const types_js_1 = require("./types.js");
 class HDoG {
     fdog;
     adogPrimary;
     adogSecondary;
     constructor(config = {}) {
-        const merged = { ...types_1.DEFAULT_HDOG_CONFIG, ...config };
-        const primaryConfig = { ...types_1.DEFAULT_ADOG_CONFIG, ...merged.adog };
+        const merged = { ...types_js_1.DEFAULT_HDOG_CONFIG, ...config };
+        const primaryConfig = { ...types_js_1.DEFAULT_ADOG_CONFIG, ...merged.adog };
         const secondaryConfig = {
             ...primaryConfig,
             s: primaryConfig.s * merged.adogSecondaryScaleFactor,
         };
-        this.fdog = new fdog_1.FDoG(merged.fdog);
-        this.adogPrimary = new adog_1.ADoG(primaryConfig);
-        this.adogSecondary = new adog_1.ADoG(secondaryConfig);
+        this.fdog = new fdog_js_1.FDoG(merged.fdog);
+        this.adogPrimary = new adog_js_1.ADoG(primaryConfig);
+        this.adogSecondary = new adog_js_1.ADoG(secondaryConfig);
     }
     dispose() {
         this.fdog.dispose();
@@ -53,7 +53,7 @@ class HDoG {
             this.adogPrimary.process(input),
             this.adogSecondary.process(input),
         ]);
-        return (0, utils_1.andCombine)([lines, tone1, tone2]);
+        return (0, index_js_1.andCombine)([lines, tone1, tone2]);
     }
     async processDetailed(input) {
         const [fdogDetailed, adog1Detailed, adog2Detailed] = await Promise.all([
@@ -61,7 +61,7 @@ class HDoG {
             this.adogPrimary.processDetailed(input),
             this.adogSecondary.processDetailed(input),
         ]);
-        const result = (0, utils_1.andCombine)([
+        const result = (0, index_js_1.andCombine)([
             fdogDetailed.result,
             adog1Detailed.result,
             adog2Detailed.result,

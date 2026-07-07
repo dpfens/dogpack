@@ -1,15 +1,15 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.HysteresisThresholdStrategy = exports.HardThresholdStrategy = exports.SoftThresholdStrategy = void 0;
-const utils_1 = require("./utils");
+const index_js_1 = require("./utils/index.js");
 class SoftThresholdStrategy {
     threshold(sharpened, config) {
-        const output = (0, utils_1.createChannelImage)(sharpened.width, sharpened.height);
+        const output = (0, index_js_1.createChannelImage)(sharpened.width, sharpened.height);
         const size = sharpened.width * sharpened.height;
         for (let i = 0; i < size; i++) {
             const u = sharpened.data[i];
-            const epsilon = (0, utils_1.at)(config.epsilon, i);
-            const phi = (0, utils_1.at)(config.phi, i);
+            const epsilon = (0, index_js_1.at)(config.epsilon, i);
+            const phi = (0, index_js_1.at)(config.phi, i);
             output.data[i] = u >= epsilon ? 1.0 : 1.0 + Math.tanh(phi * (u - epsilon));
         }
         return output;
@@ -25,10 +25,10 @@ exports.SoftThresholdStrategy = SoftThresholdStrategy;
  */
 class HardThresholdStrategy {
     threshold(input, config) {
-        const output = (0, utils_1.createChannelImage)(input.width, input.height);
+        const output = (0, index_js_1.createChannelImage)(input.width, input.height);
         const size = input.width * input.height;
         for (let i = 0; i < size; i++) {
-            const eps = (0, utils_1.at)(config.epsilon, i);
+            const eps = (0, index_js_1.at)(config.epsilon, i);
             output.data[i] = input.data[i] >= eps ? 1.0 : 0.0;
         }
         return output;
@@ -43,15 +43,15 @@ class HysteresisThresholdStrategy {
         this.lowOffset = lowOffset;
     }
     threshold(sharpened, config) {
-        const output = (0, utils_1.createChannelImage)(sharpened.width, sharpened.height);
+        const output = (0, index_js_1.createChannelImage)(sharpened.width, sharpened.height);
         const { width, height } = sharpened;
-        const edgeMap = (0, utils_1.createChannelImage)(width, height);
+        const edgeMap = (0, index_js_1.createChannelImage)(width, height);
         const visited = new Uint8Array(width * height);
         // epsilonHigh/epsilonLow are now resolved per-pixel inside the loop,
         // since epsilon itself may vary per-pixel.
         for (let i = 0; i < width * height; i++) {
             const value = sharpened.data[i];
-            const epsilon = (0, utils_1.at)(config.epsilon, i);
+            const epsilon = (0, index_js_1.at)(config.epsilon, i);
             const epsilonHigh = epsilon + this.highOffset;
             const epsilonLow = epsilon - this.lowOffset;
             if (value >= epsilonHigh) {

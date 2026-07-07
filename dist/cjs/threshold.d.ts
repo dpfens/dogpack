@@ -1,4 +1,4 @@
-import type { ChannelImage } from './types';
+import type { ChannelImage } from './types.js';
 export interface ThresholdStrategy {
     threshold(sharpened: ChannelImage, config: ThresholdConfig): ChannelImage;
 }

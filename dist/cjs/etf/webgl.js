@@ -8,8 +8,8 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EdgeTangentFlowWebGL = void 0;
-const types_1 = require("../types");
-const utils_1 = require("../utils");
+const types_js_1 = require("../types.js");
+const index_js_1 = require("../utils/index.js");
 /**
  * Shader source code
  */
@@ -338,7 +338,7 @@ class EdgeTangentFlowWebGL {
      * Compute ETF using WebGL
      */
     static compute(input, config = {}, sigmaC) {
-        const cfg = { ...types_1.DEFAULT_ETF_CONFIG, ...config };
+        const cfg = { ...types_js_1.DEFAULT_ETF_CONFIG, ...config };
         const { width, height } = input;
         const res = this.initResources(width, height);
         const { gl } = res;
@@ -441,7 +441,7 @@ class EdgeTangentFlowWebGL {
      * Visualize the flow field as a grayscale image
      */
     visualize() {
-        const output = (0, utils_1.createChannelImage)(this.width, this.height);
+        const output = (0, index_js_1.createChannelImage)(this.width, this.height);
         for (let y = 0; y < this.height; y++) {
             for (let x = 0; x < this.width; x++) {
                 const idx = y * this.width + x;

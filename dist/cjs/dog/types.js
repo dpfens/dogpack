@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ADOG_STYLE_PRESETS = exports.FDOG_STYLE_PRESETS = exports.STYLE_PRESETS = exports.DEFAULT_HDOG_CONFIG = exports.DEFAULT_ADOG_CONFIG = exports.DEFAULT_FDOG_CONFIG = exports.DEFAULT_DOG_CONFIG = void 0;
-const threshold_1 = require("../threshold");
+const threshold_js_1 = require("../threshold.js");
 /**
  * Default DoG configuration values
  * Based on paper's recommendations and Appendix A parameter ranges
@@ -12,7 +12,7 @@ exports.DEFAULT_DOG_CONFIG = {
     p: 20.0, // Strong edge emphasis suitable for most styles
     epsilon: 0.5, // Mid-tone threshold (normalized 0-1)
     phi: 10.0, // Moderately sharp 
-    thresholdStrategy: new threshold_1.SoftThresholdStrategy()
+    thresholdStrategy: new threshold_js_1.SoftThresholdStrategy()
 };
 /**
  * Default FDoG configuration values
@@ -37,7 +37,7 @@ exports.DEFAULT_ADOG_CONFIG = {
     s: 2.0,
     noiseScaleC: 0.01,
     kernelSizeMultiplier: 6,
-    thresholdStrategy: new threshold_1.HardThresholdStrategy(), // ADoG binarizes; hard threshold matches the paper's step-function output
+    thresholdStrategy: new threshold_js_1.HardThresholdStrategy(), // ADoG binarizes; hard threshold matches the paper's step-function output
 };
 /**
  * Default HDoG configuration values

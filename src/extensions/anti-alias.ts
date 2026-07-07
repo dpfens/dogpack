@@ -1,6 +1,6 @@
-import { FlowGuidedBlur } from "../blur/index";
-import type { FlowField, ChannelImage } from "../types";
-import type { ExtensionStrategy } from "./base";
+import { FlowGuidedBlur } from '../blur/index.js';
+import type { FlowField, ChannelImage } from '../types.js';
+import type { ExtensionStrategy } from './base.js';
 
 /**
  * Anti-aliasing configuration

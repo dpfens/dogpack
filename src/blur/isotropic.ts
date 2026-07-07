@@ -7,9 +7,9 @@
  * FIXED: WebGPUIsotropicBlur now supports parallel/concurrent blur operations
  */
 
-import type { BlurStrategy, ChannelImage } from '../types';
-import { createChannelImage, getPixel,  generateGaussianKernel, computeKernelSize } from '../utils';
-import { BaseCPUBlur, BaseWebGLBlur, BaseWebGPUBlur } from './base';
+import type { BlurStrategy, ChannelImage } from '../types.js';
+import { createChannelImage, getPixel,  generateGaussianKernel, computeKernelSize } from '../utils/index.js';
+import { BaseCPUBlur, BaseWebGLBlur, BaseWebGPUBlur } from './base.js';
 
 /**
  * Configuration for isotropic Gaussian blur

@@ -189,23 +189,6 @@
         return typeof value === "number" ? value : value.data[i];
     }
     /**
-     * Convert from the original τ parameterization to the new p parameterization
-     * τ = p / (p + 1), so p = τ / (1 - τ)
-     */
-    function tauToP(tau) {
-        if (tau >= 1) {
-            return Infinity;
-        }
-        return tau / (1 - tau);
-    }
-    /**
-     * Convert from p parameterization back to τ
-     * p = τ / (1 - τ), so τ = p / (p + 1)
-     */
-    function pToTau(p) {
-        return p / (p + 1);
-    }
-    /**
      * Sample a single value from a standard normal distribution N(0, 1)
      * using the Box-Muller transform.
      *
@@ -252,7 +235,7 @@
         return output;
     }
 
-    var utils = /*#__PURE__*/Object.freeze({
+    var index$4 = /*#__PURE__*/Object.freeze({
         __proto__: null,
         andCombine: andCombine,
         at: at,
@@ -270,11 +253,9 @@
         lerp: lerp,
         luminanceToImageData: luminanceToImageData,
         normalizeVec2: normalizeVec2,
-        pToTau: pToTau,
         perpendicular: perpendicular,
         rgbToGrayscale: rgbToGrayscale,
-        setPixel: setPixel,
-        tauToP: tauToP
+        setPixel: setPixel
     });
 
     class SoftThresholdStrategy {
@@ -7694,7 +7675,7 @@ void main() {
     exports.extensions = index;
     exports.preprocess = index$1;
     exports.threshold = threshold;
-    exports.utilities = utils;
+    exports.utilities = index$4;
 
 }));
 //# sourceMappingURL=index.umd.js.map

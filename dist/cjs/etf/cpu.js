@@ -10,8 +10,8 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EdgeTangentFlow = void 0;
-const types_1 = require("../types");
-const utils_1 = require("../utils");
+const types_js_1 = require("../types.js");
+const index_js_1 = require("../utils/index.js");
 /**
  * Edge Tangent Flow field implementation
  */
@@ -48,7 +48,7 @@ class EdgeTangentFlow {
      * @param sigmaC Structure tensor smoothing sigma (optional override)
      */
     static compute(input, config = {}, sigmaC) {
-        const cfg = { ...types_1.DEFAULT_ETF_CONFIG, ...config };
+        const cfg = { ...types_js_1.DEFAULT_ETF_CONFIG, ...config };
         const { width, height } = input;
         // Step 1: Compute image gradients using Sobel operator
         const gradients = computeGradients(input);
@@ -71,7 +71,7 @@ class EdgeTangentFlow {
      * Encodes direction as intensity (useful for debugging)
      */
     visualize() {
-        const output = (0, utils_1.createChannelImage)(this.width, this.height);
+        const output = (0, index_js_1.createChannelImage)(this.width, this.height);
         for (let y = 0; y < this.height; y++) {
             for (let x = 0; x < this.width; x++) {
                 const idx = y * this.width + x;
@@ -229,7 +229,7 @@ function smoothStructureTensorGaussian(tensor, width, height, sigma) {
     // Kernel size based on paper's 2.45σ sampling rule
     const radius = Math.ceil(sigma * 2.45);
     const kernelSize = radius * 2 + 1;
-    const kernel = (0, utils_1.generateGaussianKernel)(sigma, kernelSize);
+    const kernel = (0, index_js_1.generateGaussianKernel)(sigma, kernelSize);
     // Separable Gaussian blur for each component
     const smoothE = gaussianBlur2D(tensor.e, width, height, kernel, radius);
     const smoothF = gaussianBlur2D(tensor.f, width, height, kernel, radius);
@@ -302,7 +302,7 @@ function extractTangentField(tensor, width, height) {
             tx = 0;
             ty = 1;
         }
-        tangents[i] = (0, utils_1.normalizeVec2)({ x: tx, y: ty });
+        tangents[i] = (0, index_js_1.normalizeVec2)({ x: tx, y: ty });
     }
     return tangents;
 }
@@ -336,7 +336,7 @@ function refineTangentField(tangents, magnitude, width, height) {
                         const magWeight = neighborMag;
                         // Direction weight (prefer similar directions)
                         // Use dot product, but handle sign flip (tangent can point either way)
-                        const dot = (0, utils_1.dotVec2)(currentT, neighborT);
+                        const dot = (0, index_js_1.dotVec2)(currentT, neighborT);
                         const sign = dot >= 0 ? 1 : -1;
                         const dirWeight = Math.abs(dot);
                         const weight = spatialWeight * magWeight * dirWeight;
@@ -347,7 +347,7 @@ function refineTangentField(tangents, magnitude, width, height) {
                 }
             }
             if (weightSum > 1e-10) {
-                refined[idx] = (0, utils_1.normalizeVec2)({ x: sumX / weightSum, y: sumY / weightSum });
+                refined[idx] = (0, index_js_1.normalizeVec2)({ x: sumX / weightSum, y: sumY / weightSum });
             }
             else {
                 refined[idx] = currentT;

@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.bilateralFilter = bilateralFilter;
-const utils_js_1 = require("../utils.js");
+const index_js_1 = require("../utils/index.js");
 /**
  * Edge-preserving smoothing filter. Standalone preprocessing utility —
  * not part of ThresholdStrategy. Compose manually:
@@ -11,7 +11,7 @@ const utils_js_1 = require("../utils.js");
  *   const result = new SoftThresholdStrategy().threshold(smoothed, { epsilon, phi });
  */
 function bilateralFilter(image, radius = 3, sigmaIntensity = 0.2) {
-    const output = (0, utils_js_1.createChannelImage)(image.width, image.height);
+    const output = (0, index_js_1.createChannelImage)(image.width, image.height);
     const { width, height, data } = image;
     const sigmaSpatial = radius / 2;
     for (let y = 0; y < height; y++) {

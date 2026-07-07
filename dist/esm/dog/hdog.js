@@ -7,11 +7,11 @@
  * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
  * advanced image stylization" by Winnemöller et al. (2012)
  */
-import {} from '../types';
-import { andCombine } from '../utils';
-import { ADoG } from './adog';
-import { FDoG } from './fdog';
-import { DEFAULT_ADOG_CONFIG, DEFAULT_HDOG_CONFIG } from './types';
+import {} from '../types.js';
+import { andCombine } from '../utils/index.js';
+import { ADoG } from './adog.js';
+import { FDoG } from './fdog.js';
+import { DEFAULT_ADOG_CONFIG, DEFAULT_HDOG_CONFIG } from './types.js';
 export class HDoG {
     fdog;
     adogPrimary;

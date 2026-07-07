@@ -1,5 +1,5 @@
-import type { ChannelImage } from '../types';
-import { EdgeTangentFlow } from '../etf/index';
+import type { ChannelImage } from '../types.js';
+import { EdgeTangentFlow } from '../etf/index.js';
 /**
  * Base interface for all extension strategies
  */

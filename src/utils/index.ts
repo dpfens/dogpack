@@ -116,7 +116,7 @@ export function imageDataToLuminance(imageData: ImageData): ChannelImage {
  * Convert grayscale image to ImageData (for canvas display)
  * Assumes input is in 0-1 range
  */
-export function grayscaleToImageData(gray: ChannelImage): ImageData {
+export function luminanceToImageData(gray: ChannelImage): ImageData {
   const imageData = new ImageData(gray.width, gray.height);
   const pixelCount = gray.width * gray.height;
   
@@ -207,4 +207,64 @@ export function clamp(value: number, min: number, max: number): number {
  */
 export function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
+}
+
+
+
+/**
+ * Reads a value that may be a scalar (uniform) or a per-pixel ChannelImage.
+ */
+export function at(value: number | ChannelImage, i: number): number {
+  return typeof value === "number" ? value : value.data[i];
+}
+
+/**
+ * Sample a single value from a standard normal distribution N(0, 1)
+ * using the Box-Muller transform.
+ * 
+ * Used by ADoG's adaptive noise injection (Eq. 6): the sampled value is
+ * scaled by a tone-dependent sigma(x) and added to the input luminance.
+ */
+export function gaussianSample(): number {
+  // Avoid Math.log(0) by excluding 0 from the uniform sample
+  let u1 = 0;
+  while (u1 === 0) {
+    u1 = Math.random();
+  }
+  const u2 = Math.random();
+  return Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+}
+
+/**
+ * Pixel-wise logical AND across N binarized (0/1) ChannelImages.
+ * 
+ * Generalizes Eq. (7)/(9) from "Gaussian Image Binarization":
+ *   HDoG = FDoG ∧ ADoG_s ∧ ADoG_s'
+ * 
+ * Since binarized images only contain 0 or 1, logical AND is equivalent to
+ * taking the minimum across images (no De Morgan's / inversion needed here
+ * -- see the paper's Eq. (8) for why AND and "invert-OR-invert" coincide;
+ * this just implements AND directly).
+ * 
+ * All images must have matching dimensions; this is not checked here for
+ * performance -- validate upstream if inputs could mismatch.
+ */
+export function andCombine(images: ChannelImage[]): ChannelImage {
+  if (images.length === 0) {
+    throw new Error('andCombine requires at least one image');
+  }
+
+  const { width, height } = images[0];
+  const output = createChannelImage(width, height);
+  const size = width * height;
+
+  for (let i = 0; i < size; i++) {
+    let v = 1;
+    for (const img of images) {
+      v = Math.min(v, img.data[i]);
+    }
+    output.data[i] = v;
+  }
+
+  return output;
 }

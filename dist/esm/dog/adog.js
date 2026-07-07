@@ -7,11 +7,11 @@
  * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
  * advanced image stylization" by Winnemöller et al. (2012)
  */
-import {} from '../types';
-import { createChannelImage, imageDataToLuminance, luminanceToImageData } from '../utils';
-import { IsotropicBlur } from '../blur/isotropic';
-import { gaussianSample } from '../utils';
-import { DEFAULT_ADOG_CONFIG } from './types';
+import {} from '../types.js';
+import { createChannelImage, imageDataToLuminance, luminanceToImageData } from '../utils/index.js';
+import { IsotropicBlur } from '../blur/isotropic.js';
+import { gaussianSample } from '../utils/index.js';
+import { DEFAULT_ADOG_CONFIG } from './types.js';
 export class ADoG {
     config;
     blurStrategy;

@@ -81,18 +81,18 @@
  * const result = await xdog.process(cleaned);
  * ```
  */
-export type { BlurStrategy, BlurStrategyClass } from './types';
-export * as dog from './dog';
-export { DoGProcessor, ThresholdModes, applyCustomThreshold } from './processor';
-export * as blur from './blur';
-export type { IsotropicBlurConfig, FlowGuidedBlurConfig } from './blur';
-export { EdgeTangentFlow } from './etf';
-export * as preprocess from './preprocess';
-export type { ThresholdConfig, ThresholdStrategy } from './threshold';
-export * as threshold from './threshold';
-export type { Vec2, ChannelImage, RGBImage, FlowField, ETFConfig, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from './types';
-export { DEFAULT_ETF_CONFIG } from './types';
-export * as utilities from './utils';
-export * as extensions from './extensions';
-export type { ExtensionStrategy, DoGResult, AntiAliasingConfig, ColorRetentionConfig, ColorTransformFn, MaskTransformFn, PostProcessFn, BlendFunction, MultiScaleLayer, MultiScaleConfig, NaturalMediaConfig, NaturalMediaStyle, HatchingConfig, HatchTexture } from './extensions';
+export type { BlurStrategy, BlurStrategyClass } from './types.js';
+export * as dog from './dog/index.js';
+export { DoGProcessor, ThresholdModes, applyCustomThreshold } from './processor.js';
+export * as blur from './blur/index.js';
+export type { IsotropicBlurConfig, FlowGuidedBlurConfig } from './blur/index.js';
+export { EdgeTangentFlow } from './etf/index.js';
+export * as preprocess from './preprocess/index.js';
+export type { ThresholdConfig, ThresholdStrategy } from './threshold.js';
+export * as threshold from './threshold.js';
+export type { Vec2, ChannelImage, RGBImage, FlowField, ETFConfig, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from './types.js';
+export { DEFAULT_ETF_CONFIG } from './types.js';
+export * as utilities from './utils/index.js';
+export * as extensions from './extensions/index.js';
+export type { ExtensionStrategy, DoGResult, AntiAliasingConfig, ColorRetentionConfig, ColorTransformFn, MaskTransformFn, PostProcessFn, BlendFunction, MultiScaleLayer, MultiScaleConfig, NaturalMediaConfig, NaturalMediaStyle, HatchingConfig, HatchTexture } from './extensions/index.js';
 //# sourceMappingURL=index.d.ts.map

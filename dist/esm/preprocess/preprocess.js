@@ -8,7 +8,7 @@
  * preprocessing for "indication" - attenuating weak edges while
  * preserving strong edges.
  */
-import { createChannelImage, getPixel, generateGaussianKernel } from '../utils';
+import { createChannelImage, getPixel, generateGaussianKernel } from '../utils/index.js';
 const DEFAULT_BILATERAL_CONFIG = {
     sigmaSpatial: 3,
     sigmaRange: 0.1,

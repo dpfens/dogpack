@@ -5,7 +5,7 @@
  * gradient computation, structure tensor building/smoothing, and
  * tangent extraction on the GPU.
  */
-import { type ChannelImage, type FlowField, type Vec2, type ETFConfig } from '../types';
+import { type ChannelImage, type FlowField, type Vec2, type ETFConfig } from '../types.js';
 /**
  * WebGL-accelerated ETF implementation
  */

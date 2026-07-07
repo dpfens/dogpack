@@ -7,7 +7,7 @@
  * Based on Section 2.6 of Winnemöller et al. (2012) and
  * Kang et al. (2007) "Coherent Line Drawing"
  */
-import type { ChannelImage, FlowField, Vec2, ETFConfig } from '../types';
+import type { ChannelImage, FlowField, Vec2, ETFConfig } from '../types.js';
 /**
  * Edge Tangent Flow field implementation
  */

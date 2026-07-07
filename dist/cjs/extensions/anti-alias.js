@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AntiAliasingStrategy = void 0;
-const index_1 = require("../blur/index");
+const index_js_1 = require("../blur/index.js");
 const DEFAULT_AA_CONFIG = {
     sigma: 1.0,
     stepSize: 0.5,
@@ -35,7 +35,7 @@ class AntiAliasingStrategy {
         if (cfg.sigma <= 0) {
             return { data: new Float32Array(image.data), width: image.width, height: image.height };
         }
-        const flowBlur = new index_1.FlowGuidedBlur(etf, { stepSize: cfg.stepSize });
+        const flowBlur = new index_js_1.FlowGuidedBlur(etf, { stepSize: cfg.stepSize });
         const result = flowBlur.blur(image, cfg.sigma);
         flowBlur.dispose();
         return result;

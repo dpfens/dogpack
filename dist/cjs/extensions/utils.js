@@ -7,7 +7,7 @@ exports.imageDataToRGB = imageDataToRGB;
 exports.rgbToImageData = rgbToImageData;
 exports.grayscaleToRGB = grayscaleToRGB;
 exports.rgbToGrayscale = rgbToGrayscale;
-const utils_1 = require("../utils");
+const index_js_1 = require("../utils/index.js");
 /**
  * Convert ImageData to RGBImage
  */
@@ -60,7 +60,7 @@ function grayscaleToRGB(gray) {
  */
 function rgbToGrayscale(rgb) {
     const { width, height } = rgb;
-    const gray = (0, utils_1.createChannelImage)(width, height);
+    const gray = (0, index_js_1.createChannelImage)(width, height);
     for (let i = 0; i < width * height; i++) {
         gray.data[i] = 0.299 * rgb.r[i] + 0.587 * rgb.g[i] + 0.114 * rgb.b[i];
     }

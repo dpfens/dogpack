@@ -1,4 +1,4 @@
-import { FDoG, XDoG } from "../dog";
+import { FDoG, XDoG } from '../dog/index.js';
 /**
  * Natural Media Strategy
  *

@@ -1,4 +1,4 @@
-import { createChannelImage } from "../utils.js";
+import { createChannelImage } from '../utils/index.js';
 /**
  * Edge-preserving smoothing filter. Standalone preprocessing utility —
  * not part of ThresholdStrategy. Compose manually:

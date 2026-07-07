@@ -7,9 +7,9 @@
  * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
  * advanced image stylization" by Winnemöller et al. (2012)
  */
-import { type ChannelImage } from '../types';
-import { EdgeTangentFlow } from '../etf';
-import { FDOG_STYLE_PRESETS, type DoGImplementation, type FDoGConfig } from './types';
+import { type ChannelImage } from '../types.js';
+import { EdgeTangentFlow } from '../etf/index.js';
+import { FDOG_STYLE_PRESETS, type DoGImplementation, type FDoGConfig } from './types.js';
 /**
  * FDoG (Flow-based Difference of Gaussians)
  *

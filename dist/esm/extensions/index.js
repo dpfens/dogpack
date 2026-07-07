@@ -18,10 +18,10 @@
  * - Extensions accept pre-processed results or raw images
  * - Chainable pipeline architecture
  */
-export { AntiAliasingStrategy } from './anti-alias';
-export * as colorRetention from './color-retention';
-export { HatchingStrategy } from './hatching';
-export { NaturalMediaStrategy } from './natural-media';
-export * as multiScale from './multi-scale';
-export { imageDataToRGB, rgbToImageData, grayscaleToRGB } from './utils';
+export { AntiAliasingStrategy } from './anti-alias.js';
+export * as colorRetention from './color-retention.js';
+export { HatchingStrategy } from './hatching.js';
+export { NaturalMediaStrategy } from './natural-media.js';
+export * as multiScale from './multi-scale.js';
+export { imageDataToRGB, rgbToImageData, grayscaleToRGB } from './utils.js';
 //# sourceMappingURL=index.js.map

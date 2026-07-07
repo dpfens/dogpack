@@ -8,9 +8,9 @@
  * "XDoG: An eXtended difference-of-Gaussians compendium including
  * advanced image stylization" by Winnemöller et al. (2012)
  */
-import type { BlurStrategy, ChannelImage } from './types';
-import type { DoGConfig } from './dog';
-import { type DoGProcessingResult } from './dog/types';
+import type { BlurStrategy, ChannelImage } from './types.js';
+import type { DoGConfig } from './dog/index.js';
+import { type DoGProcessingResult } from './dog/types.js';
 /**
  * Difference of Gaussians processor
  *

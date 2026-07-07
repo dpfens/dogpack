@@ -1,5 +1,5 @@
-import type { BlurStrategy, ChannelImage, FlowField } from '../types';
-import { type FlowGuidedBlurConfig } from './flow-guided';
+import type { BlurStrategy, ChannelImage, FlowField } from '../types.js';
+import { type FlowGuidedBlurConfig } from './flow-guided.js';
 export declare class FDoGBlur implements BlurStrategy {
     private gradientBlur;
     private flowBlur;
