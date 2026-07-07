@@ -18,14 +18,16 @@ export class HDoG {
     adogSecondary;
     constructor(config = {}) {
         const merged = { ...DEFAULT_HDOG_CONFIG, ...config };
-        const primaryConfig = { ...DEFAULT_ADOG_CONFIG, ...merged.adog };
-        const secondaryConfig = {
-            ...primaryConfig,
-            s: primaryConfig.s * merged.adogSecondaryScaleFactor,
+        const primaryADoGConfig = { ...DEFAULT_ADOG_CONFIG, ...merged.adog };
+        const secondaryADoGConfig = {
+            ...DEFAULT_ADOG_CONFIG,
+            ...primaryADoGConfig,
+            s: primaryADoGConfig.s * merged.adogSecondaryScaleFactor,
+            ...merged.adogSecondary,
         };
         this.fdog = new FDoG(merged.fdog);
-        this.adogPrimary = new ADoG(primaryConfig);
-        this.adogSecondary = new ADoG(secondaryConfig);
+        this.adogPrimary = new ADoG(primaryADoGConfig);
+        this.adogSecondary = new ADoG(secondaryADoGConfig);
     }
     dispose() {
         this.fdog.dispose();

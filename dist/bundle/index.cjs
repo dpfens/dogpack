@@ -389,13 +389,15 @@ const DEFAULT_FDOG_CONFIG = {
  */
 const DEFAULT_ADOG_CONFIG = {
     ...DEFAULT_DOG_CONFIG,
-    sigma: 1.0, // σc
-    k: 1.6, // σs = k * σc
+    sigma: 1.0,
+    k: 1.6,
     tau: 0.99,
     s: 2.0,
     noiseScaleC: 0.01,
     kernelSizeMultiplier: 6,
-    thresholdStrategy: new HardThresholdStrategy(), // ADoG binarizes; hard threshold matches the paper's step-function output
+    epsilon: 0.05,
+    phi: 200,
+    thresholdStrategy: new HardThresholdStrategy(),
 };
 /**
  * Default HDoG configuration values
@@ -3764,14 +3766,16 @@ class HDoG {
     adogSecondary;
     constructor(config = {}) {
         const merged = { ...DEFAULT_HDOG_CONFIG, ...config };
-        const primaryConfig = { ...DEFAULT_ADOG_CONFIG, ...merged.adog };
-        const secondaryConfig = {
-            ...primaryConfig,
-            s: primaryConfig.s * merged.adogSecondaryScaleFactor,
+        const primaryADoGConfig = { ...DEFAULT_ADOG_CONFIG, ...merged.adog };
+        const secondaryADoGConfig = {
+            ...DEFAULT_ADOG_CONFIG,
+            ...primaryADoGConfig,
+            s: primaryADoGConfig.s * merged.adogSecondaryScaleFactor,
+            ...merged.adogSecondary,
         };
         this.fdog = new FDoG(merged.fdog);
-        this.adogPrimary = new ADoG(primaryConfig);
-        this.adogSecondary = new ADoG(secondaryConfig);
+        this.adogPrimary = new ADoG(primaryADoGConfig);
+        this.adogSecondary = new ADoG(secondaryADoGConfig);
     }
     dispose() {
         this.fdog.dispose();

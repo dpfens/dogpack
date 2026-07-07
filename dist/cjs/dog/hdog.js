@@ -21,14 +21,16 @@ class HDoG {
     adogSecondary;
     constructor(config = {}) {
         const merged = { ...types_js_1.DEFAULT_HDOG_CONFIG, ...config };
-        const primaryConfig = { ...types_js_1.DEFAULT_ADOG_CONFIG, ...merged.adog };
-        const secondaryConfig = {
-            ...primaryConfig,
-            s: primaryConfig.s * merged.adogSecondaryScaleFactor,
+        const primaryADoGConfig = { ...types_js_1.DEFAULT_ADOG_CONFIG, ...merged.adog };
+        const secondaryADoGConfig = {
+            ...types_js_1.DEFAULT_ADOG_CONFIG,
+            ...primaryADoGConfig,
+            s: primaryADoGConfig.s * merged.adogSecondaryScaleFactor,
+            ...merged.adogSecondary,
         };
         this.fdog = new fdog_js_1.FDoG(merged.fdog);
-        this.adogPrimary = new adog_js_1.ADoG(primaryConfig);
-        this.adogSecondary = new adog_js_1.ADoG(secondaryConfig);
+        this.adogPrimary = new adog_js_1.ADoG(primaryADoGConfig);
+        this.adogSecondary = new adog_js_1.ADoG(secondaryADoGConfig);
     }
     dispose() {
         this.fdog.dispose();

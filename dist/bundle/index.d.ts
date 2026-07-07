@@ -304,6 +304,13 @@ interface HDoGConfig {
      * affecting brighter ones (paper empirically sets s' = 4s).
      */
     adogSecondaryScaleFactor: number;
+    /**
+     * Optional partial override applied on top of the derived secondary
+     * ADoG config (primary config + s' = adogSecondaryScaleFactor * s).
+     * Use this to tweak individual fields (e.g. epsilon, phi) for the
+     * secondary pass without re-specifying the whole config.
+     */
+    adogSecondary?: Partial<ADoGConfig>;
 }
 interface DoGProcessingResult {
     /** Final thresholded output */

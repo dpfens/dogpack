@@ -28,13 +28,15 @@ export const DEFAULT_FDOG_CONFIG = {
  */
 export const DEFAULT_ADOG_CONFIG = {
     ...DEFAULT_DOG_CONFIG,
-    sigma: 1.0, // σc
-    k: 1.6, // σs = k * σc
+    sigma: 1.0,
+    k: 1.6,
     tau: 0.99,
     s: 2.0,
     noiseScaleC: 0.01,
     kernelSizeMultiplier: 6,
-    thresholdStrategy: new HardThresholdStrategy(), // ADoG binarizes; hard threshold matches the paper's step-function output
+    epsilon: 0.05,
+    phi: 200,
+    thresholdStrategy: new HardThresholdStrategy(),
 };
 /**
  * Default HDoG configuration values

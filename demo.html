@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>XDoG / FDoG Line Drawing Studio</title>
+    <title>DoG Line Drawing Studio</title>
     
     <!-- Bootstrap 5.3 -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -294,7 +294,7 @@
         <div class="container-fluid px-4">
             <span class="navbar-brand">
                 <i class="bi bi-vector-pen me-2 accent-text"></i>
-                XDoG / FDoG Studio
+                DoG Studio
             </span>
             <div class="d-flex align-items-center gap-3">
                 <a href="https://github.com" class="text-secondary text-decoration-none" target="_blank">
@@ -366,7 +366,7 @@
                         
                         <!-- Mode Selection -->
                         <div class="section-title">Processing Mode</div>
-                        <div class="btn-group mode-toggle w-100 mb-4" role="group">
+                        <div class="btn-group mode-toggle w-100 mb-4 flex-wrap" role="group">
                             <input type="radio" class="btn-check" name="mode" id="modeXDoG" value="xdog" checked>
                             <label class="btn btn-outline-light" for="modeXDoG">
                                 <i class="bi bi-lightning me-1"></i> XDoG
@@ -374,6 +374,14 @@
                             <input type="radio" class="btn-check" name="mode" id="modeFDoG" value="fdog">
                             <label class="btn btn-outline-light" for="modeFDoG">
                                 <i class="bi bi-bezier2 me-1"></i> FDoG
+                            </label>
+                            <input type="radio" class="btn-check" name="mode" id="modeADoG" value="adog">
+                            <label class="btn btn-outline-light" for="modeADoG">
+                                <i class="bi bi-circle-half me-1"></i> ADoG
+                            </label>
+                            <input type="radio" class="btn-check" name="mode" id="modeHDoG" value="hdog">
+                            <label class="btn btn-outline-light" for="modeHDoG">
+                                <i class="bi bi-layers me-1"></i> HDoG
                             </label>
                         </div>
                         
@@ -411,6 +419,32 @@
                                 </button>
                                 <button class="preset-btn" data-preset="woodcut" data-mode="fdog">
                                     🪵 Woodcut
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- ADoG Presets -->
+                        <div id="adogPresets" class="d-none">
+                            <div class="section-title">ADoG Style Presets</div>
+                            <div class="d-flex flex-wrap gap-2 mb-4">
+                                <button class="preset-btn active" data-preset="standard" data-mode="adog">
+                                    ⚫ Standard Screentone
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- HDoG Presets -->
+                        <div id="hdogPresets" class="d-none">
+                            <div class="section-title">HDoG Style Presets</div>
+                            <div class="d-flex flex-wrap gap-2 mb-4">
+                                <button class="preset-btn active" data-preset="standard" data-mode="hdog">
+                                    📐 Standard
+                                </button>
+                                <button class="preset-btn" data-preset="denseScreentone" data-mode="hdog">
+                                    ⚫ Dense Screentone
+                                </button>
+                                <button class="preset-btn" data-preset="woodcut" data-mode="hdog">
+                                    🪵 Woodcut + Tone
                                 </button>
                             </div>
                         </div>
@@ -474,7 +508,7 @@
                                                     ε (Epsilon) - Threshold
                                                     <i class="bi bi-info-circle info-icon ms-1" 
                                                        data-bs-toggle="tooltip" 
-                                                       title="Values above this become white. Range 0-1 for normalized images."></i>
+                                                       title="Values above this become white. Range 0-1 for XDoG/FDoG/HDoG's line pass. ADoG's response has no additive baseline term, so its useful range is much smaller (roughly -0.05 to 0.3) -- the slider adjusts automatically in ADoG mode."></i>
                                                 </label>
                                                 <span class="param-value" id="epsilonValue">0.78</span>
                                             </div>
@@ -499,7 +533,7 @@
                             </div>
                             
                             <!-- FDoG-Specific Parameters -->
-                            <div class="accordion-item bg-transparent border-0 fdog-params collapsed" id="fdogParamsSection">
+                            <div class="accordion-item bg-transparent border-0 fdog-params collapsed" id="fdogParamsSection" data-show-modes="fdog,hdog">
                                 <h2 class="accordion-header">
                                     <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#fdogParams">
                                         FDoG Flow Parameters
@@ -548,6 +582,117 @@
                                             </div>
                                             <input type="range" class="form-range" id="sigmaA" min="0" max="10" step="0.1" value="1.0">
                                         </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- ADoG-Specific Parameters -->
+                            <div class="accordion-item bg-transparent border-0 fdog-params collapsed" id="adogParamsSection" data-show-modes="adog,hdog">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#adogParams">
+                                        ADoG Adaptive Parameters
+                                    </button>
+                                </h2>
+                                <div id="adogParams" class="accordion-collapse collapse" data-bs-parent="#paramsAccordion">
+                                    <div class="accordion-body">
+                                        <!-- Tau -->
+                                        <div class="mb-3">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <label class="form-label mb-0">
+                                                    τ (Tau) - Min Contrast Sensitivity
+                                                    <i class="bi bi-info-circle info-icon ms-1" 
+                                                       data-bs-toggle="tooltip" 
+                                                       title="Minimum value of the adaptive weight ρ(x). Higher values produce noisier responses. Paper restricts to 0.97-1.0."></i>
+                                                </label>
+                                                <span class="param-value" id="tauValue">0.99</span>
+                                            </div>
+                                            <input type="range" class="form-range" id="tau" min="0.97" max="1.0" step="0.001" value="0.99">
+                                        </div>
+                                        
+                                        <!-- S -->
+                                        <div class="mb-3">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <label class="form-label mb-0">
+                                                    s - Tone Falloff Steepness
+                                                    <i class="bi bi-info-circle info-icon ms-1" 
+                                                       data-bs-toggle="tooltip" 
+                                                       title="Controls steepness of the tone-dependent density transition. Larger s concentrates screentone into darker tones."></i>
+                                                </label>
+                                                <span class="param-value" id="sValue">2.0</span>
+                                            </div>
+                                            <input type="range" class="form-range" id="s" min="0.1" max="10" step="0.1" value="2.0">
+                                        </div>
+                                        
+                                        <!-- Noise Scale C -->
+                                        <div class="mb-0">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <label class="form-label mb-0">
+                                                    c - Adaptive Noise Scale
+                                                    <i class="bi bi-info-circle info-icon ms-1" 
+                                                       data-bs-toggle="tooltip" 
+                                                       title="Scale of tone-adaptive noise injected before blurring. Set to 0 to disable noise injection entirely."></i>
+                                                </label>
+                                                <span class="param-value" id="noiseScaleCValue">0.010</span>
+                                            </div>
+                                            <input type="range" class="form-range" id="noiseScaleC" min="0" max="0.05" step="0.001" value="0.01">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- HDoG Combination Parameters -->
+                            <div class="accordion-item bg-transparent border-0 fdog-params collapsed" id="hdogParamsSection" data-show-modes="hdog">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#hdogParams">
+                                        HDoG Combination
+                                    </button>
+                                </h2>
+                                <div id="hdogParams" class="accordion-collapse collapse" data-bs-parent="#paramsAccordion">
+                                    <div class="accordion-body">
+                                        <!-- ADoG threshold (epsilon/phi for the screentone passes) -->
+                                        <div class="mb-3">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <label class="form-label mb-0">
+                                                    ADoG ε (Epsilon) - Screentone Threshold
+                                                    <i class="bi bi-info-circle info-icon ms-1" 
+                                                       data-bs-toggle="tooltip" 
+                                                       title="Threshold for the two ADoG screentone passes. ADoG's response has no additive baseline term, so its useful range is much smaller than the FDoG line pass above (roughly -0.05 to 0.3), and is controlled separately here."></i>
+                                                </label>
+                                                <span class="param-value" id="hdogAdogEpsilonValue">0.050</span>
+                                            </div>
+                                            <input type="range" class="form-range" id="hdogAdogEpsilon" min="-0.05" max="0.3" step="0.001" value="0.05">
+                                        </div>
+                                        <div class="mb-3">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <label class="form-label mb-0">
+                                                    ADoG φ (Phi) - Screentone Sharpness
+                                                    <i class="bi bi-info-circle info-icon ms-1" 
+                                                       data-bs-toggle="tooltip" 
+                                                       title="Threshold sharpness for the two ADoG screentone passes, scaled to match ADoG's smaller response range. Independent from the FDoG φ above."></i>
+                                                </label>
+                                                <span class="param-value" id="hdogAdogPhiValue">200</span>
+                                            </div>
+                                            <input type="range" class="form-range" id="hdogAdogPhi" min="1" max="2000" step="1" value="200">
+                                        </div>
+
+                                        <!-- Secondary ADoG scale factor -->
+                                        <div class="mb-0">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <label class="form-label mb-0">
+                                                    s' Factor - Secondary Screentone Strength
+                                                    <i class="bi bi-info-circle info-icon ms-1" 
+                                                       data-bs-toggle="tooltip" 
+                                                       title="HDoG = FDoG ∧ ADoG_s ∧ ADoG_s' where s' = factor × s. Adds extra screentone in the darkest regions without affecting brighter ones."></i>
+                                                </label>
+                                                <span class="param-value" id="adogSecondaryScaleFactorValue">4.0</span>
+                                            </div>
+                                            <input type="range" class="form-range" id="adogSecondaryScaleFactor" min="1" max="8" step="0.5" value="4">
+                                        </div>
+                                        <small class="text-secondary d-block mt-3">
+                                            The Core Parameters (ε/φ above) and FDoG Flow Parameters configure the line-drawing (FDoG) pass.
+                                            The ADoG ε/φ above and the ADoG Adaptive Parameters section configure both screentone (ADoG) passes,
+                                            with the secondary pass using s' = factor × s.
+                                        </small>
                                     </div>
                                 </div>
                             </div>
@@ -606,9 +751,17 @@
                             <small class="text-secondary d-block mb-2">
                                 <strong class="text-light">XDoG</strong> uses isotropic Gaussian blur - fast and great for most images.
                             </small>
-                            <small class="text-secondary d-block">
+                            <small class="text-secondary d-block mb-2">
                                 <strong class="text-light">FDoG</strong> uses flow-guided blur along edge tangents for smoother, 
                                 more coherent lines. Best for portraits and subjects where line continuity matters.
+                            </small>
+                            <small class="text-secondary d-block mb-2">
+                                <strong class="text-light">ADoG</strong> makes contrast sensitivity tone-adaptive, producing a 
+                                screentone/halftone effect that gets denser in darker regions.
+                            </small>
+                            <small class="text-secondary d-block">
+                                <strong class="text-light">HDoG</strong> combines an FDoG line pass with two ADoG screentone 
+                                passes at different scales, giving coherent lines plus shaded screentone in one image.
                             </small>
                         </div>
                     </div>
@@ -686,7 +839,11 @@
         const processingOverlay = document.getElementById('processingOverlay');
         const xdogPresets = document.getElementById('xdogPresets');
         const fdogPresets = document.getElementById('fdogPresets');
+        const adogPresets = document.getElementById('adogPresets');
+        const hdogPresets = document.getElementById('hdogPresets');
         const fdogParamsSection = document.getElementById('fdogParamsSection');
+        const adogParamsSection = document.getElementById('adogParamsSection');
+        const hdogParamsSection = document.getElementById('hdogParamsSection');
         const preprocessMode = document.getElementById('preprocessMode');
         const useColorToggle = document.getElementById('useColorToggle');
         const colorAmountWrapper = document.getElementById('colorAmountWrapper');
@@ -722,6 +879,52 @@
             sigmaA: document.getElementById('sigmaA'),
         };
 
+        // ADoG-specific sliders
+        const adogSliders = {
+            tau: document.getElementById('tau'),
+            s: document.getElementById('s'),
+            noiseScaleC: document.getElementById('noiseScaleC'),
+        };
+
+        // HDoG-specific sliders
+        const hdogSliders = {
+            adogSecondaryScaleFactor: document.getElementById('adogSecondaryScaleFactor'),
+            // Dedicated ADoG-range threshold controls for HDoG's two screentone
+            // passes. Kept separate from the shared `sliders.epsilon`/`sliders.phi`
+            // above, which in hdog mode drive only the FDoG line pass -- ADoG's
+            // response occupies a much smaller range (~-0.05 to 0.3) so it can't
+            // share a slider scaled for FDoG's 0-1 range without going out of reach.
+            adogEpsilon: document.getElementById('hdogAdogEpsilon'),
+            adogPhi: document.getElementById('hdogAdogPhi'),
+        };
+
+        // epsilon/phi ranges per mode. XDoG/FDoG (and HDoG, whose shared
+        // epsilon/phi slider drives its FDoG line pass -- see
+        // applyHDoGPreset) use S_sigma,k,p's ~0-1 scale. ADoG's response
+        // (Eq. 4) has no "+G_sigma" baseline term, so its useful range is
+        // much smaller -- roughly -0.05 to 0.3 for epsilon, and phi needs
+        // to be scaled up to have an equivalent effect at that scale.
+        const EPSILON_PHI_RANGES = {
+            xdog: { epsilon: { min: 0, max: 1, step: 0.01 }, phi: { min: 0.01, max: 200, step: 0.5 } },
+            fdog: { epsilon: { min: 0, max: 1, step: 0.01 }, phi: { min: 0.01, max: 200, step: 0.5 } },
+            adog: { epsilon: { min: -0.05, max: 0.3, step: 0.001 }, phi: { min: 1, max: 2000, step: 1 } },
+            hdog: { epsilon: { min: 0, max: 1, step: 0.01 }, phi: { min: 0.01, max: 200, step: 0.5 } },
+        };
+
+        // Apply the epsilon/phi slider range for the given mode. Must run
+        // BEFORE setting slider.value for that mode's preset -- otherwise
+        // the browser clamps the incoming value against the *previous*
+        // mode's min/max.
+        function applyEpsilonPhiRange(mode) {
+            const ranges = EPSILON_PHI_RANGES[mode] || EPSILON_PHI_RANGES.xdog;
+            sliders.epsilon.min = ranges.epsilon.min;
+            sliders.epsilon.max = ranges.epsilon.max;
+            sliders.epsilon.step = ranges.epsilon.step;
+            sliders.phi.min = ranges.phi.min;
+            sliders.phi.max = ranges.phi.max;
+            sliders.phi.step = ranges.phi.step;
+        }
+
         // Initialize Bootstrap tooltips
         const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
         const tooltipList = [...tooltipTriggerList].map(el => new bootstrap.Tooltip(el));
@@ -743,12 +946,20 @@
             document.getElementById('sigmaValue').textContent = parseFloat(sliders.sigma.value).toFixed(1);
             document.getElementById('kValue').textContent = parseFloat(sliders.k.value).toFixed(1);
             document.getElementById('pValue').textContent = sliders.p.value;
-            document.getElementById('epsilonValue').textContent = parseFloat(sliders.epsilon.value).toFixed(2);
+            document.getElementById('epsilonValue').textContent = parseFloat(sliders.epsilon.value).toFixed(currentMode === 'adog' ? 3 : 2);
             document.getElementById('phiValue').textContent = parseFloat(sliders.phi.value).toFixed(1);
             
             document.getElementById('sigmaCValue').textContent = parseFloat(fdogSliders.sigmaC.value).toFixed(2);
             document.getElementById('sigmaMValue').textContent = parseFloat(fdogSliders.sigmaM.value).toFixed(1);
             document.getElementById('sigmaAValue').textContent = parseFloat(fdogSliders.sigmaA.value).toFixed(1);
+
+            document.getElementById('tauValue').textContent = parseFloat(adogSliders.tau.value).toFixed(3);
+            document.getElementById('sValue').textContent = parseFloat(adogSliders.s.value).toFixed(1);
+            document.getElementById('noiseScaleCValue').textContent = parseFloat(adogSliders.noiseScaleC.value).toFixed(3);
+
+            document.getElementById('adogSecondaryScaleFactorValue').textContent = parseFloat(hdogSliders.adogSecondaryScaleFactor.value).toFixed(1);
+            document.getElementById('hdogAdogEpsilonValue').textContent = parseFloat(hdogSliders.adogEpsilon.value).toFixed(3);
+            document.getElementById('hdogAdogPhiValue').textContent = parseFloat(hdogSliders.adogPhi.value).toFixed(0);
         }
 
         // Apply XDoG preset
@@ -783,23 +994,156 @@
             updateSliderDisplays();
         }
 
+        // Apply ADoG preset
+        function applyADoGPreset(presetName) {
+            const preset = dog.ADOG_STYLE_PRESETS[presetName];
+            if (!preset) return;
+
+            sliders.sigma.value = preset.sigma;
+            sliders.k.value = preset.k;
+            sliders.epsilon.value = preset.epsilon;
+            sliders.phi.value = preset.phi;
+
+            adogSliders.tau.value = preset.tau;
+            adogSliders.s.value = preset.s;
+            adogSliders.noiseScaleC.value = preset.noiseScaleC;
+
+            updateSliderDisplays();
+        }
+
+        // HDoG doesn't ship named style presets from the library (its config is
+        // nested: { fdog, adog, adogSecondaryScaleFactor }), so we combine the
+        // existing FDoG/ADoG presets into a few convenient UI-level combos.
+        const HDOG_UI_PRESETS = {
+            standard: {
+                fdog: dog.FDOG_STYLE_PRESETS.standard,
+                adog: dog.ADOG_STYLE_PRESETS.standard,
+                adogSecondaryScaleFactor: dog.DEFAULT_HDOG_CONFIG.adogSecondaryScaleFactor,
+            },
+            denseScreentone: {
+                fdog: dog.FDOG_STYLE_PRESETS.standard,
+                adog: dog.ADOG_STYLE_PRESETS.standard,
+                adogSecondaryScaleFactor: 7,
+            },
+            woodcut: {
+                fdog: dog.FDOG_STYLE_PRESETS.woodcut,
+                adog: dog.ADOG_STYLE_PRESETS.standard,
+                adogSecondaryScaleFactor: 4,
+            },
+        };
+
+        // Apply HDoG preset
+        function applyHDoGPreset(presetName) {
+            const preset = HDOG_UI_PRESETS[presetName];
+            if (!preset) return;
+            const f = preset.fdog;
+            const a = preset.adog;
+
+            // FDoG (line) layer -- drives Core Parameters + FDoG Flow Parameters
+            sliders.sigma.value = f.sigma;
+            sliders.k.value = f.k;
+            sliders.p.value = f.p;
+            sliders.epsilon.value = f.epsilon;
+            sliders.phi.value = f.phi;
+            fdogSliders.sigmaC.value = f.sigmaC;
+            fdogSliders.sigmaM.value = f.sigmaM;
+            fdogSliders.sigmaA.value = f.sigmaA;
+
+            // ADoG (tone) layer -- drives ADoG Adaptive Parameters + its own
+            // threshold sliders (ADoG's epsilon/phi live on a different scale
+            // than FDoG's, so they get their own controls rather than reusing
+            // sliders.epsilon/phi above).
+            adogSliders.tau.value = a.tau;
+            adogSliders.s.value = a.s;
+            adogSliders.noiseScaleC.value = a.noiseScaleC;
+            hdogSliders.adogEpsilon.value = a.epsilon;
+            hdogSliders.adogPhi.value = a.phi;
+
+            hdogSliders.adogSecondaryScaleFactor.value = preset.adogSecondaryScaleFactor;
+
+            updateSliderDisplays();
+        }
+
         // Get current parameters from sliders
         function getParams() {
-            const params = {
+            const core = {
                 sigma: parseFloat(sliders.sigma.value),
                 k: parseFloat(sliders.k.value),
                 p: parseFloat(sliders.p.value),
                 epsilon: parseFloat(sliders.epsilon.value),
                 phi: parseFloat(sliders.phi.value),
             };
-            
+
             if (currentMode === 'fdog') {
-                params.sigmaC = parseFloat(fdogSliders.sigmaC.value);
-                params.sigmaM = parseFloat(fdogSliders.sigmaM.value);
-                params.sigmaA = parseFloat(fdogSliders.sigmaA.value);
+                return {
+                    ...core,
+                    sigmaC: parseFloat(fdogSliders.sigmaC.value),
+                    sigmaM: parseFloat(fdogSliders.sigmaM.value),
+                    sigmaA: parseFloat(fdogSliders.sigmaA.value),
+                };
             }
-            
-            return params;
+
+            if (currentMode === 'adog') {
+                // Note: ADoG's process() doesn't read `p` -- included harmlessly.
+                return {
+                    ...core,
+                    tau: parseFloat(adogSliders.tau.value),
+                    s: parseFloat(adogSliders.s.value),
+                    noiseScaleC: parseFloat(adogSliders.noiseScaleC.value),
+                };
+            }
+
+            if (currentMode === 'hdog') {
+                // HDoG's config is nested rather than flat -- see hdog.ts.
+                return {
+                    fdog: {
+                        ...core,
+                        sigmaC: parseFloat(fdogSliders.sigmaC.value),
+                        sigmaM: parseFloat(fdogSliders.sigmaM.value),
+                        sigmaA: parseFloat(fdogSliders.sigmaA.value),
+                    },
+                    adog: {
+                        sigma: core.sigma,
+                        k: core.k,
+                        // epsilon/phi use their own ADoG-ranged sliders here, not
+                        // core.epsilon/core.phi -- those drive the FDoG pass above
+                        // and are scaled for FDoG's ~0-1 range, which is mostly
+                        // unreachable for ADoG's much smaller response range and
+                        // would zero out both screentone passes (see hdogAdogEpsilon
+                        // / hdogAdogPhi sliders).
+                        epsilon: parseFloat(hdogSliders.adogEpsilon.value),
+                        phi: parseFloat(hdogSliders.adogPhi.value),
+                        tau: parseFloat(adogSliders.tau.value),
+                        s: parseFloat(adogSliders.s.value),
+                        noiseScaleC: parseFloat(adogSliders.noiseScaleC.value),
+                    },
+                    adogSecondaryScaleFactor: parseFloat(hdogSliders.adogSecondaryScaleFactor.value),
+                };
+            }
+
+            return core; // xdog
+        }
+
+        // Instantiate the right processor class for the current mode
+        function makeProcessor(params) {
+            switch (currentMode) {
+                case 'fdog': return new dog.FDoG(params);
+                case 'adog': return new dog.ADoG(params);
+                case 'hdog': return new dog.HDoG(params);
+                default: return new dog.XDoG(params);
+            }
+        }
+
+        // Get the pre-threshold "sharpened" response for a channel, for color
+        // blending. XDoG/FDoG expose a dedicated processSharpened() convenience
+        // method; ADoG/HDoG don't, so fall back to processDetailed().sharpened
+        // (HDoG's `sharpened` is its FDoG sub-pass's sharpened image).
+        async function getSharpened(processor, channel) {
+            if (typeof processor.processSharpened === 'function') {
+                return processor.processSharpened(channel);
+            }
+            const detailed = await processor.processDetailed(channel);
+            return detailed.sharpened;
         }
 
         // Apply preprocessing
@@ -858,22 +1202,17 @@
                         channels.b.data[pixelIdx] = imageData.data[i + 2] / 255;
                     }
 
-                    let processor;
-                    if (currentMode === 'xdog') {
-                        processor = new dog.XDoG(params);
-                    } else {
-                        processor = new dog.FDoG(params);
-                    }
+                    const processor = makeProcessor(params);
 
                     // Luminance channel drives the line mask -- epsilon/phi act ONCE here,
                     // so line heaviness no longer varies per-channel.
                     const luminance = utilities.imageDataToLuminance(imageData);
 
                     const [lineMask, sharpR, sharpG, sharpB] = await Promise.all([
-                        processor.process(luminance),          // thresholded structure (0..1)
-                        processor.processSharpened(channels.r), // raw sharpened, no threshold
-                        processor.processSharpened(channels.g),
-                        processor.processSharpened(channels.b),
+                        processor.process(luminance),        // thresholded structure (0..1)
+                        getSharpened(processor, channels.r),  // raw sharpened, no threshold
+                        getSharpened(processor, channels.g),
+                        getSharpened(processor, channels.b),
                     ]);
                     processor.dispose();
 
@@ -898,16 +1237,9 @@
                     // Apply preprocessing
                     grayscale = applyPreprocessing(grayscale);
 
-                    let processedResult;
-                    if (currentMode === 'xdog') {
-                        const xdog = new dog.XDoG(params);
-                        processedResult = await xdog.process(grayscale);
-                        xdog.dispose();
-                    } else {
-                        const fdog = new dog.FDoG(params);
-                        processedResult = await fdog.process(grayscale);
-                        fdog.dispose();
-                    }
+                    const processor = makeProcessor(params);
+                    const processedResult = await processor.process(grayscale);
+                    processor.dispose();
 
                     result = utilities.luminanceToImageData(processedResult);
                 }
@@ -952,15 +1284,17 @@
 
         // Toggle mode UI
         function updateModeUI() {
-            if (currentMode === 'xdog') {
-                xdogPresets.classList.remove('d-none');
-                fdogPresets.classList.add('d-none');
-                fdogParamsSection.classList.add('collapsed');
-            } else {
-                xdogPresets.classList.add('d-none');
-                fdogPresets.classList.remove('d-none');
-                fdogParamsSection.classList.remove('collapsed');
-            }
+            xdogPresets.classList.toggle('d-none', currentMode !== 'xdog');
+            fdogPresets.classList.toggle('d-none', currentMode !== 'fdog');
+            adogPresets.classList.toggle('d-none', currentMode !== 'adog');
+            hdogPresets.classList.toggle('d-none', currentMode !== 'hdog');
+
+            // Accordion sections declare which modes they're relevant for via
+            // data-show-modes (comma-separated); collapse them otherwise.
+            document.querySelectorAll('[data-show-modes]').forEach(section => {
+                const modes = section.dataset.showModes.split(',');
+                section.classList.toggle('collapsed', !modes.includes(currentMode));
+            });
         }
 
         // Event Listeners
@@ -987,23 +1321,34 @@
             if (file) handleFile(file);
         });
 
+        // Default preset applied when switching into each mode
+        const DEFAULT_PRESET_BY_MODE = {
+            xdog: 'threshold',
+            fdog: 'standard',
+            adog: 'standard',
+            hdog: 'standard',
+        };
+        const APPLY_PRESET_BY_MODE = {
+            xdog: applyXDoGPreset,
+            fdog: applyFDoGPreset,
+            adog: applyADoGPreset,
+            hdog: applyHDoGPreset,
+        };
+
         // Mode toggle
         document.querySelectorAll('input[name="mode"]').forEach(radio => {
             radio.addEventListener('change', (e) => {
                 currentMode = e.target.value;
                 updateModeUI();
-                
+                applyEpsilonPhiRange(currentMode);
+
                 // Apply default preset for the mode
-                if (currentMode === 'xdog') {
-                    applyXDoGPreset('threshold');
-                    document.querySelectorAll('#xdogPresets .preset-btn').forEach(b => b.classList.remove('active'));
-                    document.querySelector('#xdogPresets .preset-btn[data-preset="threshold"]').classList.add('active');
-                } else {
-                    applyFDoGPreset('standard');
-                    document.querySelectorAll('#fdogPresets .preset-btn').forEach(b => b.classList.remove('active'));
-                    document.querySelector('#fdogPresets .preset-btn[data-preset="standard"]').classList.add('active');
-                }
-                
+                const presetName = DEFAULT_PRESET_BY_MODE[currentMode];
+                APPLY_PRESET_BY_MODE[currentMode](presetName);
+                document.querySelectorAll(`#${currentMode}Presets .preset-btn`).forEach(b => b.classList.remove('active'));
+                const defaultBtn = document.querySelector(`#${currentMode}Presets .preset-btn[data-preset="${presetName}"]`);
+                if (defaultBtn) defaultBtn.classList.add('active');
+
                 if (loadedImage) processImage();
             });
         });
@@ -1028,6 +1373,26 @@
             });
         });
 
+        // ADoG preset buttons
+        document.querySelectorAll('#adogPresets .preset-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('#adogPresets .preset-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                applyADoGPreset(btn.dataset.preset);
+                if (loadedImage) processImage();
+            });
+        });
+
+        // HDoG preset buttons
+        document.querySelectorAll('#hdogPresets .preset-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('#hdogPresets .preset-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                applyHDoGPreset(btn.dataset.preset);
+                if (loadedImage) processImage();
+            });
+        });
+
         // Core sliders
         Object.values(sliders).forEach(slider => {
             slider.addEventListener('input', updateSliderDisplays);
@@ -1038,6 +1403,22 @@
 
         // FDoG sliders
         Object.values(fdogSliders).forEach(slider => {
+            slider.addEventListener('input', updateSliderDisplays);
+            slider.addEventListener('change', () => {
+                if (loadedImage) processImage();
+            });
+        });
+
+        // ADoG sliders
+        Object.values(adogSliders).forEach(slider => {
+            slider.addEventListener('input', updateSliderDisplays);
+            slider.addEventListener('change', () => {
+                if (loadedImage) processImage();
+            });
+        });
+
+        // HDoG sliders
+        Object.values(hdogSliders).forEach(slider => {
             slider.addEventListener('input', updateSliderDisplays);
             slider.addEventListener('change', () => {
                 if (loadedImage) processImage();
@@ -1067,6 +1448,7 @@
         // Initialize
         updateSliderDisplays();
         updateModeUI();
+        applyEpsilonPhiRange(currentMode);
         applyXDoGPreset('threshold');
     </script>
 </body>
