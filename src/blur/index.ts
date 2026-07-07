@@ -1,14 +1,14 @@
 export {
     CPUIsotropicBlur, WebGLIsotropicBlur, WebGPUIsotropicBlur, IsotropicBlur
-} from './isotropic';
+} from './isotropic.js';
 export type {
     IsotropicBlurConfig
-} from './isotropic';
+} from './isotropic.js';
 export {
     CPUFlowGuidedBlur, WebGLFlowGuidedBlur, WebGPUFlowGuidedBlur, FlowGuidedBlur
-} from './flow-guided';
+} from './flow-guided.js';
 export type {
     FlowGuidedBlurConfig
-} from './flow-guided';
-export { GradientAlignedBlur } from './gradient-aligned';
-export type { GradientAlignedBlurConfig } from './gradient-aligned';
+} from './flow-guided.js';
+export { GradientAlignedBlur } from './gradient-aligned.js';
+export type { GradientAlignedBlurConfig } from './gradient-aligned.js';

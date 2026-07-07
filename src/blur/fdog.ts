@@ -5,9 +5,9 @@
  * 1. Apply DoG across edges (gradient-aligned)
  * 2. Smooth the result along edges (flow-aligned)
  */
-import { GradientAlignedBlur } from './gradient-aligned';
-import type { BlurStrategy,  ChannelImage, FlowField } from '../types';
-import { FlowGuidedBlur, type FlowGuidedBlurConfig } from './flow-guided';
+import { GradientAlignedBlur } from './gradient-aligned.js';
+import type { BlurStrategy,  ChannelImage, FlowField } from '../types.js';
+import { FlowGuidedBlur, type FlowGuidedBlurConfig } from './flow-guided.js';
 
 
 export class FDoGBlur implements BlurStrategy {

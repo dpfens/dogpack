@@ -54,6 +54,11 @@ export default [
   },
 
   // ESM bundle: two entrypoints, two output files
+  // NOTE: extension is .mjs (not .esm.js) — dist/bundle also holds the CJS
+  // bundle below, and since both live in the same directory a single
+  // package.json "type" field can't disambiguate a shared .js extension.
+  // Explicit .mjs/.cjs extensions sidestep that regardless of the root
+  // package's "type" field.
   {
     input: {
       index: 'src/index.ts',
@@ -61,7 +66,7 @@ export default [
     external,
     output: {
       dir: 'dist/bundle',
-      entryFileNames: '[name].esm.js',
+      entryFileNames: '[name].mjs',
       format: 'es',
       sourcemap: true,
     },
@@ -76,7 +81,7 @@ export default [
     external,
     output: {
       dir: 'dist/bundle',
-      entryFileNames: '[name].cjs.js',
+      entryFileNames: '[name].cjs',
       format: 'cjs',
       sourcemap: true,
       exports: 'named',

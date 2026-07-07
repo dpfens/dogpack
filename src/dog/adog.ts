@@ -11,11 +11,11 @@
 import { 
   type ChannelImage,  
   type BlurStrategy,
-} from '../types';
-import { createChannelImage, imageDataToLuminance, luminanceToImageData } from '../utils';
-import { IsotropicBlur } from '../blur/isotropic';
-import { gaussianSample } from '../utils';
-import { DEFAULT_ADOG_CONFIG, type ADoGConfig, type ADoGProcessingResult, type DoGConfig, type DoGImplementation } from './types';
+} from '../types.js';
+import { createChannelImage, imageDataToLuminance, luminanceToImageData } from '../utils/index.js';
+import { IsotropicBlur } from '../blur/isotropic.js';
+import { gaussianSample } from '../utils/index.js';
+import { DEFAULT_ADOG_CONFIG, type ADoGConfig, type ADoGProcessingResult, type DoGConfig, type DoGImplementation } from './types.js';
 
 /**
  * XDoG configuration combining DoG parameters with isotropic blur options

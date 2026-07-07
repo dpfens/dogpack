@@ -17,7 +17,7 @@
 // Types
 // ============================================================================
 
-import type { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from '../types';
+import type { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from '../types.js';
 
 // ============================================================================
 // WebGL Context Management

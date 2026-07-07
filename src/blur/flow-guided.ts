@@ -6,10 +6,10 @@
  * weighted by a Gaussian kernel. This produces blur that follows edge contours
  * rather than blurring across them.
  */
-import type { BlurStrategy, ChannelImage, FlowField } from '../types';
-import { createChannelImage, getPixelBilinear, generateGaussianKernel } from '../utils';
-import { createProgram } from '../utils/webgl';
-import { BaseCPUBlur, BaseWebGLBlur, BaseWebGPUBlur } from './base';
+import type { BlurStrategy, ChannelImage, FlowField } from '../types.js';
+import { createChannelImage, getPixelBilinear, generateGaussianKernel } from '../utils/index.js';
+import { createProgram } from '../utils/webgl.js';
+import { BaseCPUBlur, BaseWebGLBlur, BaseWebGPUBlur } from './base.js';
 
 
 interface FlowGuidedBlurStrategy {

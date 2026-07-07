@@ -83,31 +83,31 @@
  */
 
 // High-level API
-export type {BlurStrategy, BlurStrategyClass} from './types';
-export * as dog from './dog';
+export type {BlurStrategy, BlurStrategyClass} from './types.js';
+export * as dog from './dog/index.js';
 
 // Core processor (for advanced usage)
-export { DoGProcessor, ThresholdModes, applyCustomThreshold } from './processor';
+export { DoGProcessor, ThresholdModes, applyCustomThreshold } from './processor.js';
 
 // Blur strategies (for custom configurations)
-export * as blur from './blur';
+export * as blur from './blur/index.js';
 export type {  
   IsotropicBlurConfig,
   FlowGuidedBlurConfig
-} from './blur';
+} from './blur/index.js';
 
 // Edge Tangent Flow (for visualization or custom pipelines)
-export { EdgeTangentFlow } from './etf';
+export { EdgeTangentFlow } from './etf/index.js';
 
 // Preprocessing
 
-export * as preprocess from './preprocess'
+export * as preprocess from './preprocess/index.js'
 
 export type {
   ThresholdConfig,
   ThresholdStrategy
-} from './threshold';
-export * as threshold from './threshold'
+} from './threshold.js';
+export * as threshold from './threshold.js'
 
 // Types
 export type {
@@ -119,17 +119,17 @@ export type {
   BilateralFilterConfig,
   MedianFilterConfig,
   KuwaharaFilterConfig
-} from './types';
+} from './types.js';
 
 export {
   DEFAULT_ETF_CONFIG
-} from './types';
+} from './types.js';
 
 // Utilities
-export * as utilities from './utils';
+export * as utilities from './utils/index.js';
 // Extensions (composable strategies for advanced stylization)
 
-export * as extensions from './extensions';
+export * as extensions from './extensions/index.js';
 export type {
   ExtensionStrategy,
   DoGResult,
@@ -145,4 +145,4 @@ export type {
   NaturalMediaStyle,
   HatchingConfig,
   HatchTexture
-} from './extensions';
+} from './extensions/index.js';

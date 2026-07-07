@@ -5,9 +5,9 @@
  * Used for the DoG computation in FDoG, where we want to blur across
  * edges but not along them.
  */
-import type { BlurStrategy, ChannelImage, FlowField } from '../types';
-import { createChannelImage, getPixelBilinear, generateGaussianKernel } from '../utils';
-import { BaseCPUBlur } from './base';
+import type { BlurStrategy, ChannelImage, FlowField } from '../types.js';
+import { createChannelImage, getPixelBilinear, generateGaussianKernel } from '../utils/index.js';
+import { BaseCPUBlur } from './base.js';
 
 /**
  * Configuration for flow-guided blur

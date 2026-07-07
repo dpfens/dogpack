@@ -1,5 +1,5 @@
-import { HardThresholdStrategy, SoftThresholdStrategy, type ThresholdStrategy } from "../threshold";
-import type { BlurStrategy, ChannelImage } from "../types";
+import { HardThresholdStrategy, SoftThresholdStrategy, type ThresholdStrategy } from '../threshold.js';
+import type { BlurStrategy, ChannelImage } from '../types.js';
 
 /**
  * Configuration for Difference of Gaussians processing

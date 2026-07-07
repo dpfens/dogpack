@@ -10,11 +10,11 @@
 
 import { 
   type ChannelImage,
-} from '../types';
-import { andCombine } from '../utils';
-import { ADoG } from './adog';
-import { FDoG } from './fdog';
-import { DEFAULT_ADOG_CONFIG, DEFAULT_HDOG_CONFIG, type DoGImplementation, type HDoGConfig, type HDoGProcessingResult } from './types';
+} from '../types.js';
+import { andCombine } from '../utils/index.js';
+import { ADoG } from './adog.js';
+import { FDoG } from './fdog.js';
+import { DEFAULT_ADOG_CONFIG, DEFAULT_HDOG_CONFIG, type DoGImplementation, type HDoGConfig, type HDoGProcessingResult } from './types.js';
 
 
 export class HDoG implements DoGImplementation {

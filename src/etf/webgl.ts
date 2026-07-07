@@ -6,8 +6,8 @@
  * tangent extraction on the GPU.
  */
 
-import { type ChannelImage, type FlowField, type Vec2, type ETFConfig, DEFAULT_ETF_CONFIG } from '../types';
-import { createChannelImage} from '../utils';
+import { type ChannelImage, type FlowField, type Vec2, type ETFConfig, DEFAULT_ETF_CONFIG } from '../types.js';
+import { createChannelImage} from '../utils/index.js';
 
 /**
  * WebGL context and resources for ETF computation
