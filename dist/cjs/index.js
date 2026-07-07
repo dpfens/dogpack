@@ -83,16 +83,10 @@
  * ```
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.extensions = exports.utilities = exports.FDOG_STYLE_PRESETS = exports.STYLE_PRESETS = exports.DEFAULT_FDOG_CONFIG = exports.DEFAULT_ETF_CONFIG = exports.DEFAULT_DOG_CONFIG = exports.threshold = exports.preprocess = exports.EdgeTangentFlow = exports.blur = exports.applyCustomThreshold = exports.ThresholdModes = exports.DoGProcessor = exports.fdog = exports.xdog = exports.FDoG = exports.XDoG = exports.core = void 0;
-// High-level API
-exports.core = require("./core");
-var dog_1 = require("./core/dog");
-Object.defineProperty(exports, "XDoG", { enumerable: true, get: function () { return dog_1.XDoG; } });
-Object.defineProperty(exports, "FDoG", { enumerable: true, get: function () { return dog_1.FDoG; } });
-Object.defineProperty(exports, "xdog", { enumerable: true, get: function () { return dog_1.xdog; } });
-Object.defineProperty(exports, "fdog", { enumerable: true, get: function () { return dog_1.fdog; } });
+exports.extensions = exports.utilities = exports.DEFAULT_ETF_CONFIG = exports.threshold = exports.preprocess = exports.EdgeTangentFlow = exports.blur = exports.applyCustomThreshold = exports.ThresholdModes = exports.DoGProcessor = exports.dog = void 0;
+exports.dog = require("./dog");
 // Core processor (for advanced usage)
-var processor_1 = require("./core/processor");
+var processor_1 = require("./processor");
 Object.defineProperty(exports, "DoGProcessor", { enumerable: true, get: function () { return processor_1.DoGProcessor; } });
 Object.defineProperty(exports, "ThresholdModes", { enumerable: true, get: function () { return processor_1.ThresholdModes; } });
 Object.defineProperty(exports, "applyCustomThreshold", { enumerable: true, get: function () { return processor_1.applyCustomThreshold; } });
@@ -103,13 +97,9 @@ var etf_1 = require("./etf");
 Object.defineProperty(exports, "EdgeTangentFlow", { enumerable: true, get: function () { return etf_1.EdgeTangentFlow; } });
 // Preprocessing
 exports.preprocess = require("./preprocess");
-exports.threshold = require("./core/threshold");
-var types_1 = require("./core/types");
-Object.defineProperty(exports, "DEFAULT_DOG_CONFIG", { enumerable: true, get: function () { return types_1.DEFAULT_DOG_CONFIG; } });
+exports.threshold = require("./threshold");
+var types_1 = require("./types");
 Object.defineProperty(exports, "DEFAULT_ETF_CONFIG", { enumerable: true, get: function () { return types_1.DEFAULT_ETF_CONFIG; } });
-Object.defineProperty(exports, "DEFAULT_FDOG_CONFIG", { enumerable: true, get: function () { return types_1.DEFAULT_FDOG_CONFIG; } });
-Object.defineProperty(exports, "STYLE_PRESETS", { enumerable: true, get: function () { return types_1.STYLE_PRESETS; } });
-Object.defineProperty(exports, "FDOG_STYLE_PRESETS", { enumerable: true, get: function () { return types_1.FDOG_STYLE_PRESETS; } });
 // Utilities
 exports.utilities = require("./utils");
 // Extensions (composable strategies for advanced stylization)

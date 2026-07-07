@@ -10,7 +10,7 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.EdgeTangentFlow = void 0;
-const types_1 = require("../core/types");
+const types_1 = require("../types");
 const utils_1 = require("../utils");
 /**
  * Edge Tangent Flow field implementation

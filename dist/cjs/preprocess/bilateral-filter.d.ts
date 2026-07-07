@@ -1,4 +1,4 @@
-import type { ChannelImage } from "../core/types.js";
+import type { ChannelImage } from "../types.js";
 /**
  * Edge-preserving smoothing filter. Standalone preprocessing utility —
  * not part of ThresholdStrategy. Compose manually:

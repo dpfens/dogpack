@@ -6,7 +6,7 @@
  *
  * FIXED: WebGPUIsotropicBlur now supports parallel/concurrent blur operations
  */
-import type { BlurStrategy, ChannelImage } from '../core/types';
+import type { BlurStrategy, ChannelImage } from '../types';
 import { BaseCPUBlur, BaseWebGLBlur, BaseWebGPUBlur } from './base';
 /**
  * Configuration for isotropic Gaussian blur
@@ -39,6 +39,7 @@ export interface FlowGuidedBlurConfig {
 export declare class CPUIsotropicBlur extends BaseCPUBlur implements BlurStrategy {
     private config;
     constructor(config?: Partial<BaseIsotropicBlurConfig>);
+    dispose(): void;
     blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
 }
 /**
@@ -119,6 +120,7 @@ export type IsotropicBlurConfig = BaseIsotropicBlurConfig | WebGLBlurConfig | We
 export declare class IsotropicBlur implements BlurStrategy {
     instance: BlurStrategy;
     constructor(config: Partial<IsotropicBlurConfig>);
+    dispose(): void;
     blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
 }
 //# sourceMappingURL=isotropic.d.ts.map

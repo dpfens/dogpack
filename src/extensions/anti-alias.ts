@@ -1,5 +1,5 @@
 import { FlowGuidedBlur } from "../blur/index";
-import type { FlowField, ChannelImage } from "../core/types";
+import type { FlowField, ChannelImage } from "../types";
 import type { ExtensionStrategy } from "./base";
 
 /**
@@ -69,7 +69,9 @@ export class AntiAliasingStrategy implements ExtensionStrategy<
     }
     
     const flowBlur = new FlowGuidedBlur(etf, { stepSize: cfg.stepSize });
-    return flowBlur.blur(image, cfg.sigma);
+    const result = flowBlur.blur(image, cfg.sigma);
+    flowBlur.dispose();
+    return result;
   }
   
   /**

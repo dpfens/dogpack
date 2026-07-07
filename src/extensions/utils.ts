@@ -2,7 +2,7 @@
 // Utility Functions
 // =============================================================================
 
-import type { ChannelImage } from "../core/types";
+import type { ChannelImage } from "../types";
 import { createChannelImage } from "../utils";
 import type { RGBImage } from "./base";
 

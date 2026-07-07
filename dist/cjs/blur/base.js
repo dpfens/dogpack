@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BaseWebGPUBlur = exports.BaseWebGLBlur = exports.BaseCPUBlur = void 0;
 class BaseCPUBlur {
+    dispose() { }
     /**
    * Check if isotropic blur is supported
    * Always returns true as this is a pure JavaScript implementation

@@ -1,4 +1,5 @@
-import type { FDoGConfig, ChannelImage } from "../core/types";
+import type { ChannelImage } from "../types";
+import { type FDoGConfig } from "../dog";
 import type { ExtensionStrategy } from "./base";
 /**
  * Natural media style presets

@@ -81,19 +81,17 @@
  * const result = await xdog.process(cleaned);
  * ```
  */
-export * as core from './core';
-export type { BlurStrategy, BlurStrategyClass } from './core/types';
-export { XDoG, FDoG, xdog, fdog } from './core/dog';
-export type { XDoGConfig } from './core/dog';
-export { DoGProcessor, ThresholdModes, applyCustomThreshold } from './core/processor';
+export type { BlurStrategy, BlurStrategyClass } from './types';
+export * as dog from './dog';
+export { DoGProcessor, ThresholdModes, applyCustomThreshold } from './processor';
 export * as blur from './blur';
 export type { IsotropicBlurConfig, FlowGuidedBlurConfig } from './blur';
 export { EdgeTangentFlow } from './etf';
 export * as preprocess from './preprocess';
-export type { ThresholdConfig, ThresholdStrategy } from './core/threshold';
-export * as threshold from './core/threshold';
-export type { Vec2, ChannelImage, RGBImage, FlowField, DoGConfig, ETFConfig, FDoGConfig, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from './core/types';
-export { DEFAULT_DOG_CONFIG, DEFAULT_ETF_CONFIG, DEFAULT_FDOG_CONFIG, STYLE_PRESETS, FDOG_STYLE_PRESETS, } from './core/types';
+export type { ThresholdConfig, ThresholdStrategy } from './threshold';
+export * as threshold from './threshold';
+export type { Vec2, ChannelImage, RGBImage, FlowField, ETFConfig, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from './types';
+export { DEFAULT_ETF_CONFIG } from './types';
 export * as utilities from './utils';
 export * as extensions from './extensions';
 export type { ExtensionStrategy, DoGResult, AntiAliasingConfig, ColorRetentionConfig, ColorTransformFn, MaskTransformFn, PostProcessFn, BlendFunction, MultiScaleLayer, MultiScaleConfig, NaturalMediaConfig, NaturalMediaStyle, HatchingConfig, HatchTexture } from './extensions';

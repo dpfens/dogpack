@@ -27,6 +27,10 @@ export class FDoGBlur {
         this.flowBlur = new FlowGuidedBlur(flowField, config);
         this.sigmaM = sigmaM;
     }
+    dispose() {
+        this.gradientBlur.dispose();
+        this.flowBlur.dispose();
+    }
     setFlowField(flowField) {
         this.gradientBlur.setFlowField(flowField);
         this.flowBlur.setFlowField(flowField);

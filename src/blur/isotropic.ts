@@ -7,7 +7,7 @@
  * FIXED: WebGPUIsotropicBlur now supports parallel/concurrent blur operations
  */
 
-import type { BlurStrategy, ChannelImage } from '../core/types';
+import type { BlurStrategy, ChannelImage } from '../types';
 import { createChannelImage, getPixel,  generateGaussianKernel, computeKernelSize } from '../utils';
 import { BaseCPUBlur, BaseWebGLBlur, BaseWebGPUBlur } from './base';
 
@@ -53,6 +53,8 @@ export class CPUIsotropicBlur extends BaseCPUBlur implements BlurStrategy {
     super();
     this.config = { ...DEFAULT_ISOTROPIC_CONFIG, ...config };
   }
+
+  dispose(): void {}
   
   async blur(input: ChannelImage, sigma: number): Promise<ChannelImage> {
     if (sigma < 0.1) {
@@ -279,7 +281,7 @@ export class WebGLIsotropicBlur extends BaseWebGLBlur implements BlurStrategy {
   private initResources(canvas: OffscreenCanvas | HTMLCanvasElement): WebGLResources {
     if (this.resources) return this.resources;
     
-    const gl = canvas.getContext('webgl2');
+    const gl = canvas.getContext('webgl2') as WebGL2RenderingContext | null;
     if (!gl) {
       throw new Error('WebGL2 not supported');
     }
@@ -825,6 +827,10 @@ export class IsotropicBlur implements BlurStrategy {
         } else {
             this.instance = new CPUIsotropicBlur(config);
         }
+    }
+
+    dispose(): void {
+      this.instance.dispose();
     }
 
     async blur(input: ChannelImage, sigma: number): Promise<ChannelImage> {

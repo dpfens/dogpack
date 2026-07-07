@@ -876,8 +876,7 @@
     
     <script type="module">
         import { 
-            XDoG,
-            FDoG,
+            dog,
             utilities,
             preprocess,
             extensions,
@@ -1179,7 +1178,13 @@
         // Multi-Scale processing
         async function processMultiScale(luminance) {
             const strategy = extensions.multiScale.MultiScaleStrategy.withPreset(currentMSPreset);
-            return strategy.apply(luminance, { blendMode: msControls.blendMode.value });
+            strategy.config.blend = extensions.multiScale.BlendFunctions[msControls.blendMode.value];
+            try {
+                const result = await strategy.apply(luminance);
+                return result;
+            } finally {
+                strategy.config.layers.forEach(layer => layer.processor.dispose());
+            }
         }
 
         // Hatching processing
@@ -1191,12 +1196,13 @@
             }
             
             // Use processDetailed to get sharpened image efficiently
-            const xdog = new XDoG({
+            const xdog = new dog.XDoG({
                 sigma: 1.0,
                 p: parseFloat(hatchControls.p.value),
                 phi: parseFloat(hatchControls.phi.value),
             });
             const { sharpened } = await xdog.processDetailed(luminance);
+            xdog.dispose();
             
             const config = {
                 thresholdLevels,
@@ -1455,7 +1461,7 @@
         // Anti-Aliasing processing
         async function processAntiAliasing(luminance) {
             // First, process with FDoG to get edge image and ETF
-            const fdog = new FDoG({
+            const fdog = new dog.FDoG({
                 sigma: 1.4,
                 p: 20,
                 phi: 100,
@@ -1470,7 +1476,6 @@
                 sigma: parseFloat(aaControls.sigma.value),
                 stepSize: parseFloat(aaControls.step.value),
             });
-            
             return strategy.apply({
                 image: fdogResult.thresholded,
                 etf: fdogResult.etf,

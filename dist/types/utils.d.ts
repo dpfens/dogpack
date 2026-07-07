@@ -1,7 +1,7 @@
 /**
  * Image utility functions
  */
-import type { ChannelImage, RGBImage, Vec2 } from './core/types';
+import type { ChannelImage, RGBImage, Vec2 } from './types';
 /**
  * Create a new grayscale image with given dimensions
  */
@@ -90,4 +90,27 @@ export declare function tauToP(tau: number): number;
  * p = τ / (1 - τ), so τ = p / (p + 1)
  */
 export declare function pToTau(p: number): number;
+/**
+ * Sample a single value from a standard normal distribution N(0, 1)
+ * using the Box-Muller transform.
+ *
+ * Used by ADoG's adaptive noise injection (Eq. 6): the sampled value is
+ * scaled by a tone-dependent sigma(x) and added to the input luminance.
+ */
+export declare function gaussianSample(): number;
+/**
+ * Pixel-wise logical AND across N binarized (0/1) ChannelImages.
+ *
+ * Generalizes Eq. (7)/(9) from "Gaussian Image Binarization":
+ *   HDoG = FDoG ∧ ADoG_s ∧ ADoG_s'
+ *
+ * Since binarized images only contain 0 or 1, logical AND is equivalent to
+ * taking the minimum across images (no De Morgan's / inversion needed here
+ * -- see the paper's Eq. (8) for why AND and "invert-OR-invert" coincide;
+ * this just implements AND directly).
+ *
+ * All images must have matching dimensions; this is not checked here for
+ * performance -- validate upstream if inputs could mismatch.
+ */
+export declare function andCombine(images: ChannelImage[]): ChannelImage;
 //# sourceMappingURL=utils.d.ts.map

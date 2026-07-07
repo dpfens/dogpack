@@ -15,6 +15,7 @@ class CPUGradientAlignedBlur extends base_1.BaseCPUBlur {
         this.flowField = flowField;
         this.config = { ...DEFAULT_FLOW_CONFIG, ...config };
     }
+    dispose() { }
     setFlowField(flowField) {
         this.flowField = flowField;
     }

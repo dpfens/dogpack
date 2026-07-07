@@ -81,19 +81,17 @@
  * const result = await xdog.process(cleaned);
  * ```
  */
-// High-level API
-export * as core from './core';
-export { XDoG, FDoG, xdog, fdog } from './core/dog';
+export * as dog from './dog';
 // Core processor (for advanced usage)
-export { DoGProcessor, ThresholdModes, applyCustomThreshold } from './core/processor';
+export { DoGProcessor, ThresholdModes, applyCustomThreshold } from './processor';
 // Blur strategies (for custom configurations)
 export * as blur from './blur';
 // Edge Tangent Flow (for visualization or custom pipelines)
 export { EdgeTangentFlow } from './etf';
 // Preprocessing
 export * as preprocess from './preprocess';
-export * as threshold from './core/threshold';
-export { DEFAULT_DOG_CONFIG, DEFAULT_ETF_CONFIG, DEFAULT_FDOG_CONFIG, STYLE_PRESETS, FDOG_STYLE_PRESETS, } from './core/types';
+export * as threshold from './threshold';
+export { DEFAULT_ETF_CONFIG } from './types';
 // Utilities
 export * as utilities from './utils';
 // Extensions (composable strategies for advanced stylization)

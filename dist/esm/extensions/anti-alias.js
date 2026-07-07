@@ -33,7 +33,9 @@ export class AntiAliasingStrategy {
             return { data: new Float32Array(image.data), width: image.width, height: image.height };
         }
         const flowBlur = new FlowGuidedBlur(etf, { stepSize: cfg.stepSize });
-        return flowBlur.blur(image, cfg.sigma);
+        const result = flowBlur.blur(image, cfg.sigma);
+        flowBlur.dispose();
+        return result;
     }
     /**
      * Create anti-aliasing with preset intensity

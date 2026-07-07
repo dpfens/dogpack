@@ -24,6 +24,7 @@ class CPUIsotropicBlur extends base_1.BaseCPUBlur {
         super();
         this.config = { ...DEFAULT_ISOTROPIC_CONFIG, ...config };
     }
+    dispose() { }
     async blur(input, sigma) {
         if (sigma < 0.1) {
             // For very small sigma, just return a copy
@@ -627,6 +628,9 @@ class IsotropicBlur {
         else {
             this.instance = new CPUIsotropicBlur(config);
         }
+    }
+    dispose() {
+        this.instance.dispose();
     }
     async blur(input, sigma) {
         return this.instance.blur(input, sigma);

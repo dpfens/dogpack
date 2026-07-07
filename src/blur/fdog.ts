@@ -6,7 +6,7 @@
  * 2. Smooth the result along edges (flow-aligned)
  */
 import { GradientAlignedBlur } from './gradient-aligned';
-import type { BlurStrategy,  ChannelImage, FlowField } from '../core/types';
+import type { BlurStrategy,  ChannelImage, FlowField } from '../types';
 import { FlowGuidedBlur, type FlowGuidedBlurConfig } from './flow-guided';
 
 
@@ -36,6 +36,11 @@ export class FDoGBlur implements BlurStrategy {
     this.gradientBlur = new GradientAlignedBlur(flowField, config);
     this.flowBlur = new FlowGuidedBlur(flowField, config);
     this.sigmaM = sigmaM;
+  }
+
+  dispose(): void {
+    this.gradientBlur.dispose();
+    this.flowBlur.dispose();
   }
   
   setFlowField(flowField: FlowField): void {

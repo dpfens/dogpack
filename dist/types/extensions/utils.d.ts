@@ -1,4 +1,4 @@
-import type { ChannelImage } from "../core/types";
+import type { ChannelImage } from "../types";
 import type { RGBImage } from "./base";
 /**
  * Convert ImageData to RGBImage

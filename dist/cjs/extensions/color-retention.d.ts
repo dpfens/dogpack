@@ -13,7 +13,7 @@
  *
  * Based on Section 5.2 of the XDoG paper.
  */
-import type { ChannelImage } from '../core/types';
+import type { ChannelImage } from '../types';
 import type { RGBImage } from './base';
 /**
  * RGBA color tuple (values in 0-1 range)

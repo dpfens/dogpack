@@ -1,7 +1,7 @@
 /**
  * Image utility functions
  */
-import type { ChannelImage, RGBImage, Vec2 } from '../core/types.js';
+import type { ChannelImage, RGBImage, Vec2 } from '../types.js';
 /**
  * Create a new grayscale image with given dimensions
  */

@@ -1,4 +1,4 @@
-import type { BlurStrategy, ChannelImage, FlowField } from '../core/types';
+import type { BlurStrategy, ChannelImage, FlowField } from '../types';
 import { type FlowGuidedBlurConfig } from './flow-guided';
 export declare class FDoGBlur implements BlurStrategy {
     private gradientBlur;
@@ -12,6 +12,7 @@ export declare class FDoGBlur implements BlurStrategy {
      * @param config Additional configuration
      */
     constructor(flowField: FlowField, sigmaM: number, config?: Partial<FlowGuidedBlurConfig>);
+    dispose(): void;
     setFlowField(flowField: FlowField): void;
     setSigmaM(sigmaM: number): void;
     /**

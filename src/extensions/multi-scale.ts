@@ -6,8 +6,9 @@
  * 2. Supply their own custom blend function
  */
 
-import { FDoG, XDoG } from '../core/dog';
-import type { ChannelImage, DoGImplementation } from '../core/types';
+import { FDoG, XDoG} from '../dog';
+import type { DoGImplementation } from '../dog/types';
+import type { ChannelImage } from '../types';
 import { createChannelImage } from '../utils';
 import type { ExtensionStrategy } from './base';
 

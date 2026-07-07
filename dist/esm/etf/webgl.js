@@ -5,7 +5,7 @@
  * gradient computation, structure tensor building/smoothing, and
  * tangent extraction on the GPU.
  */
-import { DEFAULT_ETF_CONFIG } from '../core/types';
+import { DEFAULT_ETF_CONFIG } from '../types';
 import { createChannelImage } from '../utils';
 /**
  * Shader source code

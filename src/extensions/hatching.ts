@@ -1,4 +1,4 @@
-import type { ChannelImage } from "../core/types";
+import type { ChannelImage } from "../types";
 import { createChannelImage, getPixel, getPixelBilinear } from "../utils";
 import type { ExtensionStrategy } from "./base";
 

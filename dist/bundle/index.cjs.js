@@ -201,15 +201,63 @@ function tauToP(tau) {
 function pToTau(p) {
     return p / (p + 1);
 }
+/**
+ * Sample a single value from a standard normal distribution N(0, 1)
+ * using the Box-Muller transform.
+ *
+ * Used by ADoG's adaptive noise injection (Eq. 6): the sampled value is
+ * scaled by a tone-dependent sigma(x) and added to the input luminance.
+ */
+function gaussianSample() {
+    // Avoid Math.log(0) by excluding 0 from the uniform sample
+    let u1 = 0;
+    while (u1 === 0) {
+        u1 = Math.random();
+    }
+    const u2 = Math.random();
+    return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+}
+/**
+ * Pixel-wise logical AND across N binarized (0/1) ChannelImages.
+ *
+ * Generalizes Eq. (7)/(9) from "Gaussian Image Binarization":
+ *   HDoG = FDoG ∧ ADoG_s ∧ ADoG_s'
+ *
+ * Since binarized images only contain 0 or 1, logical AND is equivalent to
+ * taking the minimum across images (no De Morgan's / inversion needed here
+ * -- see the paper's Eq. (8) for why AND and "invert-OR-invert" coincide;
+ * this just implements AND directly).
+ *
+ * All images must have matching dimensions; this is not checked here for
+ * performance -- validate upstream if inputs could mismatch.
+ */
+function andCombine(images) {
+    if (images.length === 0) {
+        throw new Error('andCombine requires at least one image');
+    }
+    const { width, height } = images[0];
+    const output = createChannelImage(width, height);
+    const size = width * height;
+    for (let i = 0; i < size; i++) {
+        let v = 1;
+        for (const img of images) {
+            v = Math.min(v, img.data[i]);
+        }
+        output.data[i] = v;
+    }
+    return output;
+}
 
 var utils = /*#__PURE__*/Object.freeze({
     __proto__: null,
+    andCombine: andCombine,
     at: at,
     clamp: clamp$1,
     cloneChannelImage: cloneChannelImage,
     computeKernelSize: computeKernelSize,
     createChannelImage: createChannelImage,
     dotVec2: dotVec2,
+    gaussianSample: gaussianSample,
     generateGaussianKernel: generateGaussianKernel$1,
     getIndex: getIndex,
     getPixel: getPixel,
@@ -234,6 +282,24 @@ class SoftThresholdStrategy {
             const epsilon = at(config.epsilon, i);
             const phi = at(config.phi, i);
             output.data[i] = u >= epsilon ? 1.0 : 1.0 + Math.tanh(phi * (u - epsilon));
+        }
+        return output;
+    }
+}
+/**
+ * Hard black/white threshold (step function).
+ * Equivalent to φ → ∞ in SoftThresholdStrategy, and to ThresholdModes.hard
+ * in processor.ts, but expressed as a ThresholdStrategy so it can be plugged
+ * into DoGConfig.thresholdStrategy (e.g. as ADoG's default, since the paper's
+ * screentone output is binarized rather than soft-thresholded).
+ */
+class HardThresholdStrategy {
+    threshold(input, config) {
+        const output = createChannelImage(input.width, input.height);
+        const size = input.width * input.height;
+        for (let i = 0; i < size; i++) {
+            const eps = at(config.epsilon, i);
+            output.data[i] = input.data[i] >= eps ? 1.0 : 0.0;
         }
         return output;
     }
@@ -308,16 +374,11 @@ class HysteresisThresholdStrategy {
 
 var threshold = /*#__PURE__*/Object.freeze({
     __proto__: null,
+    HardThresholdStrategy: HardThresholdStrategy,
     HysteresisThresholdStrategy: HysteresisThresholdStrategy,
     SoftThresholdStrategy: SoftThresholdStrategy
 });
 
-/**
- * Core types for XDoG/FDoG line drawing implementation
- *
- * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
- * advanced image stylization" by Winnemöller et al. (2012)
- */
 /**
  * Default DoG configuration values
  * Based on paper's recommendations and Appendix A parameter ranges
@@ -331,13 +392,6 @@ const DEFAULT_DOG_CONFIG = {
     thresholdStrategy: new SoftThresholdStrategy()
 };
 /**
- * Default ETF configuration values
- */
-const DEFAULT_ETF_CONFIG = {
-    iterations: 3,
-    kernelSize: 5,
-};
-/**
  * Default FDoG configuration values
  * Based on Table A.1 in the paper
  */
@@ -346,6 +400,30 @@ const DEFAULT_FDOG_CONFIG = {
     sigmaC: 2.5, // Structure tensor smoothing
     sigmaM: 4.0, // Flow-aligned smoothing  
     sigmaA: 1.0, // Anti-aliasing
+};
+/**
+ * Default ADoG configuration values
+ * Based on Section 3.2 of "Gaussian Image Binarization"
+ * (σc = 1.0, σs = 1.6σc, τ = 0.99, s = 2.0, noise c = 0.01)
+ */
+const DEFAULT_ADOG_CONFIG = {
+    ...DEFAULT_DOG_CONFIG,
+    sigma: 1.0, // σc
+    k: 1.6, // σs = k * σc
+    tau: 0.99,
+    s: 2.0,
+    noiseScaleC: 0.01,
+    kernelSizeMultiplier: 6,
+    thresholdStrategy: new HardThresholdStrategy(), // ADoG binarizes; hard threshold matches the paper's step-function output
+};
+/**
+ * Default HDoG configuration values
+ * s' defaults to 4s per the paper's empirical setting (Eq. 9)
+ */
+const DEFAULT_HDOG_CONFIG = {
+    fdog: {},
+    adog: {},
+    adogSecondaryScaleFactor: 4,
 };
 /**
  * Preset configurations for common styles from the paper
@@ -439,15 +517,32 @@ const FDOG_STYLE_PRESETS = {
         sigmaA: 0.75,
     },
 };
+/**
+ * Preset ADoG configurations
+ * (No presets given directly in the paper's tables beyond the defaults
+ * above; add named presets here as you tune them, e.g. denser/lighter
+ * screentone variants.)
+ */
+const ADOG_STYLE_PRESETS = {
+    standard: {
+        ...DEFAULT_ADOG_CONFIG,
+    },
+};
 
-var types = /*#__PURE__*/Object.freeze({
-    __proto__: null,
-    DEFAULT_DOG_CONFIG: DEFAULT_DOG_CONFIG,
-    DEFAULT_ETF_CONFIG: DEFAULT_ETF_CONFIG,
-    DEFAULT_FDOG_CONFIG: DEFAULT_FDOG_CONFIG,
-    FDOG_STYLE_PRESETS: FDOG_STYLE_PRESETS,
-    STYLE_PRESETS: STYLE_PRESETS
-});
+/**
+ * Core types for XDoG/FDoG/ADoG/HDoG line drawing implementation
+ *
+ * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
+ * advanced image stylization" by Winnemöller et al. (2012)
+ * and: "Gaussian Image Binarization" by Kang & Stamoulis (2021)
+ */
+/**
+ * Default ETF configuration values
+ */
+const DEFAULT_ETF_CONFIG = {
+    iterations: 3,
+    kernelSize: 5,
+};
 
 /**
  * Difference of Gaussians processor
@@ -481,6 +576,9 @@ class DoGProcessor {
         this.blurStrategy = blurStrategy;
         this.config = { ...DEFAULT_DOG_CONFIG, ...config };
         this.thresholdStrategy = config.thresholdStrategy ?? new SoftThresholdStrategy();
+    }
+    dispose() {
+        this.blurStrategy.dispose();
     }
     /**
      * Process an image through the DoG pipeline
@@ -694,12 +792,921 @@ function applyCustomThreshold(input, thresholdFn) {
     return output;
 }
 
-var processor = /*#__PURE__*/Object.freeze({
-    __proto__: null,
-    DoGProcessor: DoGProcessor,
-    ThresholdModes: ThresholdModes,
-    applyCustomThreshold: applyCustomThreshold
-});
+class BaseCPUBlur {
+    dispose() { }
+    /**
+   * Check if isotropic blur is supported
+   * Always returns true as this is a pure JavaScript implementation
+   */
+    static isSupported() {
+        return true;
+    }
+    /**
+     * Get reason if unsupported (always undefined for this implementation)
+     */
+    static getUnsupportedReason() {
+        return undefined;
+    }
+}
+class BaseWebGLBlur {
+    /**
+     * Check if WebGL2 is supported in the current environment
+     */
+    static isSupported() {
+        try {
+            if (typeof OffscreenCanvas !== 'undefined') {
+                const canvas = new OffscreenCanvas(1, 1);
+                const gl = canvas.getContext('webgl2');
+                return gl !== null;
+            }
+            else if (typeof document !== 'undefined') {
+                const canvas = document.createElement('canvas');
+                const gl = canvas.getContext('webgl2');
+                return gl !== null;
+            }
+            return false;
+        }
+        catch {
+            return false;
+        }
+    }
+    /**
+     * Get reason if WebGL2 is not supported
+     */
+    static getUnsupportedReason() {
+        if (typeof OffscreenCanvas === 'undefined' && typeof document === 'undefined') {
+            return 'Neither OffscreenCanvas nor document is available';
+        }
+        try {
+            if (typeof OffscreenCanvas !== 'undefined') {
+                const canvas = new OffscreenCanvas(1, 1);
+                if (!canvas.getContext('webgl2')) {
+                    return 'WebGL2 context creation failed on OffscreenCanvas';
+                }
+            }
+            else {
+                const canvas = document.createElement('canvas');
+                if (!canvas.getContext('webgl2')) {
+                    return 'WebGL2 context creation failed';
+                }
+            }
+        }
+        catch (e) {
+            return `WebGL2 initialization error: ${e}`;
+        }
+        return undefined;
+    }
+}
+class BaseWebGPUBlur {
+    static cachedAdapter = null;
+    static cachedDevice = null;
+    static devicePromise = null;
+    static adapterInfo = null;
+    static isSoftwareRenderer = false;
+    /**
+     * Check if WebGPU is supported (sync check - just API availability)
+     */
+    static isSupported() {
+        return typeof navigator !== 'undefined' && 'gpu' in navigator;
+    }
+    /**
+     * Get reason if WebGPU is not supported
+     */
+    static getUnsupportedReason() {
+        if (typeof navigator === 'undefined') {
+            return 'navigator is not available (not in browser environment)';
+        }
+        if (!('gpu' in navigator)) {
+            return 'WebGPU is not supported in this browser';
+        }
+        return undefined;
+    }
+    /**
+     * Check if the adapter is a software/fallback renderer (call after getWebGPUDevice)
+     */
+    static isFallbackAdapter() {
+        return this.isSoftwareRenderer;
+    }
+    /**
+     * Get adapter info (call after getWebGPUDevice)
+     */
+    static getAdapterInfo() {
+        return this.adapterInfo;
+    }
+    /**
+     * Async check if WebGPU is actually usable with hardware acceleration
+     * Returns false for software renderers like SwiftShader
+     */
+    static async isAvailable(allowSoftware = false) {
+        const device = await BaseWebGPUBlur.getWebGPUDevice();
+        if (!device)
+            return false;
+        if (!allowSoftware && this.isSoftwareRenderer)
+            return false;
+        return true;
+    }
+    /**
+     * Detect if adapter is a software renderer
+     */
+    static detectSoftwareRenderer(adapter, info) {
+        // Most reliable check
+        if (adapter.isFallbackAdapter) {
+            return true;
+        }
+        // Check device type
+        if (info.type === 'CPU') {
+            return true;
+        }
+        // Check for known software renderer signatures
+        const description = (info.description || '').toLowerCase();
+        const vendor = (info.vendor || '').toLowerCase();
+        const architecture = (info.architecture || '').toLowerCase();
+        const softwareIndicators = [
+            'swiftshader',
+            'llvmpipe',
+            'softpipe',
+            'microsoft basic render',
+            'software',
+        ];
+        return softwareIndicators.some((indicator) => description.includes(indicator) ||
+            vendor.includes(indicator) ||
+            architecture.includes(indicator));
+    }
+    /**
+     * Get or create WebGPU device (shared)
+     */
+    static async getWebGPUDevice() {
+        if (this.cachedDevice)
+            return this.cachedDevice;
+        if (this.devicePromise)
+            return this.devicePromise;
+        this.devicePromise = (async () => {
+            try {
+                if (!navigator.gpu)
+                    return null;
+                this.cachedAdapter = await navigator.gpu.requestAdapter();
+                if (!this.cachedAdapter)
+                    return null;
+                // Get adapter info and detect software renderer
+                this.adapterInfo = await this.cachedAdapter.info;
+                this.isSoftwareRenderer = this.detectSoftwareRenderer(this.cachedAdapter, this.adapterInfo);
+                this.cachedDevice = await this.cachedAdapter.requestDevice();
+                // Handle device loss
+                this.cachedDevice.lost.then(() => {
+                    this.cachedDevice = null;
+                    this.cachedAdapter = null;
+                    this.adapterInfo = null;
+                    this.devicePromise = null;
+                    this.isSoftwareRenderer = false;
+                });
+                return this.cachedDevice;
+            }
+            catch {
+                return null;
+            }
+        })();
+        return this.devicePromise;
+    }
+}
+
+/**
+ * Blur strategies for DoG processing
+ *
+ * Provides both isotropic (standard) and anisotropic (flow-guided) blur
+ * implementations for use in XDoG and FDoG pipelines.
+ *
+ * FIXED: WebGPUIsotropicBlur now supports parallel/concurrent blur operations
+ */
+const DEFAULT_ISOTROPIC_CONFIG = {
+    kernelSizeMultiplier: 6,
+};
+/**
+ * Standard isotropic Gaussian blur using separable convolution
+ * This is the blur used in basic XDoG
+ */
+class CPUIsotropicBlur extends BaseCPUBlur {
+    config;
+    constructor(config = {}) {
+        super();
+        this.config = { ...DEFAULT_ISOTROPIC_CONFIG, ...config };
+    }
+    dispose() { }
+    async blur(input, sigma) {
+        if (sigma < 0.1) {
+            // For very small sigma, just return a copy
+            return {
+                data: new Float32Array(input.data),
+                width: input.width,
+                height: input.height,
+            };
+        }
+        // Compute kernel size (odd number)
+        const kernelSize = computeKernelSize(sigma, this.config.kernelSizeMultiplier);
+        const kernel = generateGaussianKernel$1(sigma, kernelSize);
+        const halfKernel = Math.floor(kernelSize / 2);
+        // Separable convolution: horizontal pass
+        const temp = createChannelImage(input.width, input.height);
+        for (let y = 0; y < input.height; y++) {
+            for (let x = 0; x < input.width; x++) {
+                let sum = 0;
+                for (let k = 0; k < kernelSize; k++) {
+                    const sampleX = x + k - halfKernel;
+                    sum += getPixel(input, sampleX, y) * kernel[k];
+                }
+                temp.data[y * input.width + x] = sum;
+            }
+        }
+        // Separable convolution: vertical pass
+        const output = createChannelImage(input.width, input.height);
+        for (let y = 0; y < input.height; y++) {
+            for (let x = 0; x < input.width; x++) {
+                let sum = 0;
+                for (let k = 0; k < kernelSize; k++) {
+                    const sampleY = y + k - halfKernel;
+                    sum += getPixel(temp, x, sampleY) * kernel[k];
+                }
+                output.data[y * input.width + x] = sum;
+            }
+        }
+        return output;
+    }
+}
+/**
+ * Vertex shader for WebGL2 - simple fullscreen quad
+ */
+const VERTEX_SHADER$3 = `#version 300 es
+  in vec2 a_position;
+  in vec2 a_texCoord;
+  out vec2 v_texCoord;
+  
+  void main() {
+    gl_Position = vec4(a_position, 0.0, 1.0);
+    v_texCoord = a_texCoord;
+  }
+`;
+/**
+ * Fragment shader for horizontal Gaussian blur pass (WebGL2)
+ */
+const HORIZONTAL_BLUR_SHADER = `#version 300 es
+  precision highp float;
+  
+  uniform sampler2D u_image;
+  uniform vec2 u_resolution;
+  uniform float u_kernel[64];
+  uniform int u_kernelSize;
+  
+  in vec2 v_texCoord;
+  out vec4 fragColor;
+  
+  void main() {
+    vec2 texelSize = 1.0 / u_resolution;
+    float result = 0.0;
+    int halfSize = u_kernelSize / 2;
+    
+    for (int i = 0; i < 64; i++) {
+      if (i >= u_kernelSize) break;
+      int offset = i - halfSize;
+      vec2 samplePos = v_texCoord + vec2(float(offset) * texelSize.x, 0.0);
+      result += texture(u_image, samplePos).r * u_kernel[i];
+    }
+    
+    fragColor = vec4(result, result, result, 1.0);
+  }
+`;
+/**
+ * Fragment shader for vertical Gaussian blur pass (WebGL2)
+ */
+const VERTICAL_BLUR_SHADER = `#version 300 es
+  precision highp float;
+  
+  uniform sampler2D u_image;
+  uniform vec2 u_resolution;
+  uniform float u_kernel[64];
+  uniform int u_kernelSize;
+  
+  in vec2 v_texCoord;
+  out vec4 fragColor;
+  
+  void main() {
+    vec2 texelSize = 1.0 / u_resolution;
+    float result = 0.0;
+    int halfSize = u_kernelSize / 2;
+    
+    for (int i = 0; i < 64; i++) {
+      if (i >= u_kernelSize) break;
+      int offset = i - halfSize;
+      vec2 samplePos = v_texCoord + vec2(0.0, float(offset) * texelSize.y);
+      result += texture(u_image, samplePos).r * u_kernel[i];
+    }
+    
+    fragColor = vec4(result, result, result, 1.0);
+  }
+`;
+/**
+ * Compile a WebGL2 shader
+ */
+function compileShader$2(gl, source, type) {
+    const shader = gl.createShader(type);
+    if (!shader) {
+        throw new Error('Failed to create shader');
+    }
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        const info = gl.getShaderInfoLog(shader);
+        gl.deleteShader(shader);
+        throw new Error(`Shader compilation failed: ${info}`);
+    }
+    return shader;
+}
+/**
+ * Create a WebGL2 program from vertex and fragment shaders
+ */
+function createProgram$3(gl, vertexSource, fragmentSource) {
+    const vertexShader = compileShader$2(gl, vertexSource, gl.VERTEX_SHADER);
+    const fragmentShader = compileShader$2(gl, fragmentSource, gl.FRAGMENT_SHADER);
+    const program = gl.createProgram();
+    if (!program) {
+        throw new Error('Failed to create program');
+    }
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        const info = gl.getProgramInfoLog(program);
+        gl.deleteProgram(program);
+        throw new Error(`Program linking failed: ${info}`);
+    }
+    // Clean up shaders (they're now part of the program)
+    gl.deleteShader(vertexShader);
+    gl.deleteShader(fragmentShader);
+    return program;
+}
+const DEFAULT_WEBGL_CONFIG$1 = {
+    kernelSizeMultiplier: 6,
+    maxKernelSize: 63,
+};
+/**
+ * WebGL2-accelerated isotropic Gaussian blur
+ * Uses separable convolution with two passes (horizontal + vertical)
+ */
+class WebGLIsotropicBlur extends BaseWebGLBlur {
+    config;
+    resources = null;
+    currentWidth = 0;
+    currentHeight = 0;
+    framebuffer = null;
+    textures = [];
+    constructor(config = {}) {
+        super();
+        this.config = { ...DEFAULT_WEBGL_CONFIG$1, ...config };
+    }
+    initResources(canvas) {
+        if (this.resources)
+            return this.resources;
+        const gl = canvas.getContext('webgl2');
+        if (!gl) {
+            throw new Error('WebGL2 not supported');
+        }
+        const quadBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+        const texCoordBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW);
+        const horizontalBlurProgram = createProgram$3(gl, VERTEX_SHADER$3, HORIZONTAL_BLUR_SHADER);
+        const verticalBlurProgram = createProgram$3(gl, VERTEX_SHADER$3, VERTICAL_BLUR_SHADER);
+        this.resources = {
+            gl,
+            canvas,
+            horizontalBlurProgram,
+            verticalBlurProgram,
+            quadBuffer: quadBuffer,
+            texCoordBuffer: texCoordBuffer,
+        };
+        return this.resources;
+    }
+    async blur(input, sigma) {
+        if (sigma < 0.1) {
+            return {
+                data: new Float32Array(input.data),
+                width: input.width,
+                height: input.height,
+            };
+        }
+        const canvas = new OffscreenCanvas(1, 1);
+        const resources = this.initResources(canvas);
+        const { gl } = resources;
+        const { width, height } = input;
+        const kernelSize = Math.min(this.config.maxKernelSize, Math.max(3, Math.floor(sigma * this.config.kernelSizeMultiplier) | 1));
+        const kernel = generateGaussianKernel$1(sigma, kernelSize);
+        // Create or reuse textures
+        if (this.currentWidth !== width || this.currentHeight !== height) {
+            this.textures.forEach(t => gl.deleteTexture(t));
+            this.textures = [];
+            for (let i = 0; i < 3; i++) {
+                const texture = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, texture);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, width, height, 0, gl.RED, gl.FLOAT, null);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                this.textures.push(texture);
+            }
+            if (this.framebuffer) {
+                gl.deleteFramebuffer(this.framebuffer);
+            }
+            this.framebuffer = gl.createFramebuffer();
+            this.currentWidth = width;
+            this.currentHeight = height;
+        }
+        // Upload input data
+        gl.bindTexture(gl.TEXTURE_2D, this.textures[0]);
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RED, gl.FLOAT, input.data);
+        // Horizontal blur
+        this.blurPass(resources, this.textures[0], this.textures[1], kernel, kernelSize, true);
+        // Vertical blur
+        this.blurPass(resources, this.textures[1], this.textures[2], kernel, kernelSize, false);
+        // Read back result
+        gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.framebuffer);
+        gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.textures[2], 0);
+        const resultData = new Float32Array(width * height);
+        gl.readPixels(0, 0, width, height, gl.RED, gl.FLOAT, resultData);
+        return {
+            data: resultData,
+            width,
+            height,
+        };
+    }
+    blurPass(resources, inputTexture, outputTexture, kernel, kernelSize, isHorizontal) {
+        const { gl, quadBuffer, texCoordBuffer } = resources;
+        const program = isHorizontal ? resources.horizontalBlurProgram : resources.verticalBlurProgram;
+        gl.useProgram(program);
+        gl.viewport(0, 0, this.currentWidth, this.currentHeight);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, outputTexture, 0);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, inputTexture);
+        gl.uniform1i(gl.getUniformLocation(program, 'u_image'), 0);
+        gl.uniform2f(gl.getUniformLocation(program, 'u_resolution'), this.currentWidth, this.currentHeight);
+        gl.uniform1iv(gl.getUniformLocation(program, 'u_kernel'), Array.from(kernel));
+        gl.uniform1i(gl.getUniformLocation(program, 'u_kernelSize'), kernelSize);
+        gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
+        const posLocation = gl.getAttribLocation(program, 'a_position');
+        gl.vertexAttribPointer(posLocation, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(posLocation);
+        gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+        const texCoordLocation = gl.getAttribLocation(program, 'a_texCoord');
+        gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(texCoordLocation);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+    dispose() {
+        if (this.resources) {
+            const { gl } = this.resources;
+            gl.deleteProgram(this.resources.horizontalBlurProgram);
+            gl.deleteProgram(this.resources.verticalBlurProgram);
+            gl.deleteBuffer(this.resources.quadBuffer);
+            gl.deleteBuffer(this.resources.texCoordBuffer);
+        }
+        const { gl } = this.resources || { gl: null };
+        if (gl) {
+            this.textures.forEach(t => gl.deleteTexture(t));
+            if (this.framebuffer) {
+                gl.deleteFramebuffer(this.framebuffer);
+            }
+        }
+        this.resources = null;
+        this.textures = [];
+        this.framebuffer = null;
+        this.currentWidth = 0;
+        this.currentHeight = 0;
+    }
+}
+const DEFAULT_WEBGPU_CONFIG$1 = {
+    kernelSizeMultiplier: 6,
+    maxKernelSize: 63,
+};
+const HORIZONTAL_BLUR_WGSL = `
+struct Params {
+  width: u32,
+  height: u32,
+  kernelSize: u32,
+  _pad: u32,
+}
+
+@group(0) @binding(0)
+var<uniform> params: Params;
+
+@group(0) @binding(1)
+var<storage, read> kernel: array<f32>;
+
+@group(0) @binding(2)
+var<storage, read> input: array<f32>;
+
+@group(0) @binding(3)
+var<storage, read_write> output: array<f32>;
+
+@compute @workgroup_size(16, 16)
+fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+  let x = global_id.x;
+  let y = global_id.y;
+  
+  if (x >= params.width || y >= params.height) {
+    return;
+  }
+  
+  let halfSize = i32(params.kernelSize) / 2;
+  var sum = 0.0;
+  
+  for (var k = 0; k < i32(params.kernelSize); k = k + 1) {
+    let sampleX = i32(x) + k - halfSize;
+    let clampedX = clamp(sampleX, 0, i32(params.width) - 1);
+    let sampleIdx = u32(clampedX) + y * params.width;
+    sum = sum + input[sampleIdx] * kernel[u32(k)];
+  }
+  
+  output[x + y * params.width] = sum;
+}
+`;
+const VERTICAL_BLUR_WGSL = `
+struct Params {
+  width: u32,
+  height: u32,
+  kernelSize: u32,
+  _pad: u32,
+}
+
+@group(0) @binding(0)
+var<uniform> params: Params;
+
+@group(0) @binding(1)
+var<storage, read> kernel: array<f32>;
+
+@group(0) @binding(2)
+var<storage, read> input: array<f32>;
+
+@group(0) @binding(3)
+var<storage, read_write> output: array<f32>;
+
+@compute @workgroup_size(16, 16)
+fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+  let x = global_id.x;
+  let y = global_id.y;
+  
+  if (x >= params.width || y >= params.height) {
+    return;
+  }
+  
+  let halfSize = i32(params.kernelSize) / 2;
+  var sum = 0.0;
+  
+  for (var k = 0; k < i32(params.kernelSize); k = k + 1) {
+    let sampleY = i32(y) + k - halfSize;
+    let clampedY = clamp(sampleY, 0, i32(params.height) - 1);
+    let sampleIdx = x + u32(clampedY) * params.width;
+    sum = sum + input[sampleIdx] * kernel[u32(k)];
+  }
+  
+  output[x + y * params.width] = sum;
+}
+`;
+/**
+ * WebGPU-accelerated isotropic Gaussian blur
+ * Uses compute shaders with separable convolution
+ *
+ * FIXED: Now supports concurrent/parallel blur calls by creating
+ * separate staging buffers for each operation instead of reusing one.
+ */
+class WebGPUIsotropicBlur extends BaseWebGPUBlur {
+    config;
+    resources = null;
+    // Reusable buffers for compute operations
+    paramsBuffer = null;
+    kernelBuffer = null;
+    inputBuffer = null;
+    tempBuffer = null;
+    outputBuffer = null;
+    currentBufferSize = 0;
+    currentKernelSize = 0;
+    constructor(config = {}) {
+        super();
+        this.config = { ...DEFAULT_WEBGPU_CONFIG$1, ...config };
+    }
+    /**
+     * Initialize WebGPU resources
+     */
+    async initResources() {
+        if (this.resources)
+            return this.resources;
+        const device = await WebGPUIsotropicBlur.getWebGPUDevice();
+        if (!device) {
+            throw new Error('WebGPU device not available');
+        }
+        // Create bind group layout
+        const bindGroupLayout = device.createBindGroupLayout({
+            entries: [
+                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+                { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+                { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+                { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+            ],
+        });
+        const pipelineLayout = device.createPipelineLayout({
+            bindGroupLayouts: [bindGroupLayout],
+        });
+        // Create compute pipelines
+        const horizontalPipeline = device.createComputePipeline({
+            layout: pipelineLayout,
+            compute: {
+                module: device.createShaderModule({ code: HORIZONTAL_BLUR_WGSL }),
+                entryPoint: 'main',
+            },
+        });
+        const verticalPipeline = device.createComputePipeline({
+            layout: pipelineLayout,
+            compute: {
+                module: device.createShaderModule({ code: VERTICAL_BLUR_WGSL }),
+                entryPoint: 'main',
+            },
+        });
+        this.resources = {
+            device,
+            horizontalPipeline,
+            verticalPipeline,
+            bindGroupLayout,
+        };
+        return this.resources;
+    }
+    /**
+     * Ensure buffers are sized correctly
+     */
+    ensureBuffers(device, pixelCount, kernelSize) {
+        const bufferSize = pixelCount * 4; // Float32
+        if (this.currentBufferSize < bufferSize) {
+            // Clean up old buffers
+            this.inputBuffer?.destroy();
+            this.tempBuffer?.destroy();
+            this.outputBuffer?.destroy();
+            this.inputBuffer = device.createBuffer({
+                size: bufferSize,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+            });
+            this.tempBuffer = device.createBuffer({
+                size: bufferSize,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+            });
+            this.outputBuffer = device.createBuffer({
+                size: bufferSize,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+            });
+            this.currentBufferSize = bufferSize;
+        }
+        if (this.currentKernelSize < kernelSize) {
+            this.kernelBuffer?.destroy();
+            this.kernelBuffer = device.createBuffer({
+                size: kernelSize * 4,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+            });
+            this.currentKernelSize = kernelSize;
+        }
+        if (!this.paramsBuffer) {
+            this.paramsBuffer = device.createBuffer({
+                size: 16, // 4 x u32
+                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+            });
+        }
+    }
+    /**
+     * Blur implementation - supports concurrent/parallel calls
+     *
+     * KEY FIX: Creates a new staging buffer for each operation instead of
+     * reusing a single one. This prevents "Buffer already has an outstanding
+     * map pending" errors when blur() is called in parallel.
+     */
+    async blur(input, sigma) {
+        if (sigma < 0.1) {
+            return {
+                data: new Float32Array(input.data),
+                width: input.width,
+                height: input.height,
+            };
+        }
+        const { device, horizontalPipeline, verticalPipeline, bindGroupLayout } = await this.initResources();
+        const { width, height } = input;
+        const pixelCount = width * height;
+        // Compute kernel
+        const kernelSize = Math.min(this.config.maxKernelSize, Math.max(3, Math.floor(sigma * this.config.kernelSizeMultiplier) | 1));
+        const kernel = generateGaussianKernel$1(sigma, kernelSize);
+        // Ensure buffers
+        this.ensureBuffers(device, pixelCount, kernelSize);
+        // Upload data
+        device.queue.writeBuffer(this.paramsBuffer, 0, new Uint32Array([width, height, kernelSize, 0]));
+        device.queue.writeBuffer(this.kernelBuffer, 0, new Float32Array(kernel));
+        device.queue.writeBuffer(this.inputBuffer, 0, new Float32Array(input.data));
+        // Create bind groups
+        const horizontalBindGroup = device.createBindGroup({
+            layout: bindGroupLayout,
+            entries: [
+                { binding: 0, resource: { buffer: this.paramsBuffer } },
+                { binding: 1, resource: { buffer: this.kernelBuffer } },
+                { binding: 2, resource: { buffer: this.inputBuffer } },
+                { binding: 3, resource: { buffer: this.tempBuffer } },
+            ],
+        });
+        const verticalBindGroup = device.createBindGroup({
+            layout: bindGroupLayout,
+            entries: [
+                { binding: 0, resource: { buffer: this.paramsBuffer } },
+                { binding: 1, resource: { buffer: this.kernelBuffer } },
+                { binding: 2, resource: { buffer: this.tempBuffer } },
+                { binding: 3, resource: { buffer: this.outputBuffer } },
+            ],
+        });
+        // Dispatch compute
+        const workgroupsX = Math.ceil(width / 16);
+        const workgroupsY = Math.ceil(height / 16);
+        const commandEncoder = device.createCommandEncoder();
+        const horizontalPass = commandEncoder.beginComputePass();
+        horizontalPass.setPipeline(horizontalPipeline);
+        horizontalPass.setBindGroup(0, horizontalBindGroup);
+        horizontalPass.dispatchWorkgroups(workgroupsX, workgroupsY);
+        horizontalPass.end();
+        const verticalPass = commandEncoder.beginComputePass();
+        verticalPass.setPipeline(verticalPipeline);
+        verticalPass.setBindGroup(0, verticalBindGroup);
+        verticalPass.dispatchWorkgroups(workgroupsX, workgroupsY);
+        verticalPass.end();
+        // FIX: Create a NEW staging buffer for this operation instead of reusing one.
+        // This prevents concurrent map() calls from conflicting.
+        const stagingBuffer = device.createBuffer({
+            size: pixelCount * 4,
+            usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+        });
+        // Copy result to the new staging buffer
+        commandEncoder.copyBufferToBuffer(this.outputBuffer, 0, stagingBuffer, 0, pixelCount * 4);
+        device.queue.submit([commandEncoder.finish()]);
+        // Read back result - safe because this stagingBuffer is unique to this call
+        await stagingBuffer.mapAsync(GPUMapMode.READ);
+        const resultData = new Float32Array(stagingBuffer.getMappedRange().slice(0));
+        stagingBuffer.unmap();
+        // Clean up the staging buffer (it was created just for this operation)
+        stagingBuffer.destroy();
+        return {
+            data: resultData,
+            width,
+            height,
+        };
+    }
+    /**
+     * Clean up GPU resources
+     */
+    dispose() {
+        this.paramsBuffer?.destroy();
+        this.kernelBuffer?.destroy();
+        this.inputBuffer?.destroy();
+        this.tempBuffer?.destroy();
+        this.outputBuffer?.destroy();
+        this.paramsBuffer = null;
+        this.kernelBuffer = null;
+        this.inputBuffer = null;
+        this.tempBuffer = null;
+        this.outputBuffer = null;
+        this.currentBufferSize = 0;
+        this.currentKernelSize = 0;
+        // Note: We don't destroy the device as it's shared
+        this.resources = null;
+    }
+}
+class IsotropicBlur {
+    instance;
+    constructor(config) {
+        if (WebGPUIsotropicBlur.isSupported()) {
+            this.instance = new WebGPUIsotropicBlur(config);
+        }
+        else if (WebGLIsotropicBlur.isSupported()) {
+            this.instance = new WebGLIsotropicBlur(config);
+        }
+        else {
+            this.instance = new CPUIsotropicBlur(config);
+        }
+    }
+    dispose() {
+        this.instance.dispose();
+    }
+    async blur(input, sigma) {
+        return this.instance.blur(input, sigma);
+    }
+}
+
+/**
+ * High-level XDoG and FDoG implementations
+ *
+ * These classes provide convenient wrappers that compose the blur strategies
+ * and DoG processor together.
+ *
+ * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
+ * advanced image stylization" by Winnemöller et al. (2012)
+ */
+/**
+ * XDoG (Extended Difference of Gaussians)
+ *
+ * Uses standard isotropic Gaussian blur for edge detection and stylization.
+ * Good for general-purpose edge detection and artistic effects.
+ *
+ * This implements the reparameterized XDoG from Section 2.5 of the paper,
+ * using Equation 7 for the sharpening computation.
+ */
+class XDoG {
+    processor;
+    config;
+    constructor(config = {}) {
+        const { kernelSizeMultiplier, ...dogConfig } = config;
+        this.config = { ...DEFAULT_DOG_CONFIG, kernelSizeMultiplier: 6, ...config };
+        const blurStrategy = new IsotropicBlur({
+            kernelSizeMultiplier: this.config.kernelSizeMultiplier,
+        });
+        this.processor = new DoGProcessor(blurStrategy, dogConfig);
+    }
+    dispose() {
+        this.processor.dispose();
+    }
+    /**
+     * Create XDoG with a preset style
+     */
+    static withPreset(presetName) {
+        return new XDoG(STYLE_PRESETS[presetName]);
+    }
+    /**
+     * Process a grayscale image
+     */
+    async process(input, overrides = {}) {
+        return this.processor.process(input, overrides);
+    }
+    /**
+     * Process without thresholding (returns sharpened image)
+     */
+    async processSharpened(input, overrides = {}) {
+        return this.processor.processNoThreshold(input, overrides);
+    }
+    /**
+     * Get raw DoG response for visualization
+     */
+    async processRawDoG(input, overrides = {}) {
+        return this.processor.processRawDoG(input, overrides);
+    }
+    /**
+     * Process and return all intermediate results
+     *
+     * This is more efficient than calling process(), processSharpened(), and
+     * processRawDoG() separately as it only performs the blur operations once.
+     *
+     * Useful for:
+     * - Hatching strategies that need the sharpened image
+     * - Debugging and visualization
+     * - Custom post-processing pipelines
+     */
+    async processDetailed(input, overrides = {}) {
+        return this.processor.processDetailed(input, overrides);
+    }
+    /**
+     * Convenience method to process ImageData directly (e.g., from a canvas)
+     */
+    async processGrayscaleImageData(input, overrides = {}) {
+        const grayscale = imageDataToLuminance(input);
+        const result = await this.process(grayscale, overrides);
+        return luminanceToImageData(result);
+    }
+    /**
+     * Get current configuration
+     */
+    getConfig() {
+        return { ...this.config, ...this.processor.getConfig() };
+    }
+    /**
+     * Update configuration
+     */
+    setConfig(config) {
+        const { kernelSizeMultiplier, ...dogConfig } = config;
+        if (kernelSizeMultiplier !== undefined) {
+            this.config.kernelSizeMultiplier = kernelSizeMultiplier;
+            // Need to recreate blur strategy with new kernel size
+            const blurStrategy = new IsotropicBlur({ kernelSizeMultiplier });
+            this.processor.setBlurStrategy(blurStrategy);
+        }
+        this.processor.setConfig(dogConfig);
+    }
+}
+/**
+ * Convenience function for one-shot XDoG processing
+ */
+async function xdog(input, config = {}) {
+    const processor = new XDoG(config);
+    const result = processor.process(input);
+    processor.dispose();
+    return result;
+}
 
 /**
  * WebGL-accelerated Edge Tangent Flow computation
@@ -711,7 +1718,7 @@ var processor = /*#__PURE__*/Object.freeze({
 /**
  * Shader source code
  */
-const VERTEX_SHADER$3 = `#version 300 es
+const VERTEX_SHADER$2 = `#version 300 es
 precision highp float;
 in vec2 a_position;
 out vec2 v_texCoord;
@@ -1000,12 +2007,12 @@ class EdgeTangentFlowWebGL {
         gl.getExtension('EXT_color_buffer_float');
         gl.getExtension('OES_texture_float_linear');
         // Create shader programs
-        const gradientProgram = createProgram$3(gl, VERTEX_SHADER$3, GRADIENT_SHADER);
-        const structureTensorProgram = createProgram$3(gl, VERTEX_SHADER$3, STRUCTURE_TENSOR_SHADER);
-        const gaussianBlurHProgram = createProgram$3(gl, VERTEX_SHADER$3, GAUSSIAN_BLUR_H_SHADER);
-        const gaussianBlurVProgram = createProgram$3(gl, VERTEX_SHADER$3, GAUSSIAN_BLUR_V_SHADER);
-        const tangentExtractProgram = createProgram$3(gl, VERTEX_SHADER$3, TANGENT_EXTRACT_SHADER);
-        const tangentRefineProgram = createProgram$3(gl, VERTEX_SHADER$3, TANGENT_REFINE_SHADER);
+        const gradientProgram = createProgram$2(gl, VERTEX_SHADER$2, GRADIENT_SHADER);
+        const structureTensorProgram = createProgram$2(gl, VERTEX_SHADER$2, STRUCTURE_TENSOR_SHADER);
+        const gaussianBlurHProgram = createProgram$2(gl, VERTEX_SHADER$2, GAUSSIAN_BLUR_H_SHADER);
+        const gaussianBlurVProgram = createProgram$2(gl, VERTEX_SHADER$2, GAUSSIAN_BLUR_V_SHADER);
+        const tangentExtractProgram = createProgram$2(gl, VERTEX_SHADER$2, TANGENT_EXTRACT_SHADER);
+        const tangentRefineProgram = createProgram$2(gl, VERTEX_SHADER$2, TANGENT_REFINE_SHADER);
         // Create fullscreen quad
         const quadVAO = gl.createVertexArray();
         const quadVBO = gl.createBuffer();
@@ -1180,7 +2187,7 @@ function createShader(gl, type, source) {
     }
     return shader;
 }
-function createProgram$3(gl, vertSrc, fragSrc) {
+function createProgram$2(gl, vertSrc, fragSrc) {
     const vert = createShader(gl, gl.VERTEX_SHADER, vertSrc);
     const frag = createShader(gl, gl.FRAGMENT_SHADER, fragSrc);
     const program = gl.createProgram();
@@ -1662,809 +2669,6 @@ class EdgeTangentFlow {
     }
 }
 
-class BaseCPUBlur {
-    /**
-   * Check if isotropic blur is supported
-   * Always returns true as this is a pure JavaScript implementation
-   */
-    static isSupported() {
-        return true;
-    }
-    /**
-     * Get reason if unsupported (always undefined for this implementation)
-     */
-    static getUnsupportedReason() {
-        return undefined;
-    }
-}
-class BaseWebGLBlur {
-    /**
-     * Check if WebGL2 is supported in the current environment
-     */
-    static isSupported() {
-        try {
-            if (typeof OffscreenCanvas !== 'undefined') {
-                const canvas = new OffscreenCanvas(1, 1);
-                const gl = canvas.getContext('webgl2');
-                return gl !== null;
-            }
-            else if (typeof document !== 'undefined') {
-                const canvas = document.createElement('canvas');
-                const gl = canvas.getContext('webgl2');
-                return gl !== null;
-            }
-            return false;
-        }
-        catch {
-            return false;
-        }
-    }
-    /**
-     * Get reason if WebGL2 is not supported
-     */
-    static getUnsupportedReason() {
-        if (typeof OffscreenCanvas === 'undefined' && typeof document === 'undefined') {
-            return 'Neither OffscreenCanvas nor document is available';
-        }
-        try {
-            if (typeof OffscreenCanvas !== 'undefined') {
-                const canvas = new OffscreenCanvas(1, 1);
-                if (!canvas.getContext('webgl2')) {
-                    return 'WebGL2 context creation failed on OffscreenCanvas';
-                }
-            }
-            else {
-                const canvas = document.createElement('canvas');
-                if (!canvas.getContext('webgl2')) {
-                    return 'WebGL2 context creation failed';
-                }
-            }
-        }
-        catch (e) {
-            return `WebGL2 initialization error: ${e}`;
-        }
-        return undefined;
-    }
-}
-class BaseWebGPUBlur {
-    static cachedAdapter = null;
-    static cachedDevice = null;
-    static devicePromise = null;
-    static adapterInfo = null;
-    static isSoftwareRenderer = false;
-    /**
-     * Check if WebGPU is supported (sync check - just API availability)
-     */
-    static isSupported() {
-        return typeof navigator !== 'undefined' && 'gpu' in navigator;
-    }
-    /**
-     * Get reason if WebGPU is not supported
-     */
-    static getUnsupportedReason() {
-        if (typeof navigator === 'undefined') {
-            return 'navigator is not available (not in browser environment)';
-        }
-        if (!('gpu' in navigator)) {
-            return 'WebGPU is not supported in this browser';
-        }
-        return undefined;
-    }
-    /**
-     * Check if the adapter is a software/fallback renderer (call after getWebGPUDevice)
-     */
-    static isFallbackAdapter() {
-        return this.isSoftwareRenderer;
-    }
-    /**
-     * Get adapter info (call after getWebGPUDevice)
-     */
-    static getAdapterInfo() {
-        return this.adapterInfo;
-    }
-    /**
-     * Async check if WebGPU is actually usable with hardware acceleration
-     * Returns false for software renderers like SwiftShader
-     */
-    static async isAvailable(allowSoftware = false) {
-        const device = await BaseWebGPUBlur.getWebGPUDevice();
-        if (!device)
-            return false;
-        if (!allowSoftware && this.isSoftwareRenderer)
-            return false;
-        return true;
-    }
-    /**
-     * Detect if adapter is a software renderer
-     */
-    static detectSoftwareRenderer(adapter, info) {
-        // Most reliable check
-        if (adapter.isFallbackAdapter) {
-            return true;
-        }
-        // Check device type
-        if (info.type === 'CPU') {
-            return true;
-        }
-        // Check for known software renderer signatures
-        const description = (info.description || '').toLowerCase();
-        const vendor = (info.vendor || '').toLowerCase();
-        const architecture = (info.architecture || '').toLowerCase();
-        const softwareIndicators = [
-            'swiftshader',
-            'llvmpipe',
-            'softpipe',
-            'microsoft basic render',
-            'software',
-        ];
-        return softwareIndicators.some((indicator) => description.includes(indicator) ||
-            vendor.includes(indicator) ||
-            architecture.includes(indicator));
-    }
-    /**
-     * Get or create WebGPU device (shared)
-     */
-    static async getWebGPUDevice() {
-        if (this.cachedDevice)
-            return this.cachedDevice;
-        if (this.devicePromise)
-            return this.devicePromise;
-        this.devicePromise = (async () => {
-            try {
-                if (!navigator.gpu)
-                    return null;
-                this.cachedAdapter = await navigator.gpu.requestAdapter();
-                if (!this.cachedAdapter)
-                    return null;
-                // Get adapter info and detect software renderer
-                this.adapterInfo = await this.cachedAdapter.info;
-                this.isSoftwareRenderer = this.detectSoftwareRenderer(this.cachedAdapter, this.adapterInfo);
-                this.cachedDevice = await this.cachedAdapter.requestDevice();
-                // Handle device loss
-                this.cachedDevice.lost.then(() => {
-                    this.cachedDevice = null;
-                    this.cachedAdapter = null;
-                    this.adapterInfo = null;
-                    this.devicePromise = null;
-                    this.isSoftwareRenderer = false;
-                });
-                return this.cachedDevice;
-            }
-            catch {
-                return null;
-            }
-        })();
-        return this.devicePromise;
-    }
-}
-
-/**
- * Blur strategies for DoG processing
- *
- * Provides both isotropic (standard) and anisotropic (flow-guided) blur
- * implementations for use in XDoG and FDoG pipelines.
- *
- * FIXED: WebGPUIsotropicBlur now supports parallel/concurrent blur operations
- */
-const DEFAULT_ISOTROPIC_CONFIG = {
-    kernelSizeMultiplier: 6,
-};
-/**
- * Standard isotropic Gaussian blur using separable convolution
- * This is the blur used in basic XDoG
- */
-class CPUIsotropicBlur extends BaseCPUBlur {
-    config;
-    constructor(config = {}) {
-        super();
-        this.config = { ...DEFAULT_ISOTROPIC_CONFIG, ...config };
-    }
-    async blur(input, sigma) {
-        if (sigma < 0.1) {
-            // For very small sigma, just return a copy
-            return {
-                data: new Float32Array(input.data),
-                width: input.width,
-                height: input.height,
-            };
-        }
-        // Compute kernel size (odd number)
-        const kernelSize = computeKernelSize(sigma, this.config.kernelSizeMultiplier);
-        const kernel = generateGaussianKernel$1(sigma, kernelSize);
-        const halfKernel = Math.floor(kernelSize / 2);
-        // Separable convolution: horizontal pass
-        const temp = createChannelImage(input.width, input.height);
-        for (let y = 0; y < input.height; y++) {
-            for (let x = 0; x < input.width; x++) {
-                let sum = 0;
-                for (let k = 0; k < kernelSize; k++) {
-                    const sampleX = x + k - halfKernel;
-                    sum += getPixel(input, sampleX, y) * kernel[k];
-                }
-                temp.data[y * input.width + x] = sum;
-            }
-        }
-        // Separable convolution: vertical pass
-        const output = createChannelImage(input.width, input.height);
-        for (let y = 0; y < input.height; y++) {
-            for (let x = 0; x < input.width; x++) {
-                let sum = 0;
-                for (let k = 0; k < kernelSize; k++) {
-                    const sampleY = y + k - halfKernel;
-                    sum += getPixel(temp, x, sampleY) * kernel[k];
-                }
-                output.data[y * input.width + x] = sum;
-            }
-        }
-        return output;
-    }
-}
-/**
- * Vertex shader for WebGL2 - simple fullscreen quad
- */
-const VERTEX_SHADER$2 = `#version 300 es
-  in vec2 a_position;
-  in vec2 a_texCoord;
-  out vec2 v_texCoord;
-  
-  void main() {
-    gl_Position = vec4(a_position, 0.0, 1.0);
-    v_texCoord = a_texCoord;
-  }
-`;
-/**
- * Fragment shader for horizontal Gaussian blur pass (WebGL2)
- */
-const HORIZONTAL_BLUR_SHADER = `#version 300 es
-  precision highp float;
-  
-  uniform sampler2D u_image;
-  uniform vec2 u_resolution;
-  uniform float u_kernel[64];
-  uniform int u_kernelSize;
-  
-  in vec2 v_texCoord;
-  out vec4 fragColor;
-  
-  void main() {
-    vec2 texelSize = 1.0 / u_resolution;
-    float result = 0.0;
-    int halfSize = u_kernelSize / 2;
-    
-    for (int i = 0; i < 64; i++) {
-      if (i >= u_kernelSize) break;
-      int offset = i - halfSize;
-      vec2 samplePos = v_texCoord + vec2(float(offset) * texelSize.x, 0.0);
-      result += texture(u_image, samplePos).r * u_kernel[i];
-    }
-    
-    fragColor = vec4(result, result, result, 1.0);
-  }
-`;
-/**
- * Fragment shader for vertical Gaussian blur pass (WebGL2)
- */
-const VERTICAL_BLUR_SHADER = `#version 300 es
-  precision highp float;
-  
-  uniform sampler2D u_image;
-  uniform vec2 u_resolution;
-  uniform float u_kernel[64];
-  uniform int u_kernelSize;
-  
-  in vec2 v_texCoord;
-  out vec4 fragColor;
-  
-  void main() {
-    vec2 texelSize = 1.0 / u_resolution;
-    float result = 0.0;
-    int halfSize = u_kernelSize / 2;
-    
-    for (int i = 0; i < 64; i++) {
-      if (i >= u_kernelSize) break;
-      int offset = i - halfSize;
-      vec2 samplePos = v_texCoord + vec2(0.0, float(offset) * texelSize.y);
-      result += texture(u_image, samplePos).r * u_kernel[i];
-    }
-    
-    fragColor = vec4(result, result, result, 1.0);
-  }
-`;
-/**
- * Compile a WebGL2 shader
- */
-function compileShader$2(gl, source, type) {
-    const shader = gl.createShader(type);
-    if (!shader) {
-        throw new Error('Failed to create shader');
-    }
-    gl.shaderSource(shader, source);
-    gl.compileShader(shader);
-    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-        const info = gl.getShaderInfoLog(shader);
-        gl.deleteShader(shader);
-        throw new Error(`Shader compilation failed: ${info}`);
-    }
-    return shader;
-}
-/**
- * Create a WebGL2 program from vertex and fragment shaders
- */
-function createProgram$2(gl, vertexSource, fragmentSource) {
-    const vertexShader = compileShader$2(gl, vertexSource, gl.VERTEX_SHADER);
-    const fragmentShader = compileShader$2(gl, fragmentSource, gl.FRAGMENT_SHADER);
-    const program = gl.createProgram();
-    if (!program) {
-        throw new Error('Failed to create program');
-    }
-    gl.attachShader(program, vertexShader);
-    gl.attachShader(program, fragmentShader);
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-        const info = gl.getProgramInfoLog(program);
-        gl.deleteProgram(program);
-        throw new Error(`Program linking failed: ${info}`);
-    }
-    // Clean up shaders (they're now part of the program)
-    gl.deleteShader(vertexShader);
-    gl.deleteShader(fragmentShader);
-    return program;
-}
-const DEFAULT_WEBGL_CONFIG$1 = {
-    kernelSizeMultiplier: 6,
-    maxKernelSize: 63,
-};
-/**
- * WebGL2-accelerated isotropic Gaussian blur
- * Uses separable convolution with two passes (horizontal + vertical)
- */
-class WebGLIsotropicBlur extends BaseWebGLBlur {
-    config;
-    resources = null;
-    currentWidth = 0;
-    currentHeight = 0;
-    framebuffer = null;
-    textures = [];
-    constructor(config = {}) {
-        super();
-        this.config = { ...DEFAULT_WEBGL_CONFIG$1, ...config };
-    }
-    initResources(canvas) {
-        if (this.resources)
-            return this.resources;
-        const gl = canvas.getContext('webgl2');
-        if (!gl) {
-            throw new Error('WebGL2 not supported');
-        }
-        const quadBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-        const texCoordBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW);
-        const horizontalBlurProgram = createProgram$2(gl, VERTEX_SHADER$2, HORIZONTAL_BLUR_SHADER);
-        const verticalBlurProgram = createProgram$2(gl, VERTEX_SHADER$2, VERTICAL_BLUR_SHADER);
-        this.resources = {
-            gl,
-            canvas,
-            horizontalBlurProgram,
-            verticalBlurProgram,
-            quadBuffer: quadBuffer,
-            texCoordBuffer: texCoordBuffer,
-        };
-        return this.resources;
-    }
-    async blur(input, sigma) {
-        if (sigma < 0.1) {
-            return {
-                data: new Float32Array(input.data),
-                width: input.width,
-                height: input.height,
-            };
-        }
-        const canvas = new OffscreenCanvas(1, 1);
-        const resources = this.initResources(canvas);
-        const { gl } = resources;
-        const { width, height } = input;
-        const kernelSize = Math.min(this.config.maxKernelSize, Math.max(3, Math.floor(sigma * this.config.kernelSizeMultiplier) | 1));
-        const kernel = generateGaussianKernel$1(sigma, kernelSize);
-        // Create or reuse textures
-        if (this.currentWidth !== width || this.currentHeight !== height) {
-            this.textures.forEach(t => gl.deleteTexture(t));
-            this.textures = [];
-            for (let i = 0; i < 3; i++) {
-                const texture = gl.createTexture();
-                gl.bindTexture(gl.TEXTURE_2D, texture);
-                gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, width, height, 0, gl.RED, gl.FLOAT, null);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-                this.textures.push(texture);
-            }
-            if (this.framebuffer) {
-                gl.deleteFramebuffer(this.framebuffer);
-            }
-            this.framebuffer = gl.createFramebuffer();
-            this.currentWidth = width;
-            this.currentHeight = height;
-        }
-        // Upload input data
-        gl.bindTexture(gl.TEXTURE_2D, this.textures[0]);
-        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RED, gl.FLOAT, input.data);
-        // Horizontal blur
-        this.blurPass(resources, this.textures[0], this.textures[1], kernel, kernelSize, true);
-        // Vertical blur
-        this.blurPass(resources, this.textures[1], this.textures[2], kernel, kernelSize, false);
-        // Read back result
-        gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.framebuffer);
-        gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.textures[2], 0);
-        const resultData = new Float32Array(width * height);
-        gl.readPixels(0, 0, width, height, gl.RED, gl.FLOAT, resultData);
-        return {
-            data: resultData,
-            width,
-            height,
-        };
-    }
-    blurPass(resources, inputTexture, outputTexture, kernel, kernelSize, isHorizontal) {
-        const { gl, quadBuffer, texCoordBuffer } = resources;
-        const program = isHorizontal ? resources.horizontalBlurProgram : resources.verticalBlurProgram;
-        gl.useProgram(program);
-        gl.viewport(0, 0, this.currentWidth, this.currentHeight);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, outputTexture, 0);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, inputTexture);
-        gl.uniform1i(gl.getUniformLocation(program, 'u_image'), 0);
-        gl.uniform2f(gl.getUniformLocation(program, 'u_resolution'), this.currentWidth, this.currentHeight);
-        gl.uniform1iv(gl.getUniformLocation(program, 'u_kernel'), Array.from(kernel));
-        gl.uniform1i(gl.getUniformLocation(program, 'u_kernelSize'), kernelSize);
-        gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
-        const posLocation = gl.getAttribLocation(program, 'a_position');
-        gl.vertexAttribPointer(posLocation, 2, gl.FLOAT, false, 0, 0);
-        gl.enableVertexAttribArray(posLocation);
-        gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
-        const texCoordLocation = gl.getAttribLocation(program, 'a_texCoord');
-        gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
-        gl.enableVertexAttribArray(texCoordLocation);
-        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    }
-    dispose() {
-        if (this.resources) {
-            const { gl } = this.resources;
-            gl.deleteProgram(this.resources.horizontalBlurProgram);
-            gl.deleteProgram(this.resources.verticalBlurProgram);
-            gl.deleteBuffer(this.resources.quadBuffer);
-            gl.deleteBuffer(this.resources.texCoordBuffer);
-        }
-        const { gl } = this.resources || { gl: null };
-        if (gl) {
-            this.textures.forEach(t => gl.deleteTexture(t));
-            if (this.framebuffer) {
-                gl.deleteFramebuffer(this.framebuffer);
-            }
-        }
-        this.resources = null;
-        this.textures = [];
-        this.framebuffer = null;
-        this.currentWidth = 0;
-        this.currentHeight = 0;
-    }
-}
-const DEFAULT_WEBGPU_CONFIG$1 = {
-    kernelSizeMultiplier: 6,
-    maxKernelSize: 63,
-};
-const HORIZONTAL_BLUR_WGSL = `
-struct Params {
-  width: u32,
-  height: u32,
-  kernelSize: u32,
-  _pad: u32,
-}
-
-@group(0) @binding(0)
-var<uniform> params: Params;
-
-@group(0) @binding(1)
-var<storage, read> kernel: array<f32>;
-
-@group(0) @binding(2)
-var<storage, read> input: array<f32>;
-
-@group(0) @binding(3)
-var<storage, read_write> output: array<f32>;
-
-@compute @workgroup_size(16, 16)
-fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-  let x = global_id.x;
-  let y = global_id.y;
-  
-  if (x >= params.width || y >= params.height) {
-    return;
-  }
-  
-  let halfSize = i32(params.kernelSize) / 2;
-  var sum = 0.0;
-  
-  for (var k = 0; k < i32(params.kernelSize); k = k + 1) {
-    let sampleX = i32(x) + k - halfSize;
-    let clampedX = clamp(sampleX, 0, i32(params.width) - 1);
-    let sampleIdx = u32(clampedX) + y * params.width;
-    sum = sum + input[sampleIdx] * kernel[u32(k)];
-  }
-  
-  output[x + y * params.width] = sum;
-}
-`;
-const VERTICAL_BLUR_WGSL = `
-struct Params {
-  width: u32,
-  height: u32,
-  kernelSize: u32,
-  _pad: u32,
-}
-
-@group(0) @binding(0)
-var<uniform> params: Params;
-
-@group(0) @binding(1)
-var<storage, read> kernel: array<f32>;
-
-@group(0) @binding(2)
-var<storage, read> input: array<f32>;
-
-@group(0) @binding(3)
-var<storage, read_write> output: array<f32>;
-
-@compute @workgroup_size(16, 16)
-fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-  let x = global_id.x;
-  let y = global_id.y;
-  
-  if (x >= params.width || y >= params.height) {
-    return;
-  }
-  
-  let halfSize = i32(params.kernelSize) / 2;
-  var sum = 0.0;
-  
-  for (var k = 0; k < i32(params.kernelSize); k = k + 1) {
-    let sampleY = i32(y) + k - halfSize;
-    let clampedY = clamp(sampleY, 0, i32(params.height) - 1);
-    let sampleIdx = x + u32(clampedY) * params.width;
-    sum = sum + input[sampleIdx] * kernel[u32(k)];
-  }
-  
-  output[x + y * params.width] = sum;
-}
-`;
-/**
- * WebGPU-accelerated isotropic Gaussian blur
- * Uses compute shaders with separable convolution
- *
- * FIXED: Now supports concurrent/parallel blur calls by creating
- * separate staging buffers for each operation instead of reusing one.
- */
-class WebGPUIsotropicBlur extends BaseWebGPUBlur {
-    config;
-    resources = null;
-    // Reusable buffers for compute operations
-    paramsBuffer = null;
-    kernelBuffer = null;
-    inputBuffer = null;
-    tempBuffer = null;
-    outputBuffer = null;
-    currentBufferSize = 0;
-    currentKernelSize = 0;
-    constructor(config = {}) {
-        super();
-        this.config = { ...DEFAULT_WEBGPU_CONFIG$1, ...config };
-    }
-    /**
-     * Initialize WebGPU resources
-     */
-    async initResources() {
-        if (this.resources)
-            return this.resources;
-        const device = await WebGPUIsotropicBlur.getWebGPUDevice();
-        if (!device) {
-            throw new Error('WebGPU device not available');
-        }
-        // Create bind group layout
-        const bindGroupLayout = device.createBindGroupLayout({
-            entries: [
-                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
-                { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-                { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-                { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
-            ],
-        });
-        const pipelineLayout = device.createPipelineLayout({
-            bindGroupLayouts: [bindGroupLayout],
-        });
-        // Create compute pipelines
-        const horizontalPipeline = device.createComputePipeline({
-            layout: pipelineLayout,
-            compute: {
-                module: device.createShaderModule({ code: HORIZONTAL_BLUR_WGSL }),
-                entryPoint: 'main',
-            },
-        });
-        const verticalPipeline = device.createComputePipeline({
-            layout: pipelineLayout,
-            compute: {
-                module: device.createShaderModule({ code: VERTICAL_BLUR_WGSL }),
-                entryPoint: 'main',
-            },
-        });
-        this.resources = {
-            device,
-            horizontalPipeline,
-            verticalPipeline,
-            bindGroupLayout,
-        };
-        return this.resources;
-    }
-    /**
-     * Ensure buffers are sized correctly
-     */
-    ensureBuffers(device, pixelCount, kernelSize) {
-        const bufferSize = pixelCount * 4; // Float32
-        if (this.currentBufferSize < bufferSize) {
-            // Clean up old buffers
-            this.inputBuffer?.destroy();
-            this.tempBuffer?.destroy();
-            this.outputBuffer?.destroy();
-            this.inputBuffer = device.createBuffer({
-                size: bufferSize,
-                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-            });
-            this.tempBuffer = device.createBuffer({
-                size: bufferSize,
-                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-            });
-            this.outputBuffer = device.createBuffer({
-                size: bufferSize,
-                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-            });
-            this.currentBufferSize = bufferSize;
-        }
-        if (this.currentKernelSize < kernelSize) {
-            this.kernelBuffer?.destroy();
-            this.kernelBuffer = device.createBuffer({
-                size: kernelSize * 4,
-                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-            });
-            this.currentKernelSize = kernelSize;
-        }
-        if (!this.paramsBuffer) {
-            this.paramsBuffer = device.createBuffer({
-                size: 16, // 4 x u32
-                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            });
-        }
-    }
-    /**
-     * Blur implementation - supports concurrent/parallel calls
-     *
-     * KEY FIX: Creates a new staging buffer for each operation instead of
-     * reusing a single one. This prevents "Buffer already has an outstanding
-     * map pending" errors when blur() is called in parallel.
-     */
-    async blur(input, sigma) {
-        if (sigma < 0.1) {
-            return {
-                data: new Float32Array(input.data),
-                width: input.width,
-                height: input.height,
-            };
-        }
-        const { device, horizontalPipeline, verticalPipeline, bindGroupLayout } = await this.initResources();
-        const { width, height } = input;
-        const pixelCount = width * height;
-        // Compute kernel
-        const kernelSize = Math.min(this.config.maxKernelSize, Math.max(3, Math.floor(sigma * this.config.kernelSizeMultiplier) | 1));
-        const kernel = generateGaussianKernel$1(sigma, kernelSize);
-        // Ensure buffers
-        this.ensureBuffers(device, pixelCount, kernelSize);
-        // Upload data
-        device.queue.writeBuffer(this.paramsBuffer, 0, new Uint32Array([width, height, kernelSize, 0]));
-        device.queue.writeBuffer(this.kernelBuffer, 0, new Float32Array(kernel));
-        device.queue.writeBuffer(this.inputBuffer, 0, new Float32Array(input.data));
-        // Create bind groups
-        const horizontalBindGroup = device.createBindGroup({
-            layout: bindGroupLayout,
-            entries: [
-                { binding: 0, resource: { buffer: this.paramsBuffer } },
-                { binding: 1, resource: { buffer: this.kernelBuffer } },
-                { binding: 2, resource: { buffer: this.inputBuffer } },
-                { binding: 3, resource: { buffer: this.tempBuffer } },
-            ],
-        });
-        const verticalBindGroup = device.createBindGroup({
-            layout: bindGroupLayout,
-            entries: [
-                { binding: 0, resource: { buffer: this.paramsBuffer } },
-                { binding: 1, resource: { buffer: this.kernelBuffer } },
-                { binding: 2, resource: { buffer: this.tempBuffer } },
-                { binding: 3, resource: { buffer: this.outputBuffer } },
-            ],
-        });
-        // Dispatch compute
-        const workgroupsX = Math.ceil(width / 16);
-        const workgroupsY = Math.ceil(height / 16);
-        const commandEncoder = device.createCommandEncoder();
-        const horizontalPass = commandEncoder.beginComputePass();
-        horizontalPass.setPipeline(horizontalPipeline);
-        horizontalPass.setBindGroup(0, horizontalBindGroup);
-        horizontalPass.dispatchWorkgroups(workgroupsX, workgroupsY);
-        horizontalPass.end();
-        const verticalPass = commandEncoder.beginComputePass();
-        verticalPass.setPipeline(verticalPipeline);
-        verticalPass.setBindGroup(0, verticalBindGroup);
-        verticalPass.dispatchWorkgroups(workgroupsX, workgroupsY);
-        verticalPass.end();
-        // FIX: Create a NEW staging buffer for this operation instead of reusing one.
-        // This prevents concurrent map() calls from conflicting.
-        const stagingBuffer = device.createBuffer({
-            size: pixelCount * 4,
-            usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
-        });
-        // Copy result to the new staging buffer
-        commandEncoder.copyBufferToBuffer(this.outputBuffer, 0, stagingBuffer, 0, pixelCount * 4);
-        device.queue.submit([commandEncoder.finish()]);
-        // Read back result - safe because this stagingBuffer is unique to this call
-        await stagingBuffer.mapAsync(GPUMapMode.READ);
-        const resultData = new Float32Array(stagingBuffer.getMappedRange().slice(0));
-        stagingBuffer.unmap();
-        // Clean up the staging buffer (it was created just for this operation)
-        stagingBuffer.destroy();
-        return {
-            data: resultData,
-            width,
-            height,
-        };
-    }
-    /**
-     * Clean up GPU resources
-     */
-    dispose() {
-        this.paramsBuffer?.destroy();
-        this.kernelBuffer?.destroy();
-        this.inputBuffer?.destroy();
-        this.tempBuffer?.destroy();
-        this.outputBuffer?.destroy();
-        this.paramsBuffer = null;
-        this.kernelBuffer = null;
-        this.inputBuffer = null;
-        this.tempBuffer = null;
-        this.outputBuffer = null;
-        this.currentBufferSize = 0;
-        this.currentKernelSize = 0;
-        // Note: We don't destroy the device as it's shared
-        this.resources = null;
-    }
-}
-class IsotropicBlur {
-    instance;
-    constructor(config) {
-        if (WebGPUIsotropicBlur.isSupported()) {
-            this.instance = new WebGPUIsotropicBlur(config);
-        }
-        else if (WebGLIsotropicBlur.isSupported()) {
-            this.instance = new WebGLIsotropicBlur(config);
-        }
-        else {
-            this.instance = new CPUIsotropicBlur(config);
-        }
-    }
-    async blur(input, sigma) {
-        return this.instance.blur(input, sigma);
-    }
-}
-
 const DEFAULT_FLOW_CONFIG$1 = {
     kernelSizeMultiplier: 6,
     stepSize: 1.0,
@@ -2477,6 +2681,7 @@ class CPUGradientAlignedBlur extends BaseCPUBlur {
         this.flowField = flowField;
         this.config = { ...DEFAULT_FLOW_CONFIG$1, ...config };
     }
+    dispose() { }
     setFlowField(flowField) {
         this.flowField = flowField;
     }
@@ -3232,6 +3437,9 @@ class FlowGuidedBlur {
             this.instance = new CPUFlowGuidedBlur(flowField, config);
         }
     }
+    dispose() {
+        this.instance.dispose?.();
+    }
     async blur(input, sigma) {
         return this.instance.blur(input, sigma);
     }
@@ -3252,92 +3460,6 @@ class FlowGuidedBlur {
  * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
  * advanced image stylization" by Winnemöller et al. (2012)
  */
-/**
- * XDoG (Extended Difference of Gaussians)
- *
- * Uses standard isotropic Gaussian blur for edge detection and stylization.
- * Good for general-purpose edge detection and artistic effects.
- *
- * This implements the reparameterized XDoG from Section 2.5 of the paper,
- * using Equation 7 for the sharpening computation.
- */
-class XDoG {
-    processor;
-    config;
-    constructor(config = {}) {
-        const { kernelSizeMultiplier, ...dogConfig } = config;
-        this.config = { ...DEFAULT_DOG_CONFIG, kernelSizeMultiplier: 6, ...config };
-        const blurStrategy = new IsotropicBlur({
-            kernelSizeMultiplier: this.config.kernelSizeMultiplier,
-        });
-        this.processor = new DoGProcessor(blurStrategy, dogConfig);
-    }
-    /**
-     * Create XDoG with a preset style
-     */
-    static withPreset(presetName) {
-        return new XDoG(STYLE_PRESETS[presetName]);
-    }
-    /**
-     * Process a grayscale image
-     */
-    async process(input, overrides = {}) {
-        return this.processor.process(input, overrides);
-    }
-    /**
-     * Process without thresholding (returns sharpened image)
-     */
-    async processSharpened(input, overrides = {}) {
-        return this.processor.processNoThreshold(input, overrides);
-    }
-    /**
-     * Get raw DoG response for visualization
-     */
-    async processRawDoG(input, overrides = {}) {
-        return this.processor.processRawDoG(input, overrides);
-    }
-    /**
-     * Process and return all intermediate results
-     *
-     * This is more efficient than calling process(), processSharpened(), and
-     * processRawDoG() separately as it only performs the blur operations once.
-     *
-     * Useful for:
-     * - Hatching strategies that need the sharpened image
-     * - Debugging and visualization
-     * - Custom post-processing pipelines
-     */
-    async processDetailed(input, overrides = {}) {
-        return this.processor.processDetailed(input, overrides);
-    }
-    /**
-     * Convenience method to process ImageData directly (e.g., from a canvas)
-     */
-    async processGrayscaleImageData(input, overrides = {}) {
-        const grayscale = imageDataToLuminance(input);
-        const result = await this.process(grayscale, overrides);
-        return luminanceToImageData(result);
-    }
-    /**
-     * Get current configuration
-     */
-    getConfig() {
-        return { ...this.config, ...this.processor.getConfig() };
-    }
-    /**
-     * Update configuration
-     */
-    setConfig(config) {
-        const { kernelSizeMultiplier, ...dogConfig } = config;
-        if (kernelSizeMultiplier !== undefined) {
-            this.config.kernelSizeMultiplier = kernelSizeMultiplier;
-            // Need to recreate blur strategy with new kernel size
-            const blurStrategy = new IsotropicBlur({ kernelSizeMultiplier });
-            this.processor.setBlurStrategy(blurStrategy);
-        }
-        this.processor.setConfig(dogConfig);
-    }
-}
 /**
  * FDoG (Flow-based Difference of Gaussians)
  *
@@ -3365,6 +3487,8 @@ class FDoG {
             ...config,
         };
     }
+    dispose() {
+    }
     /**
      * Create FDoG with a preset style
      */
@@ -3388,6 +3512,7 @@ class FDoG {
         const processor = new DoGProcessor(gradientBlur, params);
         // Step 4: Process image (DoG + threshold)
         let result = await processor.process(input);
+        processor.dispose();
         const flowBlur = new FlowGuidedBlur(etf);
         // Step 5: Flow-aligned smoothing
         if (params.sigmaM > 0) {
@@ -3397,6 +3522,8 @@ class FDoG {
         if (params.sigmaA > 0) {
             result = await flowBlur.blur(result, params.sigmaA);
         }
+        flowBlur.dispose();
+        EdgeTangentFlow.dispose();
         return result;
     }
     /**
@@ -3422,6 +3549,7 @@ class FDoG {
         if (params.sigmaM > 0) {
             const flowBlur = new FlowGuidedBlur(etf);
             smoothed = await flowBlur.blur(thresholded, params.sigmaM);
+            flowBlur.dispose();
         }
         // Anti-aliasing
         let result = smoothed;
@@ -3429,7 +3557,9 @@ class FDoG {
             const flowCls = FlowGuidedBlur;
             const aaBlur = new flowCls(etf);
             result = await aaBlur.blur(smoothed, params.sigmaA);
+            aaBlur.dispose();
         }
+        EdgeTangentFlow.dispose();
         return { result, etf, sharpened, thresholded, smoothed };
     }
     /**
@@ -3451,28 +3581,19 @@ class FDoG {
         const gradientBlur = new GradientAlignedBlur(etf);
         const processor = new DoGProcessor(gradientBlur, params);
         let result = await processor.process(input);
+        processor.dispose();
         const flowCls = FlowGuidedBlur;
         if (params.sigmaM > 0) {
             const flowBlur = new flowCls(etf);
             result = await flowBlur.blur(result, params.sigmaM);
+            flowBlur.dispose();
         }
         if (params.sigmaA > 0) {
             const aaBlur = new flowCls(etf);
             result = await aaBlur.blur(result, params.sigmaA);
+            aaBlur.dispose();
         }
         return result;
-    }
-    /**
-     * Compute Edge Tangent Flow separately
-     *
-     * Useful for visualizing the flow field or reusing it across frames.
-     */
-    computeETF(input, sigmaC) {
-        const sigma = sigmaC ?? this.config.sigmaC;
-        return EdgeTangentFlow.compute(input, {
-            iterations: DEFAULT_ETF_CONFIG.iterations,
-            kernelSize: Math.ceil(sigma * 2.45) * 2 + 1,
-        }, sigma);
     }
     /**
      * Apply only the anti-aliasing pass to an already-processed image
@@ -3484,7 +3605,10 @@ class FDoG {
         }
         const flowCls = FlowGuidedBlur;
         const aaBlur = new flowCls(etf);
-        return aaBlur.blur(input, sigma);
+        const result = aaBlur.blur(input, sigma);
+        aaBlur.dispose();
+        EdgeTangentFlow.dispose();
+        return result;
     }
     /**
      * Get current configuration
@@ -3500,35 +3624,247 @@ class FDoG {
     }
 }
 /**
- * Convenience function for one-shot XDoG processing
- */
-async function xdog(input, config = {}) {
-    const processor = new XDoG(config);
-    return processor.process(input);
-}
-/**
  * Convenience function for one-shot FDoG processing
  */
 async function fdog(input, config = {}) {
     const processor = new FDoG(config);
-    return processor.process(input);
+    const result = processor.process(input);
+    processor.dispose();
+    return result;
 }
 
-var dog = /*#__PURE__*/Object.freeze({
-    __proto__: null,
-    FDoG: FDoG,
-    XDoG: XDoG,
-    fdog: fdog,
-    xdog: xdog
-});
+/**
+ * High-level XDoG and FDoG implementations
+ *
+ * These classes provide convenient wrappers that compose the blur strategies
+ * and DoG processor together.
+ *
+ * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
+ * advanced image stylization" by Winnemöller et al. (2012)
+ */
+class ADoG {
+    config;
+    blurStrategy;
+    constructor(config = {}) {
+        this.config = { ...DEFAULT_ADOG_CONFIG, kernelSizeMultiplier: 6, ...config };
+        this.blurStrategy = new IsotropicBlur({
+            kernelSizeMultiplier: this.config.kernelSizeMultiplier,
+        });
+    }
+    dispose() {
+        this.blurStrategy.dispose();
+    }
+    /**
+     * Process a grayscale image through the ADoG pipeline.
+     *
+     * Note on the DoGImplementation interface: this method's `overrides` is
+     * typed against Partial<ADoGConfig> (a superset of DoGConfig), which
+     * satisfies DoGImplementation's Partial<DoGConfig> parameter type via
+     * TypeScript's bivariant method-parameter checking. A caller holding this
+     * instance through the DoGImplementation interface type (rather than the
+     * concrete ADoG type) can only type-check overrides for fields that exist
+     * on DoGConfig (sigma, k, epsilon, phi, ...) -- tau/s/noiseScaleC are only
+     * overridable when the caller has a concrete ADoG reference. No data is
+     * lost; this only affects what's type-checkable through the narrower view.
+     */
+    async process(input, overrides = {}) {
+        const { result } = await this.processDetailed(input, overrides);
+        return result;
+    }
+    async processDetailed(input, overrides = {}) {
+        const params = { ...this.config, ...overrides };
+        // Step 1 (Eq. 6): tone-adaptive noise injection, applied before blurring.
+        // Skipped entirely when noiseScaleC is 0 (noise injection is optional --
+        // see Figs. 7 vs 8 in the paper).
+        const noisyInput = params.noiseScaleC > 0
+            ? this.injectAdaptiveNoise(input, params.noiseScaleC, params.s)
+            : input;
+        // Step 2: two isotropic Gaussian blurs -- sigma = sigmaC, k*sigmaC = sigmaS
+        const [blurC, blurS] = await Promise.all([
+            this.blurStrategy.blur(noisyInput, params.sigma),
+            this.blurStrategy.blur(noisyInput, params.sigma * params.k),
+        ]);
+        // Step 3 (Eq. 5): per-pixel adaptive weight rho(x), computed from the
+        // ORIGINAL (pre-noise) input tone -- not from the blurred images.
+        const rhoMap = this.computeRhoMap(input, params.tau, params.s);
+        // Step 4 (Eq. 4): ADoG(x) = G_sigmaC(x) - rho(x) * G_sigmaS(x)
+        const sharpened = this.computeWeightedDoG(blurC, blurS, rhoMap);
+        // Unweighted response (rho == 1 everywhere), i.e. standard DoG --
+        // exposed for comparison purposes (Fig. 7(b) in the paper).
+        const rawDoG = this.computeUnweightedDoG(blurC, blurS);
+        // Step 5: binarize (hard threshold by default via config.thresholdStrategy)
+        const result = this.config.thresholdStrategy.threshold(sharpened, {
+            epsilon: params.epsilon,
+            phi: params.phi,
+        });
+        return { result, sharpened, rawDoG, rhoMap, noisyInput };
+    }
+    /**
+     * Convenience method to process ImageData directly (e.g., from a canvas),
+     * matching XDoG/FDoG's convenience method of the same name.
+     */
+    async processGrayscaleImageData(input, overrides = {}) {
+        const grayscale = imageDataToLuminance(input);
+        const result = await this.process(grayscale, overrides);
+        return luminanceToImageData(result);
+    }
+    /**
+     * Get current configuration
+     */
+    getConfig() {
+        return { ...this.config };
+    }
+    /**
+     * Update configuration
+     */
+    setConfig(config) {
+        if (config.kernelSizeMultiplier !== undefined) {
+            this.blurStrategy = new IsotropicBlur({ kernelSizeMultiplier: config.kernelSizeMultiplier });
+        }
+        this.config = { ...this.config, ...config };
+    }
+    /** Eq. (5): rho(x) = tau + (1 - tau) * (1 - tanh(s * I(x))) */
+    computeRhoMap(input, tau, s) {
+        const output = createChannelImage(input.width, input.height);
+        for (let i = 0; i < input.data.length; i++) {
+            output.data[i] = tau + (1 - tau) * (1 - Math.tanh(s * input.data[i]));
+        }
+        return output;
+    }
+    /** Eq. (6): sigma(x) = c * (1 - tanh(s * I(x))); sampled noise ~ N(0,1) * sigma(x) added to I(x) */
+    injectAdaptiveNoise(input, c, s) {
+        const output = createChannelImage(input.width, input.height);
+        for (let i = 0; i < input.data.length; i++) {
+            const sigma = c * (1 - Math.tanh(s * input.data[i]));
+            output.data[i] = input.data[i] + sigma * gaussianSample();
+        }
+        return output;
+    }
+    /** Eq. (3)/(4): ADoG(x) = G_sigmaC(x) - rho(x) * G_sigmaS(x) */
+    computeWeightedDoG(blurC, blurS, rho) {
+        const output = createChannelImage(blurC.width, blurC.height);
+        for (let i = 0; i < blurC.data.length; i++) {
+            output.data[i] = blurC.data[i] - rho.data[i] * blurS.data[i];
+        }
+        return output;
+    }
+    /** Standard (non-adaptive) DoG: G_sigmaC(x) - G_sigmaS(x), i.e. rho == 1 everywhere */
+    computeUnweightedDoG(blurC, blurS) {
+        const output = createChannelImage(blurC.width, blurC.height);
+        for (let i = 0; i < blurC.data.length; i++) {
+            output.data[i] = blurC.data[i] - blurS.data[i];
+        }
+        return output;
+    }
+}
+/**
+ * Convenience function for one-shot ADoG processing, matching xdog()/fdog()
+ * in dog.ts
+ */
+async function adog(input, config = {}) {
+    const processor = new ADoG(config);
+    const result = await processor.process(input);
+    processor.dispose();
+    return result;
+}
+
+/**
+ * High-level XDoG and FDoG implementations
+ *
+ * These classes provide convenient wrappers that compose the blur strategies
+ * and DoG processor together.
+ *
+ * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
+ * advanced image stylization" by Winnemöller et al. (2012)
+ */
+class HDoG {
+    fdog;
+    adogPrimary;
+    adogSecondary;
+    constructor(config = {}) {
+        const merged = { ...DEFAULT_HDOG_CONFIG, ...config };
+        const primaryConfig = { ...DEFAULT_ADOG_CONFIG, ...merged.adog };
+        const secondaryConfig = {
+            ...primaryConfig,
+            s: primaryConfig.s * merged.adogSecondaryScaleFactor,
+        };
+        this.fdog = new FDoG(merged.fdog);
+        this.adogPrimary = new ADoG(primaryConfig);
+        this.adogSecondary = new ADoG(secondaryConfig);
+    }
+    dispose() {
+        this.fdog.dispose();
+        this.adogPrimary.dispose();
+        this.adogSecondary.dispose();
+    }
+    /**
+     * Eq. (9): HDoG = FDoG ∧ ADoG_s ∧ ADoG_s'
+     *
+     * Note: HDoG's own configuration (fdog/adog/adogSecondaryScaleFactor) is
+     * nested rather than a flat DoGConfig, so per-call overrides aren't
+     * exposed here the way XDoG/FDoG/ADoG expose them -- there's no clean way
+     * to map a flat Partial<DoGConfig> onto "override the nested fdog config,
+     * or the nested adog config, or the scale factor". Configure via the
+     * constructor; if you need per-call tuning, consider adding a dedicated
+     * method (e.g. processWithConfig(input, HDoGConfig overrides)) rather than
+     * overloading `process`.
+     */
+    async process(input) {
+        const [lines, tone1, tone2] = await Promise.all([
+            this.fdog.process(input),
+            this.adogPrimary.process(input),
+            this.adogSecondary.process(input),
+        ]);
+        return andCombine([lines, tone1, tone2]);
+    }
+    async processDetailed(input) {
+        const [fdogDetailed, adog1Detailed, adog2Detailed] = await Promise.all([
+            this.fdog.processDetailed(input),
+            this.adogPrimary.processDetailed(input),
+            this.adogSecondary.processDetailed(input),
+        ]);
+        const result = andCombine([
+            fdogDetailed.result,
+            adog1Detailed.result,
+            adog2Detailed.result,
+        ]);
+        return {
+            result,
+            sharpened: fdogDetailed.sharpened,
+            fdogResult: fdogDetailed.result,
+            adogPrimaryResult: adog1Detailed.result,
+            adogSecondaryResult: adog2Detailed.result,
+        };
+    }
+}
+/**
+ * Convenience function for one-shot HDoG processing, matching xdog()/fdog()
+ * in dog.ts and adog() in adog.ts
+ */
+async function hdog(input, config = {}) {
+    const processor = new HDoG(config);
+    const result = await processor.process(input);
+    processor.dispose();
+    return result;
+}
 
 var index$3 = /*#__PURE__*/Object.freeze({
     __proto__: null,
-    dog: dog,
-    processor: processor,
-    threshold: threshold,
-    types: types,
-    utilities: utils
+    ADOG_STYLE_PRESETS: ADOG_STYLE_PRESETS,
+    ADoG: ADoG,
+    DEFAULT_ADOG_CONFIG: DEFAULT_ADOG_CONFIG,
+    DEFAULT_DOG_CONFIG: DEFAULT_DOG_CONFIG,
+    DEFAULT_FDOG_CONFIG: DEFAULT_FDOG_CONFIG,
+    DEFAULT_HDOG_CONFIG: DEFAULT_HDOG_CONFIG,
+    FDOG_STYLE_PRESETS: FDOG_STYLE_PRESETS,
+    FDoG: FDoG,
+    HDoG: HDoG,
+    STYLE_PRESETS: STYLE_PRESETS,
+    XDoG: XDoG,
+    adog: adog,
+    fdog: fdog,
+    hdog: hdog,
+    xdog: xdog
 });
 
 var index$2 = /*#__PURE__*/Object.freeze({
@@ -5547,7 +5883,9 @@ class AntiAliasingStrategy {
             return { data: new Float32Array(image.data), width: image.width, height: image.height };
         }
         const flowBlur = new FlowGuidedBlur(etf, { stepSize: cfg.stepSize });
-        return flowBlur.blur(image, cfg.sigma);
+        const result = flowBlur.blur(image, cfg.sigma);
+        flowBlur.dispose();
+        return result;
     }
     /**
      * Create anti-aliasing with preset intensity
@@ -6763,14 +7101,12 @@ class NaturalMediaStrategy {
     async apply(input, configOverride) {
         const mergedConfig = { ...this.config, ...configOverride };
         const resolved = new NaturalMediaStrategy(mergedConfig).getResolvedConfig();
-        if (resolved.useFlow) {
-            const fdog = new FDoG(resolved);
-            return fdog.process(input);
-        }
-        else {
-            const xdog = new XDoG(resolved);
-            return xdog.process(input);
-        }
+        const dog = resolved.useFlow
+            ? new FDoG(resolved)
+            : new XDoG(resolved);
+        const result = dog.process(input);
+        dog.dispose();
+        return result;
     }
     /**
      * Create strategy for a specific style
@@ -7344,23 +7680,15 @@ var index = /*#__PURE__*/Object.freeze({
     rgbToImageData: rgbToImageData
 });
 
-exports.DEFAULT_DOG_CONFIG = DEFAULT_DOG_CONFIG;
 exports.DEFAULT_ETF_CONFIG = DEFAULT_ETF_CONFIG;
-exports.DEFAULT_FDOG_CONFIG = DEFAULT_FDOG_CONFIG;
 exports.DoGProcessor = DoGProcessor;
 exports.EdgeTangentFlow = EdgeTangentFlow;
-exports.FDOG_STYLE_PRESETS = FDOG_STYLE_PRESETS;
-exports.FDoG = FDoG;
-exports.STYLE_PRESETS = STYLE_PRESETS;
 exports.ThresholdModes = ThresholdModes;
-exports.XDoG = XDoG;
 exports.applyCustomThreshold = applyCustomThreshold;
 exports.blur = index$2;
-exports.core = index$3;
+exports.dog = index$3;
 exports.extensions = index;
-exports.fdog = fdog;
 exports.preprocess = index$1;
 exports.threshold = threshold;
 exports.utilities = utils;
-exports.xdog = xdog;
 //# sourceMappingURL=index.cjs.js.map

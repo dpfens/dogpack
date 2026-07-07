@@ -11,7 +11,7 @@ exports.MultiScaleStrategy = exports.BlendFunctions = exports.blendPriority = ex
 exports.createPercentileBlend = createPercentileBlend;
 exports.createMixedBlend = createMixedBlend;
 exports.createGammaCorrectedBlend = createGammaCorrectedBlend;
-const dog_1 = require("../core/dog");
+const dog_1 = require("../dog");
 const utils_1 = require("../utils");
 // =============================================================================
 // Built-in Blend Functions

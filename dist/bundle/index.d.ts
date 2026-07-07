@@ -1,39 +1,10 @@
-interface ThresholdStrategy {
-    threshold(sharpened: ChannelImage$1, config: ThresholdConfig): ChannelImage$1;
-}
-interface ThresholdConfig {
-    epsilon: number | ChannelImage$1;
-    phi: number | ChannelImage$1;
-}
-declare class SoftThresholdStrategy implements ThresholdStrategy {
-    threshold(sharpened: ChannelImage$1, config: ThresholdConfig): ChannelImage$1;
-}
-declare class HysteresisThresholdStrategy implements ThresholdStrategy {
-    private readonly highOffset;
-    private readonly lowOffset;
-    constructor(highOffset?: number, lowOffset?: number);
-    threshold(sharpened: ChannelImage$1, config: ThresholdConfig): ChannelImage$1;
-    private floodFill;
-}
-
-type threshold_HysteresisThresholdStrategy = HysteresisThresholdStrategy;
-declare const threshold_HysteresisThresholdStrategy: typeof HysteresisThresholdStrategy;
-type threshold_SoftThresholdStrategy = SoftThresholdStrategy;
-declare const threshold_SoftThresholdStrategy: typeof SoftThresholdStrategy;
-type threshold_ThresholdConfig = ThresholdConfig;
-type threshold_ThresholdStrategy = ThresholdStrategy;
-declare namespace threshold {
-  export { threshold_HysteresisThresholdStrategy as HysteresisThresholdStrategy, threshold_SoftThresholdStrategy as SoftThresholdStrategy };
-  export type { threshold_ThresholdConfig as ThresholdConfig, threshold_ThresholdStrategy as ThresholdStrategy };
-}
-
 /**
- * Core types for XDoG/FDoG line drawing implementation
+ * Core types for XDoG/FDoG/ADoG/HDoG line drawing implementation
  *
  * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
  * advanced image stylization" by Winnemöller et al. (2012)
+ * and: "Gaussian Image Binarization" by Kang & Stamoulis (2021)
  */
-
 /**
  * Simple 2D vector
  */
@@ -71,6 +42,7 @@ interface BlurStrategy {
      * @returns Blurred image
      */
     blur(input: ChannelImage$1, sigma: number): Promise<ChannelImage$1>;
+    dispose(): void;
 }
 /**
  * Static interface for blur strategy classes
@@ -118,6 +90,70 @@ interface KuwaharaFilterConfig {
     /** Radius of the filter (default: 3) */
     radius: number;
 }
+/**
+ * Configuration for Edge Tangent Flow computation
+ *
+ * The ETF is computed from the smoothed structure tensor of image gradients.
+ * See Section 2.6 of the paper.
+ */
+interface ETFConfig {
+    /**
+     * Number of refinement iterations for the tangent field (default: 3)
+     * More iterations increase line coherence but add computation time
+     */
+    iterations: number;
+    /**
+     * Kernel size for structure tensor smoothing (default: 5)
+     * Paper uses Gaussian smoothing with sampling within 2.45 * σc
+     */
+    kernelSize: number;
+}
+/**
+ * Default ETF configuration values
+ */
+declare const DEFAULT_ETF_CONFIG: ETFConfig;
+
+interface ThresholdStrategy {
+    threshold(sharpened: ChannelImage$1, config: ThresholdConfig): ChannelImage$1;
+}
+interface ThresholdConfig {
+    epsilon: number | ChannelImage$1;
+    phi: number | ChannelImage$1;
+}
+declare class SoftThresholdStrategy implements ThresholdStrategy {
+    threshold(sharpened: ChannelImage$1, config: ThresholdConfig): ChannelImage$1;
+}
+/**
+ * Hard black/white threshold (step function).
+ * Equivalent to φ → ∞ in SoftThresholdStrategy, and to ThresholdModes.hard
+ * in processor.ts, but expressed as a ThresholdStrategy so it can be plugged
+ * into DoGConfig.thresholdStrategy (e.g. as ADoG's default, since the paper's
+ * screentone output is binarized rather than soft-thresholded).
+ */
+declare class HardThresholdStrategy implements ThresholdStrategy {
+    threshold(input: ChannelImage$1, config: ThresholdConfig): ChannelImage$1;
+}
+declare class HysteresisThresholdStrategy implements ThresholdStrategy {
+    private readonly highOffset;
+    private readonly lowOffset;
+    constructor(highOffset?: number, lowOffset?: number);
+    threshold(sharpened: ChannelImage$1, config: ThresholdConfig): ChannelImage$1;
+    private floodFill;
+}
+
+type threshold_HardThresholdStrategy = HardThresholdStrategy;
+declare const threshold_HardThresholdStrategy: typeof HardThresholdStrategy;
+type threshold_HysteresisThresholdStrategy = HysteresisThresholdStrategy;
+declare const threshold_HysteresisThresholdStrategy: typeof HysteresisThresholdStrategy;
+type threshold_SoftThresholdStrategy = SoftThresholdStrategy;
+declare const threshold_SoftThresholdStrategy: typeof SoftThresholdStrategy;
+type threshold_ThresholdConfig = ThresholdConfig;
+type threshold_ThresholdStrategy = ThresholdStrategy;
+declare namespace threshold {
+  export { threshold_HardThresholdStrategy as HardThresholdStrategy, threshold_HysteresisThresholdStrategy as HysteresisThresholdStrategy, threshold_SoftThresholdStrategy as SoftThresholdStrategy };
+  export type { threshold_ThresholdConfig as ThresholdConfig, threshold_ThresholdStrategy as ThresholdStrategy };
+}
+
 /**
  * Configuration for Difference of Gaussians processing
  *
@@ -169,22 +205,12 @@ interface DoGConfig {
     thresholdStrategy: ThresholdStrategy;
 }
 /**
- * Configuration for Edge Tangent Flow computation
- *
- * The ETF is computed from the smoothed structure tensor of image gradients.
- * See Section 2.6 of the paper.
+ * XDoG configuration combining DoG parameters with isotropic blur options
  */
-interface ETFConfig {
-    /**
-     * Number of refinement iterations for the tangent field (default: 3)
-     * More iterations increase line coherence but add computation time
-     */
-    iterations: number;
-    /**
-     * Kernel size for structure tensor smoothing (default: 5)
-     * Paper uses Gaussian smoothing with sampling within 2.45 * σc
-     */
-    kernelSize: number;
+interface XDoGConfig extends DoGConfig {
+    /** Kernel size multiplier for Gaussian blur (default: 6) */
+    kernelSizeMultiplier?: number;
+    blurStrategy?: BlurStrategy;
 }
 /**
  * Extended configuration for Flow-based DoG (FDoG)
@@ -220,6 +246,65 @@ interface FDoGConfig extends DoGConfig {
      */
     sigmaA: number;
 }
+/**
+ * Configuration for Adaptive Difference of Gaussians (ADoG)
+ *
+ * Based on Section 3.2, Eqs. (3)-(6) of "Gaussian Image Binarization"
+ * (Kang & Stamoulis, 2021). ADoG modifies the DoG contrast-sensitivity
+ * parameter to be a function of local tone, producing a screentoning effect
+ * whose primitive density is inversely proportional to brightness.
+ *
+ * Note: 'sigma' (inherited from DoGConfig) plays the role of σc, and
+ * 'k' plays the role of the σs/σc ratio (σs = k * σc), matching the
+ * paper's defaults of σc = 1.0 and σs = 1.6σc.
+ */
+interface ADoGConfig extends DoGConfig {
+    /**
+     * τ: minimum contrast sensitivity (default: 0.99)
+     * ρ(x) ranges within [τ, 1]. Higher values produce noisier responses.
+     * Paper restricts τ to [0.97, 1.0].
+     */
+    tau: number;
+    /**
+     * s: controls the steepness of tone-dependent falloff in ρ(x) (Eq. 5)
+     * and in the adaptive noise scale σ(x) (Eq. 6) (default: 2.0)
+     * Larger s concentrates the density transition into darker tones.
+     */
+    s: number;
+    /**
+     * Adaptive noise scale factor 'c' in Eq. (6) (default: 0.01)
+     * Set to 0 to disable noise injection entirely (Eq. 6 is optional --
+     * see Fig. 8 in the paper for the effect of enabling it).
+     */
+    noiseScaleC: number;
+    /**
+     * Kernel size multiplier for the isotropic Gaussian blur (default: 6)
+     * Same meaning as XDoGConfig's kernelSizeMultiplier.
+     */
+    kernelSizeMultiplier?: number;
+}
+/**
+ * Configuration for Hybrid Difference of Gaussians (HDoG)
+ *
+ * Combines FDoG (line drawing) with two ADoG passes at different scales,
+ * per Eq. (9): HDoG = FDoG ∧ ADoG_s ∧ ADoG_s'
+ */
+interface HDoGConfig {
+    /** Configuration passed to the internal FDoG instance */
+    fdog: Partial<FDoGConfig>;
+    /**
+     * Configuration passed to the primary ADoG instance (uses its own 's').
+     * The secondary ADoG pass reuses this config but overrides 's' with
+     * s * adogSecondaryScaleFactor (Eq. 9).
+     */
+    adog: Partial<ADoGConfig>;
+    /**
+     * s' = adogSecondaryScaleFactor * s, per Eq. (9) (default: 4)
+     * Generates additional screentone in the darkest regions without
+     * affecting brighter ones (paper empirically sets s' = 4s).
+     */
+    adogSecondaryScaleFactor: number;
+}
 interface DoGProcessingResult {
     /** Final thresholded output */
     result: ChannelImage$1;
@@ -229,12 +314,53 @@ interface DoGProcessingResult {
     rawDoG?: ChannelImage$1;
 }
 /**
- * Interface for DoG processors (XDoG or FDoG)
+ * Result of HDoG processing.
+ *
+ * Structurally compatible with DoGProcessingResult (result and sharpened
+ * are present), so this satisfies DoGImplementation.processDetailed()'s
+ * return type. `sharpened` is set to the FDoG pass's sharpened image as a
+ * representative value -- HDoG has no single "sharpened" stage of its own,
+ * since it combines three already-binarized outputs. Callers holding a
+ * concrete HDoG get the full per-pass breakdown via fdogResult /
+ * adogPrimaryResult / adogSecondaryResult.
+ */
+interface HDoGProcessingResult extends DoGProcessingResult {
+    fdogResult: ChannelImage$1;
+    adogPrimaryResult: ChannelImage$1;
+    adogSecondaryResult: ChannelImage$1;
+}
+/**
+ * Result of ADoG processing, extending the standard DoGProcessingResult
+ * with ADoG-specific intermediate artifacts.
+ *
+ * This is structurally compatible with DoGProcessingResult (result,
+ * sharpened, and rawDoG are all present with matching types), so it
+ * satisfies DoGImplementation.processDetailed()'s return type. Callers
+ * holding a concrete ADoG (rather than the generic DoGImplementation
+ * interface) additionally get rhoMap and noisyInput; nothing is lost, it's
+ * just not visible through the narrower interface type.
+ *
+ * Field mapping vs. XDoG/FDoG's use of "sharpened"/"rawDoG":
+ *   - rawDoG: the UNWEIGHTED response G_σc - G_σs (ρ ≡ 1), i.e. standard
+ *     DoG -- this is what Fig. 7(b) in the paper compares against.
+ *   - sharpened: the ρ(x)-WEIGHTED response (Eq. 4), pre-threshold. It's
+ *     not an unsharp-mask "sharpened" image the way XDoG uses the term,
+ *     but it plays the same structural role (pre-threshold DoG response).
+ */
+interface ADoGProcessingResult extends DoGProcessingResult {
+    /** Per-pixel adaptive contrast sensitivity ρ(x), Eq. (5) */
+    rhoMap: ChannelImage$1;
+    /** Input after adaptive noise injection (Eq. 6), or the original input if noiseScaleC === 0 */
+    noisyInput: ChannelImage$1;
+}
+/**
+ * Interface for DoG processors (XDoG, FDoG, ADoG, or HDoG)
  */
 interface DoGImplementation {
     process(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<ChannelImage$1>;
     /** Process and return all intermediate results (avoids redundant blur operations) */
     processDetailed(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<DoGProcessingResult>;
+    dispose(): void;
 }
 /**
  * Default DoG configuration values
@@ -242,14 +368,21 @@ interface DoGImplementation {
  */
 declare const DEFAULT_DOG_CONFIG: DoGConfig;
 /**
- * Default ETF configuration values
- */
-declare const DEFAULT_ETF_CONFIG: ETFConfig;
-/**
  * Default FDoG configuration values
  * Based on Table A.1 in the paper
  */
 declare const DEFAULT_FDOG_CONFIG: FDoGConfig;
+/**
+ * Default ADoG configuration values
+ * Based on Section 3.2 of "Gaussian Image Binarization"
+ * (σc = 1.0, σs = 1.6σc, τ = 0.99, s = 2.0, noise c = 0.01)
+ */
+declare const DEFAULT_ADOG_CONFIG: ADoGConfig;
+/**
+ * Default HDoG configuration values
+ * s' defaults to 4s per the paper's empirical setting (Eq. 9)
+ */
+declare const DEFAULT_HDOG_CONFIG: HDoGConfig;
 /**
  * Preset configurations for common styles from the paper
  */
@@ -297,27 +430,324 @@ declare const FDOG_STYLE_PRESETS: {
      */
     readonly woodcut: FDoGConfig;
 };
+/**
+ * Preset ADoG configurations
+ * (No presets given directly in the paper's tables beyond the defaults
+ * above; add named presets here as you tune them, e.g. denser/lighter
+ * screentone variants.)
+ */
+declare const ADOG_STYLE_PRESETS: {
+    readonly standard: ADoGConfig;
+};
 
-type types_BilateralFilterConfig = BilateralFilterConfig;
-type types_BlurStrategy = BlurStrategy;
-type types_BlurStrategyClass = BlurStrategyClass;
-declare const types_DEFAULT_DOG_CONFIG: typeof DEFAULT_DOG_CONFIG;
-declare const types_DEFAULT_ETF_CONFIG: typeof DEFAULT_ETF_CONFIG;
-declare const types_DEFAULT_FDOG_CONFIG: typeof DEFAULT_FDOG_CONFIG;
-type types_DoGConfig = DoGConfig;
-type types_DoGImplementation = DoGImplementation;
-type types_DoGProcessingResult = DoGProcessingResult;
-type types_ETFConfig = ETFConfig;
-declare const types_FDOG_STYLE_PRESETS: typeof FDOG_STYLE_PRESETS;
-type types_FDoGConfig = FDoGConfig;
-type types_FlowField = FlowField;
-type types_KuwaharaFilterConfig = KuwaharaFilterConfig;
-type types_MedianFilterConfig = MedianFilterConfig;
-declare const types_STYLE_PRESETS: typeof STYLE_PRESETS;
-type types_Vec2 = Vec2;
-declare namespace types {
-  export { types_DEFAULT_DOG_CONFIG as DEFAULT_DOG_CONFIG, types_DEFAULT_ETF_CONFIG as DEFAULT_ETF_CONFIG, types_DEFAULT_FDOG_CONFIG as DEFAULT_FDOG_CONFIG, types_FDOG_STYLE_PRESETS as FDOG_STYLE_PRESETS, types_STYLE_PRESETS as STYLE_PRESETS };
-  export type { types_BilateralFilterConfig as BilateralFilterConfig, types_BlurStrategy as BlurStrategy, types_BlurStrategyClass as BlurStrategyClass, ChannelImage$1 as ChannelImage, types_DoGConfig as DoGConfig, types_DoGImplementation as DoGImplementation, types_DoGProcessingResult as DoGProcessingResult, types_ETFConfig as ETFConfig, types_FDoGConfig as FDoGConfig, types_FlowField as FlowField, types_KuwaharaFilterConfig as KuwaharaFilterConfig, types_MedianFilterConfig as MedianFilterConfig, RGBImage$1 as RGBImage, types_Vec2 as Vec2 };
+/**
+ * High-level XDoG and FDoG implementations
+ *
+ * These classes provide convenient wrappers that compose the blur strategies
+ * and DoG processor together.
+ *
+ * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
+ * advanced image stylization" by Winnemöller et al. (2012)
+ */
+
+/**
+ * XDoG (Extended Difference of Gaussians)
+ *
+ * Uses standard isotropic Gaussian blur for edge detection and stylization.
+ * Good for general-purpose edge detection and artistic effects.
+ *
+ * This implements the reparameterized XDoG from Section 2.5 of the paper,
+ * using Equation 7 for the sharpening computation.
+ */
+declare class XDoG implements DoGImplementation {
+    private processor;
+    private config;
+    constructor(config?: Partial<XDoGConfig>);
+    dispose(): void;
+    /**
+     * Create XDoG with a preset style
+     */
+    static withPreset(presetName: keyof typeof STYLE_PRESETS): XDoG;
+    /**
+     * Process a grayscale image
+     */
+    process(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<ChannelImage$1>;
+    /**
+     * Process without thresholding (returns sharpened image)
+     */
+    processSharpened(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<ChannelImage$1>;
+    /**
+     * Get raw DoG response for visualization
+     */
+    processRawDoG(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<ChannelImage$1>;
+    /**
+     * Process and return all intermediate results
+     *
+     * This is more efficient than calling process(), processSharpened(), and
+     * processRawDoG() separately as it only performs the blur operations once.
+     *
+     * Useful for:
+     * - Hatching strategies that need the sharpened image
+     * - Debugging and visualization
+     * - Custom post-processing pipelines
+     */
+    processDetailed(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<DoGProcessingResult>;
+    /**
+     * Convenience method to process ImageData directly (e.g., from a canvas)
+     */
+    processGrayscaleImageData(input: ImageData, overrides?: Partial<DoGConfig>): Promise<ImageData>;
+    /**
+     * Get current configuration
+     */
+    getConfig(): Readonly<XDoGConfig>;
+    /**
+     * Update configuration
+     */
+    setConfig(config: Partial<XDoGConfig>): void;
+}
+/**
+ * Convenience function for one-shot XDoG processing
+ */
+declare function xdog(input: ChannelImage$1, config?: Partial<XDoGConfig>): Promise<ChannelImage$1>;
+
+/**
+ * Unified Edge Tangent Flow that automatically selects the best implementation
+ */
+declare class EdgeTangentFlow implements FlowField {
+    private impl;
+    readonly width: number;
+    readonly height: number;
+    private constructor();
+    getTangent(x: number, y: number): Vec2;
+    getTangentArray(): Float32Array;
+    visualize(): ChannelImage$1;
+    /**
+     * Check if WebGL acceleration is available
+     */
+    static isWebGLSupported(): boolean;
+    /**
+     * Compute ETF using the best available implementation
+     *
+     * @param input Grayscale image
+     * @param config ETF configuration
+     * @param sigmaC Structure tensor smoothing sigma
+     * @param forceImpl Force a specific implementation ('cpu' | 'webgl' | 'auto')
+     */
+    static compute(input: ChannelImage$1, config?: Partial<ETFConfig>, sigmaC?: number, forceImpl?: 'cpu' | 'webgl' | 'auto'): EdgeTangentFlow;
+    /**
+     * Cleanup WebGL resources
+     */
+    static dispose(): void;
+}
+
+/**
+ * High-level XDoG and FDoG implementations
+ *
+ * These classes provide convenient wrappers that compose the blur strategies
+ * and DoG processor together.
+ *
+ * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
+ * advanced image stylization" by Winnemöller et al. (2012)
+ */
+
+/**
+ * FDoG (Flow-based Difference of Gaussians)
+ *
+ * Uses flow-guided blur along edge tangent directions for coherent line drawing.
+ * Produces smoother, more artistic results similar to hand-drawn illustrations.
+ *
+ * This implements the full FDoG pipeline from Section 2.6:
+ * 1. Compute Edge Tangent Flow (ETF) from structure tensor
+ * 2. Apply gradient-aligned DoG (across edges)
+ * 3. Apply flow-aligned smoothing (along edges)
+ * 4. Apply soft thresholding
+ * 5. Optional: Apply anti-aliasing LIC pass
+ *
+ * Parameters:
+ * - σc: Structure tensor smoothing (controls ETF smoothness)
+ * - σe: Edge detection sigma (controls edge width)
+ * - σm: Flow-aligned smoothing (controls line coherence)
+ * - σa: Anti-aliasing sigma (optional post-processing)
+ */
+declare class FDoG implements DoGImplementation {
+    private config;
+    constructor(config?: Partial<FDoGConfig>);
+    dispose(): void;
+    /**
+     * Create FDoG with a preset style
+     */
+    static withPreset(presetName: keyof typeof FDOG_STYLE_PRESETS): FDoG;
+    /**
+     * Process a grayscale image
+     *
+     * Unlike XDoG, FDoG computes a new flow field for each image,
+     * so the full pipeline runs fresh each time.
+     */
+    process(input: ChannelImage$1, overrides?: Partial<FDoGConfig>): Promise<ChannelImage$1>;
+    /**
+     * Process with more control over individual stages
+     */
+    processDetailed(input: ChannelImage$1, overrides?: Partial<FDoGConfig>): Promise<{
+        result: ChannelImage$1;
+        etf: EdgeTangentFlow;
+        sharpened: ChannelImage$1;
+        thresholded: ChannelImage$1;
+        smoothed: ChannelImage$1;
+    }>;
+    /**
+     * Convenience method to process ImageData directly
+     */
+    processGrayscaleImageData(input: ImageData, overrides?: Partial<FDoGConfig>): Promise<ImageData>;
+    /**
+     * Process with a pre-computed ETF
+     *
+     * Useful when processing multiple frames of video where the ETF
+     * can be computed once and reused, or interpolated between keyframes.
+     */
+    processWithETF(input: ChannelImage$1, etf: EdgeTangentFlow, overrides?: Partial<FDoGConfig>): Promise<ChannelImage$1>;
+    /**
+     * Apply only the anti-aliasing pass to an already-processed image
+     */
+    applyAntiAliasing(input: ChannelImage$1, etf: EdgeTangentFlow, sigmaA?: number): Promise<ChannelImage$1>;
+    /**
+     * Get current configuration
+     */
+    getConfig(): Readonly<FDoGConfig>;
+    /**
+     * Update configuration
+     */
+    setConfig(config: Partial<FDoGConfig>): void;
+}
+/**
+ * Convenience function for one-shot FDoG processing
+ */
+declare function fdog(input: ChannelImage$1, config?: Partial<FDoGConfig>): Promise<ChannelImage$1>;
+
+/**
+ * High-level XDoG and FDoG implementations
+ *
+ * These classes provide convenient wrappers that compose the blur strategies
+ * and DoG processor together.
+ *
+ * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
+ * advanced image stylization" by Winnemöller et al. (2012)
+ */
+
+declare class ADoG implements DoGImplementation {
+    private config;
+    private blurStrategy;
+    constructor(config?: Partial<ADoGConfig>);
+    dispose(): void;
+    /**
+     * Process a grayscale image through the ADoG pipeline.
+     *
+     * Note on the DoGImplementation interface: this method's `overrides` is
+     * typed against Partial<ADoGConfig> (a superset of DoGConfig), which
+     * satisfies DoGImplementation's Partial<DoGConfig> parameter type via
+     * TypeScript's bivariant method-parameter checking. A caller holding this
+     * instance through the DoGImplementation interface type (rather than the
+     * concrete ADoG type) can only type-check overrides for fields that exist
+     * on DoGConfig (sigma, k, epsilon, phi, ...) -- tau/s/noiseScaleC are only
+     * overridable when the caller has a concrete ADoG reference. No data is
+     * lost; this only affects what's type-checkable through the narrower view.
+     */
+    process(input: ChannelImage$1, overrides?: Partial<ADoGConfig>): Promise<ChannelImage$1>;
+    processDetailed(input: ChannelImage$1, overrides?: Partial<ADoGConfig>): Promise<ADoGProcessingResult>;
+    /**
+     * Convenience method to process ImageData directly (e.g., from a canvas),
+     * matching XDoG/FDoG's convenience method of the same name.
+     */
+    processGrayscaleImageData(input: ImageData, overrides?: Partial<ADoGConfig>): Promise<ImageData>;
+    /**
+     * Get current configuration
+     */
+    getConfig(): Readonly<ADoGConfig>;
+    /**
+     * Update configuration
+     */
+    setConfig(config: Partial<ADoGConfig>): void;
+    /** Eq. (5): rho(x) = tau + (1 - tau) * (1 - tanh(s * I(x))) */
+    private computeRhoMap;
+    /** Eq. (6): sigma(x) = c * (1 - tanh(s * I(x))); sampled noise ~ N(0,1) * sigma(x) added to I(x) */
+    private injectAdaptiveNoise;
+    /** Eq. (3)/(4): ADoG(x) = G_sigmaC(x) - rho(x) * G_sigmaS(x) */
+    private computeWeightedDoG;
+    /** Standard (non-adaptive) DoG: G_sigmaC(x) - G_sigmaS(x), i.e. rho == 1 everywhere */
+    private computeUnweightedDoG;
+}
+/**
+ * Convenience function for one-shot ADoG processing, matching xdog()/fdog()
+ * in dog.ts
+ */
+declare function adog(input: ChannelImage$1, config?: Partial<ADoGConfig>): Promise<ChannelImage$1>;
+
+/**
+ * High-level XDoG and FDoG implementations
+ *
+ * These classes provide convenient wrappers that compose the blur strategies
+ * and DoG processor together.
+ *
+ * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
+ * advanced image stylization" by Winnemöller et al. (2012)
+ */
+
+declare class HDoG implements DoGImplementation {
+    private fdog;
+    private adogPrimary;
+    private adogSecondary;
+    constructor(config?: Partial<HDoGConfig>);
+    dispose(): void;
+    /**
+     * Eq. (9): HDoG = FDoG ∧ ADoG_s ∧ ADoG_s'
+     *
+     * Note: HDoG's own configuration (fdog/adog/adogSecondaryScaleFactor) is
+     * nested rather than a flat DoGConfig, so per-call overrides aren't
+     * exposed here the way XDoG/FDoG/ADoG expose them -- there's no clean way
+     * to map a flat Partial<DoGConfig> onto "override the nested fdog config,
+     * or the nested adog config, or the scale factor". Configure via the
+     * constructor; if you need per-call tuning, consider adding a dedicated
+     * method (e.g. processWithConfig(input, HDoGConfig overrides)) rather than
+     * overloading `process`.
+     */
+    process(input: ChannelImage$1): Promise<ChannelImage$1>;
+    processDetailed(input: ChannelImage$1): Promise<HDoGProcessingResult>;
+}
+/**
+ * Convenience function for one-shot HDoG processing, matching xdog()/fdog()
+ * in dog.ts and adog() in adog.ts
+ */
+declare function hdog(input: ChannelImage$1, config?: Partial<HDoGConfig>): Promise<ChannelImage$1>;
+
+declare const index$3_ADOG_STYLE_PRESETS: typeof ADOG_STYLE_PRESETS;
+type index$3_ADoG = ADoG;
+declare const index$3_ADoG: typeof ADoG;
+type index$3_ADoGConfig = ADoGConfig;
+type index$3_ADoGProcessingResult = ADoGProcessingResult;
+declare const index$3_DEFAULT_ADOG_CONFIG: typeof DEFAULT_ADOG_CONFIG;
+declare const index$3_DEFAULT_DOG_CONFIG: typeof DEFAULT_DOG_CONFIG;
+declare const index$3_DEFAULT_FDOG_CONFIG: typeof DEFAULT_FDOG_CONFIG;
+declare const index$3_DEFAULT_HDOG_CONFIG: typeof DEFAULT_HDOG_CONFIG;
+type index$3_DoGConfig = DoGConfig;
+type index$3_DoGImplementation = DoGImplementation;
+declare const index$3_FDOG_STYLE_PRESETS: typeof FDOG_STYLE_PRESETS;
+type index$3_FDoG = FDoG;
+declare const index$3_FDoG: typeof FDoG;
+type index$3_FDoGConfig = FDoGConfig;
+type index$3_HDoG = HDoG;
+declare const index$3_HDoG: typeof HDoG;
+type index$3_HDoGConfig = HDoGConfig;
+type index$3_HDoGProcessingResult = HDoGProcessingResult;
+declare const index$3_STYLE_PRESETS: typeof STYLE_PRESETS;
+type index$3_XDoG = XDoG;
+declare const index$3_XDoG: typeof XDoG;
+type index$3_XDoGConfig = XDoGConfig;
+declare const index$3_adog: typeof adog;
+declare const index$3_fdog: typeof fdog;
+declare const index$3_hdog: typeof hdog;
+declare const index$3_xdog: typeof xdog;
+declare namespace index$3 {
+  export { index$3_ADOG_STYLE_PRESETS as ADOG_STYLE_PRESETS, index$3_ADoG as ADoG, index$3_DEFAULT_ADOG_CONFIG as DEFAULT_ADOG_CONFIG, index$3_DEFAULT_DOG_CONFIG as DEFAULT_DOG_CONFIG, index$3_DEFAULT_FDOG_CONFIG as DEFAULT_FDOG_CONFIG, index$3_DEFAULT_HDOG_CONFIG as DEFAULT_HDOG_CONFIG, index$3_FDOG_STYLE_PRESETS as FDOG_STYLE_PRESETS, index$3_FDoG as FDoG, index$3_HDoG as HDoG, index$3_STYLE_PRESETS as STYLE_PRESETS, index$3_XDoG as XDoG, index$3_adog as adog, index$3_fdog as fdog, index$3_hdog as hdog, index$3_xdog as xdog };
+  export type { index$3_ADoGConfig as ADoGConfig, index$3_ADoGProcessingResult as ADoGProcessingResult, index$3_DoGConfig as DoGConfig, index$3_DoGImplementation as DoGImplementation, index$3_FDoGConfig as FDoGConfig, index$3_HDoGConfig as HDoGConfig, index$3_HDoGProcessingResult as HDoGProcessingResult, index$3_XDoGConfig as XDoGConfig };
 }
 
 /**
@@ -350,6 +780,7 @@ declare class DoGProcessor {
     private blurStrategy;
     private thresholdStrategy;
     constructor(blurStrategy: BlurStrategy, config?: Partial<DoGConfig>);
+    dispose(): void;
     /**
      * Process an image through the DoG pipeline
      *
@@ -467,365 +898,8 @@ declare const ThresholdModes: {
  */
 declare function applyCustomThreshold(input: ChannelImage$1, thresholdFn: (value: number) => number): ChannelImage$1;
 
-type processor_DoGProcessor = DoGProcessor;
-declare const processor_DoGProcessor: typeof DoGProcessor;
-declare const processor_ThresholdModes: typeof ThresholdModes;
-declare const processor_applyCustomThreshold: typeof applyCustomThreshold;
-declare namespace processor {
-  export {
-    processor_DoGProcessor as DoGProcessor,
-    processor_ThresholdModes as ThresholdModes,
-    processor_applyCustomThreshold as applyCustomThreshold,
-  };
-}
-
-/**
- * Image utility functions
- */
-
-/**
- * Create a new grayscale image with given dimensions
- */
-declare function createChannelImage(width: number, height: number): ChannelImage$1;
-/**
- * Clone a grayscale image
- */
-declare function cloneChannelImage(image: ChannelImage$1): ChannelImage$1;
-/**
- * Get pixel value with bounds checking (clamps to edge)
- */
-declare function getPixel(image: ChannelImage$1, x: number, y: number): number;
-/**
- * Get pixel value with bilinear interpolation for sub-pixel sampling
- */
-declare function getPixelBilinear(image: ChannelImage$1, x: number, y: number): number;
-/**
- * Set pixel value
- */
-declare function setPixel(image: ChannelImage$1, x: number, y: number, value: number): void;
-/**
- * Get pixel index for coordinates
- */
-declare function getIndex(width: number, x: number, y: number): number;
-/**
- * Convert RGB image to grayscale using luminance formula
- */
-declare function rgbToGrayscale(rgb: RGBImage$1): ChannelImage$1;
-/**
- * Convert ImageData (from canvas) to grayscale image
- * Assumes values are in 0-255 range, normalizes to 0-1
- */
-declare function imageDataToLuminance(imageData: ImageData): ChannelImage$1;
-/**
- * Convert grayscale image to ImageData (for canvas display)
- * Assumes input is in 0-1 range
- */
-declare function luminanceToImageData(gray: ChannelImage$1): ImageData;
-/**
- * Normalize a 2D vector
- */
-declare function normalizeVec2(v: Vec2): Vec2;
-/**
- * Compute dot product of two vectors
- */
-declare function dotVec2(a: Vec2, b: Vec2): number;
-/**
- * Rotate vector 90 degrees counter-clockwise (perpendicular)
- */
-declare function perpendicular(v: Vec2): Vec2;
-/**
- * Generate 1D Gaussian kernel
- * @param sigma Standard deviation
- * @param size Kernel size (should be odd)
- * @returns Normalized Gaussian kernel
- */
-declare function generateGaussianKernel(sigma: number, size: number): Float32Array;
-/**
- * Compute kernel size from sigma
- * Paper samples at all integer locations less than 2× sigma for flow-aligned,
- * and extends to 2.45σ for structure tensor blur
- *
- * @param sigma Standard deviation
- * @param multiplier Size multiplier (default 6 = 3σ on each side)
- */
-declare function computeKernelSize(sigma: number, multiplier?: number): number;
-/**
- * Clamp a value to a range
- */
-declare function clamp(value: number, min: number, max: number): number;
-/**
- * Linear interpolation
- */
-declare function lerp(a: number, b: number, t: number): number;
-/**
- * Reads a value that may be a scalar (uniform) or a per-pixel ChannelImage.
- */
-declare function at(value: number | ChannelImage$1, i: number): number;
-/**
- * Convert from the original τ parameterization to the new p parameterization
- * τ = p / (p + 1), so p = τ / (1 - τ)
- */
-declare function tauToP(tau: number): number;
-/**
- * Convert from p parameterization back to τ
- * p = τ / (1 - τ), so τ = p / (p + 1)
- */
-declare function pToTau(p: number): number;
-
-declare const utils_at: typeof at;
-declare const utils_clamp: typeof clamp;
-declare const utils_cloneChannelImage: typeof cloneChannelImage;
-declare const utils_computeKernelSize: typeof computeKernelSize;
-declare const utils_createChannelImage: typeof createChannelImage;
-declare const utils_dotVec2: typeof dotVec2;
-declare const utils_generateGaussianKernel: typeof generateGaussianKernel;
-declare const utils_getIndex: typeof getIndex;
-declare const utils_getPixel: typeof getPixel;
-declare const utils_getPixelBilinear: typeof getPixelBilinear;
-declare const utils_imageDataToLuminance: typeof imageDataToLuminance;
-declare const utils_lerp: typeof lerp;
-declare const utils_luminanceToImageData: typeof luminanceToImageData;
-declare const utils_normalizeVec2: typeof normalizeVec2;
-declare const utils_pToTau: typeof pToTau;
-declare const utils_perpendicular: typeof perpendicular;
-declare const utils_rgbToGrayscale: typeof rgbToGrayscale;
-declare const utils_setPixel: typeof setPixel;
-declare const utils_tauToP: typeof tauToP;
-declare namespace utils {
-  export {
-    utils_at as at,
-    utils_clamp as clamp,
-    utils_cloneChannelImage as cloneChannelImage,
-    utils_computeKernelSize as computeKernelSize,
-    utils_createChannelImage as createChannelImage,
-    utils_dotVec2 as dotVec2,
-    utils_generateGaussianKernel as generateGaussianKernel,
-    utils_getIndex as getIndex,
-    utils_getPixel as getPixel,
-    utils_getPixelBilinear as getPixelBilinear,
-    utils_imageDataToLuminance as imageDataToLuminance,
-    utils_lerp as lerp,
-    utils_luminanceToImageData as luminanceToImageData,
-    utils_normalizeVec2 as normalizeVec2,
-    utils_pToTau as pToTau,
-    utils_perpendicular as perpendicular,
-    utils_rgbToGrayscale as rgbToGrayscale,
-    utils_setPixel as setPixel,
-    utils_tauToP as tauToP,
-  };
-}
-
-/**
- * Unified Edge Tangent Flow that automatically selects the best implementation
- */
-declare class EdgeTangentFlow implements FlowField {
-    private impl;
-    readonly width: number;
-    readonly height: number;
-    private constructor();
-    getTangent(x: number, y: number): Vec2;
-    getTangentArray(): Float32Array;
-    visualize(): ChannelImage$1;
-    /**
-     * Check if WebGL acceleration is available
-     */
-    static isWebGLSupported(): boolean;
-    /**
-     * Compute ETF using the best available implementation
-     *
-     * @param input Grayscale image
-     * @param config ETF configuration
-     * @param sigmaC Structure tensor smoothing sigma
-     * @param forceImpl Force a specific implementation ('cpu' | 'webgl' | 'auto')
-     */
-    static compute(input: ChannelImage$1, config?: Partial<ETFConfig>, sigmaC?: number, forceImpl?: 'cpu' | 'webgl' | 'auto'): EdgeTangentFlow;
-    /**
-     * Cleanup WebGL resources
-     */
-    static dispose(): void;
-}
-
-/**
- * High-level XDoG and FDoG implementations
- *
- * These classes provide convenient wrappers that compose the blur strategies
- * and DoG processor together.
- *
- * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
- * advanced image stylization" by Winnemöller et al. (2012)
- */
-
-/**
- * XDoG configuration combining DoG parameters with isotropic blur options
- */
-interface XDoGConfig extends DoGConfig {
-    /** Kernel size multiplier for Gaussian blur (default: 6) */
-    kernelSizeMultiplier?: number;
-    blurStrategy?: BlurStrategy;
-}
-/**
- * XDoG (Extended Difference of Gaussians)
- *
- * Uses standard isotropic Gaussian blur for edge detection and stylization.
- * Good for general-purpose edge detection and artistic effects.
- *
- * This implements the reparameterized XDoG from Section 2.5 of the paper,
- * using Equation 7 for the sharpening computation.
- */
-declare class XDoG implements DoGImplementation {
-    private processor;
-    private config;
-    constructor(config?: Partial<XDoGConfig>);
-    /**
-     * Create XDoG with a preset style
-     */
-    static withPreset(presetName: keyof typeof STYLE_PRESETS): XDoG;
-    /**
-     * Process a grayscale image
-     */
-    process(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<ChannelImage$1>;
-    /**
-     * Process without thresholding (returns sharpened image)
-     */
-    processSharpened(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<ChannelImage$1>;
-    /**
-     * Get raw DoG response for visualization
-     */
-    processRawDoG(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<ChannelImage$1>;
-    /**
-     * Process and return all intermediate results
-     *
-     * This is more efficient than calling process(), processSharpened(), and
-     * processRawDoG() separately as it only performs the blur operations once.
-     *
-     * Useful for:
-     * - Hatching strategies that need the sharpened image
-     * - Debugging and visualization
-     * - Custom post-processing pipelines
-     */
-    processDetailed(input: ChannelImage$1, overrides?: Partial<DoGConfig>): Promise<DoGProcessingResult>;
-    /**
-     * Convenience method to process ImageData directly (e.g., from a canvas)
-     */
-    processGrayscaleImageData(input: ImageData, overrides?: Partial<DoGConfig>): Promise<ImageData>;
-    /**
-     * Get current configuration
-     */
-    getConfig(): Readonly<XDoGConfig>;
-    /**
-     * Update configuration
-     */
-    setConfig(config: Partial<XDoGConfig>): void;
-}
-/**
- * FDoG (Flow-based Difference of Gaussians)
- *
- * Uses flow-guided blur along edge tangent directions for coherent line drawing.
- * Produces smoother, more artistic results similar to hand-drawn illustrations.
- *
- * This implements the full FDoG pipeline from Section 2.6:
- * 1. Compute Edge Tangent Flow (ETF) from structure tensor
- * 2. Apply gradient-aligned DoG (across edges)
- * 3. Apply flow-aligned smoothing (along edges)
- * 4. Apply soft thresholding
- * 5. Optional: Apply anti-aliasing LIC pass
- *
- * Parameters:
- * - σc: Structure tensor smoothing (controls ETF smoothness)
- * - σe: Edge detection sigma (controls edge width)
- * - σm: Flow-aligned smoothing (controls line coherence)
- * - σa: Anti-aliasing sigma (optional post-processing)
- */
-declare class FDoG implements DoGImplementation {
-    private config;
-    constructor(config?: Partial<FDoGConfig>);
-    /**
-     * Create FDoG with a preset style
-     */
-    static withPreset(presetName: keyof typeof FDOG_STYLE_PRESETS): FDoG;
-    /**
-     * Process a grayscale image
-     *
-     * Unlike XDoG, FDoG computes a new flow field for each image,
-     * so the full pipeline runs fresh each time.
-     */
-    process(input: ChannelImage$1, overrides?: Partial<FDoGConfig>): Promise<ChannelImage$1>;
-    /**
-     * Process with more control over individual stages
-     */
-    processDetailed(input: ChannelImage$1, overrides?: Partial<FDoGConfig>): Promise<{
-        result: ChannelImage$1;
-        etf: EdgeTangentFlow;
-        sharpened: ChannelImage$1;
-        thresholded: ChannelImage$1;
-        smoothed: ChannelImage$1;
-    }>;
-    /**
-     * Convenience method to process ImageData directly
-     */
-    processGrayscaleImageData(input: ImageData, overrides?: Partial<FDoGConfig>): Promise<ImageData>;
-    /**
-     * Process with a pre-computed ETF
-     *
-     * Useful when processing multiple frames of video where the ETF
-     * can be computed once and reused, or interpolated between keyframes.
-     */
-    processWithETF(input: ChannelImage$1, etf: EdgeTangentFlow, overrides?: Partial<FDoGConfig>): Promise<ChannelImage$1>;
-    /**
-     * Compute Edge Tangent Flow separately
-     *
-     * Useful for visualizing the flow field or reusing it across frames.
-     */
-    computeETF(input: ChannelImage$1, sigmaC?: number): EdgeTangentFlow;
-    /**
-     * Apply only the anti-aliasing pass to an already-processed image
-     */
-    applyAntiAliasing(input: ChannelImage$1, etf: EdgeTangentFlow, sigmaA?: number): Promise<ChannelImage$1>;
-    /**
-     * Get current configuration
-     */
-    getConfig(): Readonly<FDoGConfig>;
-    /**
-     * Update configuration
-     */
-    setConfig(config: Partial<FDoGConfig>): void;
-}
-/**
- * Convenience function for one-shot XDoG processing
- */
-declare function xdog(input: ChannelImage$1, config?: Partial<XDoGConfig>): Promise<ChannelImage$1>;
-/**
- * Convenience function for one-shot FDoG processing
- */
-declare function fdog(input: ChannelImage$1, config?: Partial<FDoGConfig>): Promise<ChannelImage$1>;
-
-type dog_FDoG = FDoG;
-declare const dog_FDoG: typeof FDoG;
-type dog_XDoG = XDoG;
-declare const dog_XDoG: typeof XDoG;
-type dog_XDoGConfig = XDoGConfig;
-declare const dog_fdog: typeof fdog;
-declare const dog_xdog: typeof xdog;
-declare namespace dog {
-  export { dog_FDoG as FDoG, dog_XDoG as XDoG, dog_fdog as fdog, dog_xdog as xdog };
-  export type { dog_XDoGConfig as XDoGConfig };
-}
-
-declare const index$3_dog: typeof dog;
-declare const index$3_processor: typeof processor;
-declare const index$3_threshold: typeof threshold;
-declare const index$3_types: typeof types;
-declare namespace index$3 {
-  export {
-    index$3_dog as dog,
-    index$3_processor as processor,
-    index$3_threshold as threshold,
-    index$3_types as types,
-    utils as utilities,
-  };
-}
-
 declare class BaseCPUBlur {
+    dispose(): void;
     /**
    * Check if isotropic blur is supported
    * Always returns true as this is a pure JavaScript implementation
@@ -909,6 +983,7 @@ interface BaseIsotropicBlurConfig {
 declare class CPUIsotropicBlur extends BaseCPUBlur implements BlurStrategy {
     private config;
     constructor(config?: Partial<BaseIsotropicBlurConfig>);
+    dispose(): void;
     blur(input: ChannelImage$1, sigma: number): Promise<ChannelImage$1>;
 }
 /**
@@ -989,6 +1064,7 @@ type IsotropicBlurConfig = BaseIsotropicBlurConfig | WebGLBlurConfig | WebGPUBlu
 declare class IsotropicBlur implements BlurStrategy {
     instance: BlurStrategy;
     constructor(config: Partial<IsotropicBlurConfig>);
+    dispose(): void;
     blur(input: ChannelImage$1, sigma: number): Promise<ChannelImage$1>;
 }
 
@@ -1105,6 +1181,7 @@ type FlowGuidedBlurConfig = CPUFlowGuidedBlurConfig | GLGPUBlurConfig;
 declare class FlowGuidedBlur implements BlurStrategy {
     instance: BlurStrategy & FlowGuidedBlurStrategy;
     constructor(flowField: FlowField, config?: Partial<FlowGuidedBlurConfig>);
+    dispose(): void;
     blur(input: ChannelImage$1, sigma: number): Promise<ChannelImage$1>;
     /**
      * Update the flow field (e.g., when processing a new image)
@@ -1770,6 +1847,169 @@ declare const index$1_webgl: typeof webgl;
 declare namespace index$1 {
   export { index$1_LocalVariancePreprocessor as LocalVariancePreprocessor, index$1_LocalVariancePreprocessorOptimized as LocalVariancePreprocessorOptimized, index$1_PreprocessingPresets as PreprocessingPresets, index$1_Preprocessor as Preprocessor, index$1_bilateralFilter as bilateralFilter, index$1_enhanceContrast as enhanceContrast, index$1_gaussianBlur as gaussianBlur, index$1_kuwaharaFilter as kuwaharaFilter, index$1_medianFilter as medianFilter, index$1_quantize as quantize, index$1_webgl as webgl };
   export type { index$1_LocalVarianceConfig as LocalVarianceConfig };
+}
+
+/**
+ * Image utility functions
+ */
+
+/**
+ * Create a new grayscale image with given dimensions
+ */
+declare function createChannelImage(width: number, height: number): ChannelImage$1;
+/**
+ * Clone a grayscale image
+ */
+declare function cloneChannelImage(image: ChannelImage$1): ChannelImage$1;
+/**
+ * Get pixel value with bounds checking (clamps to edge)
+ */
+declare function getPixel(image: ChannelImage$1, x: number, y: number): number;
+/**
+ * Get pixel value with bilinear interpolation for sub-pixel sampling
+ */
+declare function getPixelBilinear(image: ChannelImage$1, x: number, y: number): number;
+/**
+ * Set pixel value
+ */
+declare function setPixel(image: ChannelImage$1, x: number, y: number, value: number): void;
+/**
+ * Get pixel index for coordinates
+ */
+declare function getIndex(width: number, x: number, y: number): number;
+/**
+ * Convert RGB image to grayscale using luminance formula
+ */
+declare function rgbToGrayscale(rgb: RGBImage$1): ChannelImage$1;
+/**
+ * Convert ImageData (from canvas) to grayscale image
+ * Assumes values are in 0-255 range, normalizes to 0-1
+ */
+declare function imageDataToLuminance(imageData: ImageData): ChannelImage$1;
+/**
+ * Convert grayscale image to ImageData (for canvas display)
+ * Assumes input is in 0-1 range
+ */
+declare function luminanceToImageData(gray: ChannelImage$1): ImageData;
+/**
+ * Normalize a 2D vector
+ */
+declare function normalizeVec2(v: Vec2): Vec2;
+/**
+ * Compute dot product of two vectors
+ */
+declare function dotVec2(a: Vec2, b: Vec2): number;
+/**
+ * Rotate vector 90 degrees counter-clockwise (perpendicular)
+ */
+declare function perpendicular(v: Vec2): Vec2;
+/**
+ * Generate 1D Gaussian kernel
+ * @param sigma Standard deviation
+ * @param size Kernel size (should be odd)
+ * @returns Normalized Gaussian kernel
+ */
+declare function generateGaussianKernel(sigma: number, size: number): Float32Array;
+/**
+ * Compute kernel size from sigma
+ * Paper samples at all integer locations less than 2× sigma for flow-aligned,
+ * and extends to 2.45σ for structure tensor blur
+ *
+ * @param sigma Standard deviation
+ * @param multiplier Size multiplier (default 6 = 3σ on each side)
+ */
+declare function computeKernelSize(sigma: number, multiplier?: number): number;
+/**
+ * Clamp a value to a range
+ */
+declare function clamp(value: number, min: number, max: number): number;
+/**
+ * Linear interpolation
+ */
+declare function lerp(a: number, b: number, t: number): number;
+/**
+ * Reads a value that may be a scalar (uniform) or a per-pixel ChannelImage.
+ */
+declare function at(value: number | ChannelImage$1, i: number): number;
+/**
+ * Convert from the original τ parameterization to the new p parameterization
+ * τ = p / (p + 1), so p = τ / (1 - τ)
+ */
+declare function tauToP(tau: number): number;
+/**
+ * Convert from p parameterization back to τ
+ * p = τ / (1 - τ), so τ = p / (p + 1)
+ */
+declare function pToTau(p: number): number;
+/**
+ * Sample a single value from a standard normal distribution N(0, 1)
+ * using the Box-Muller transform.
+ *
+ * Used by ADoG's adaptive noise injection (Eq. 6): the sampled value is
+ * scaled by a tone-dependent sigma(x) and added to the input luminance.
+ */
+declare function gaussianSample(): number;
+/**
+ * Pixel-wise logical AND across N binarized (0/1) ChannelImages.
+ *
+ * Generalizes Eq. (7)/(9) from "Gaussian Image Binarization":
+ *   HDoG = FDoG ∧ ADoG_s ∧ ADoG_s'
+ *
+ * Since binarized images only contain 0 or 1, logical AND is equivalent to
+ * taking the minimum across images (no De Morgan's / inversion needed here
+ * -- see the paper's Eq. (8) for why AND and "invert-OR-invert" coincide;
+ * this just implements AND directly).
+ *
+ * All images must have matching dimensions; this is not checked here for
+ * performance -- validate upstream if inputs could mismatch.
+ */
+declare function andCombine(images: ChannelImage$1[]): ChannelImage$1;
+
+declare const utils_andCombine: typeof andCombine;
+declare const utils_at: typeof at;
+declare const utils_clamp: typeof clamp;
+declare const utils_cloneChannelImage: typeof cloneChannelImage;
+declare const utils_computeKernelSize: typeof computeKernelSize;
+declare const utils_createChannelImage: typeof createChannelImage;
+declare const utils_dotVec2: typeof dotVec2;
+declare const utils_gaussianSample: typeof gaussianSample;
+declare const utils_generateGaussianKernel: typeof generateGaussianKernel;
+declare const utils_getIndex: typeof getIndex;
+declare const utils_getPixel: typeof getPixel;
+declare const utils_getPixelBilinear: typeof getPixelBilinear;
+declare const utils_imageDataToLuminance: typeof imageDataToLuminance;
+declare const utils_lerp: typeof lerp;
+declare const utils_luminanceToImageData: typeof luminanceToImageData;
+declare const utils_normalizeVec2: typeof normalizeVec2;
+declare const utils_pToTau: typeof pToTau;
+declare const utils_perpendicular: typeof perpendicular;
+declare const utils_rgbToGrayscale: typeof rgbToGrayscale;
+declare const utils_setPixel: typeof setPixel;
+declare const utils_tauToP: typeof tauToP;
+declare namespace utils {
+  export {
+    utils_andCombine as andCombine,
+    utils_at as at,
+    utils_clamp as clamp,
+    utils_cloneChannelImage as cloneChannelImage,
+    utils_computeKernelSize as computeKernelSize,
+    utils_createChannelImage as createChannelImage,
+    utils_dotVec2 as dotVec2,
+    utils_gaussianSample as gaussianSample,
+    utils_generateGaussianKernel as generateGaussianKernel,
+    utils_getIndex as getIndex,
+    utils_getPixel as getPixel,
+    utils_getPixelBilinear as getPixelBilinear,
+    utils_imageDataToLuminance as imageDataToLuminance,
+    utils_lerp as lerp,
+    utils_luminanceToImageData as luminanceToImageData,
+    utils_normalizeVec2 as normalizeVec2,
+    utils_pToTau as pToTau,
+    utils_perpendicular as perpendicular,
+    utils_rgbToGrayscale as rgbToGrayscale,
+    utils_setPixel as setPixel,
+    utils_tauToP as tauToP,
+  };
 }
 
 /**
@@ -2937,5 +3177,5 @@ declare namespace index {
   export type { index_AntiAliasingConfig as AntiAliasingConfig, index_BlendContext as BlendContext, index_BlendFunction as BlendFunction, index_BuiltinBlendMode as BuiltinBlendMode, index_Color as Color, index_ColorRetentionConfig as ColorRetentionConfig, index_ColorTransformFn as ColorTransformFn, index_DoGResult as DoGResult, index_ExtensionStrategy as ExtensionStrategy, index_HatchTexture as HatchTexture, index_HatchingConfig as HatchingConfig, index_MaskTransformFn as MaskTransformFn, index_MultiScaleConfig as MultiScaleConfig, index_MultiScaleLayer as MultiScaleLayer, index_NaturalMediaConfig as NaturalMediaConfig, index_NaturalMediaStyle as NaturalMediaStyle, index_PostProcessFn as PostProcessFn };
 }
 
-export { DEFAULT_DOG_CONFIG, DEFAULT_ETF_CONFIG, DEFAULT_FDOG_CONFIG, DoGProcessor, EdgeTangentFlow, FDOG_STYLE_PRESETS, FDoG, STYLE_PRESETS, ThresholdModes, XDoG, applyCustomThreshold, index$2 as blur, index$3 as core, index as extensions, fdog, index$1 as preprocess, threshold, utils as utilities, xdog };
-export type { AntiAliasingConfig, BilateralFilterConfig, BlendFunction, BlurStrategy, BlurStrategyClass, ChannelImage$1 as ChannelImage, ColorRetentionConfig, ColorTransformFn, DoGConfig, DoGResult, ETFConfig, ExtensionStrategy, FDoGConfig, FlowField, FlowGuidedBlurConfig, HatchTexture, HatchingConfig, IsotropicBlurConfig, KuwaharaFilterConfig, MaskTransformFn, MedianFilterConfig, MultiScaleConfig, MultiScaleLayer, NaturalMediaConfig, NaturalMediaStyle, PostProcessFn, RGBImage$1 as RGBImage, ThresholdConfig, ThresholdStrategy, Vec2, XDoGConfig };
+export { DEFAULT_ETF_CONFIG, DoGProcessor, EdgeTangentFlow, ThresholdModes, applyCustomThreshold, index$2 as blur, index$3 as dog, index as extensions, index$1 as preprocess, threshold, utils as utilities };
+export type { AntiAliasingConfig, BilateralFilterConfig, BlendFunction, BlurStrategy, BlurStrategyClass, ChannelImage$1 as ChannelImage, ColorRetentionConfig, ColorTransformFn, DoGResult, ETFConfig, ExtensionStrategy, FlowField, FlowGuidedBlurConfig, HatchTexture, HatchingConfig, IsotropicBlurConfig, KuwaharaFilterConfig, MaskTransformFn, MedianFilterConfig, MultiScaleConfig, MultiScaleLayer, NaturalMediaConfig, NaturalMediaStyle, PostProcessFn, RGBImage$1 as RGBImage, ThresholdConfig, ThresholdStrategy, Vec2 };

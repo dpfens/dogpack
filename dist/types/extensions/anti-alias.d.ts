@@ -1,4 +1,4 @@
-import type { FlowField, ChannelImage } from "../core/types";
+import type { FlowField, ChannelImage } from "../types";
 import type { ExtensionStrategy } from "./base";
 /**
  * Anti-aliasing configuration

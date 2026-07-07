@@ -5,7 +5,7 @@
  * 1. Use the provided blend functions (average, min, max, multiply)
  * 2. Supply their own custom blend function
  */
-import { FDoG, XDoG } from '../core/dog';
+import { FDoG, XDoG } from '../dog';
 import { createChannelImage } from '../utils';
 // =============================================================================
 // Built-in Blend Functions

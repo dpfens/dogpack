@@ -1,4 +1,4 @@
-import { FDoG, XDoG } from "../core/dog";
+import { FDoG, XDoG } from "../dog";
 /**
  * Natural Media Strategy
  *
@@ -115,14 +115,12 @@ export class NaturalMediaStrategy {
     async apply(input, configOverride) {
         const mergedConfig = { ...this.config, ...configOverride };
         const resolved = new NaturalMediaStrategy(mergedConfig).getResolvedConfig();
-        if (resolved.useFlow) {
-            const fdog = new FDoG(resolved);
-            return fdog.process(input);
-        }
-        else {
-            const xdog = new XDoG(resolved);
-            return xdog.process(input);
-        }
+        const dog = resolved.useFlow
+            ? new FDoG(resolved)
+            : new XDoG(resolved);
+        const result = dog.process(input);
+        dog.dispose();
+        return result;
     }
     /**
      * Create strategy for a specific style

@@ -1,4 +1,4 @@
-import type { ChannelImage } from '../core/types';
+import type { ChannelImage } from '../types';
 import { EdgeTangentFlow } from '../etf/index';
 /**
  * Base interface for all extension strategies

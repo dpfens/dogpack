@@ -6,7 +6,7 @@
  * weighted by a Gaussian kernel. This produces blur that follows edge contours
  * rather than blurring across them.
  */
-import type { BlurStrategy, ChannelImage, FlowField } from '../core/types';
+import type { BlurStrategy, ChannelImage, FlowField } from '../types';
 import { BaseCPUBlur, BaseWebGLBlur, BaseWebGPUBlur } from './base';
 interface FlowGuidedBlurStrategy {
     setFlowField(flowField: FlowField): void;
@@ -112,6 +112,7 @@ export type FlowGuidedBlurConfig = CPUFlowGuidedBlurConfig | GLGPUBlurConfig;
 export declare class FlowGuidedBlur implements BlurStrategy {
     instance: BlurStrategy & FlowGuidedBlurStrategy;
     constructor(flowField: FlowField, config?: Partial<FlowGuidedBlurConfig>);
+    dispose(): void;
     blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
     /**
      * Update the flow field (e.g., when processing a new image)

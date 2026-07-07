@@ -1,6 +1,6 @@
 import type { 
   ChannelImage, 
-} from '../core/types';
+} from '../types';
 import { EdgeTangentFlow } from '../etf/index';
 
 // =============================================================================

@@ -630,6 +630,9 @@ export class FlowGuidedBlur {
             this.instance = new CPUFlowGuidedBlur(flowField, config);
         }
     }
+    dispose() {
+        this.instance.dispose?.();
+    }
     async blur(input, sigma) {
         return this.instance.blur(input, sigma);
     }

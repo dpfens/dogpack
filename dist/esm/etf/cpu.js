@@ -7,7 +7,7 @@
  * Based on Section 2.6 of Winnemöller et al. (2012) and
  * Kang et al. (2007) "Coherent Line Drawing"
  */
-import { DEFAULT_ETF_CONFIG } from '../core/types';
+import { DEFAULT_ETF_CONFIG } from '../types';
 import { createChannelImage, normalizeVec2, dotVec2, generateGaussianKernel } from '../utils';
 /**
  * Edge Tangent Flow field implementation
