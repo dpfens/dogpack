@@ -170,8 +170,15 @@ export interface HDoGConfig {
    * affecting brighter ones (paper empirically sets s' = 4s).
    */
   adogSecondaryScaleFactor: number;
-}
 
+  /**
+   * Optional partial override applied on top of the derived secondary
+   * ADoG config (primary config + s' = adogSecondaryScaleFactor * s).
+   * Use this to tweak individual fields (e.g. epsilon, phi) for the
+   * secondary pass without re-specifying the whole config.
+   */
+  adogSecondary?: Partial<ADoGConfig>;
+}
 
 export interface DoGProcessingResult {
   /** Final thresholded output */
@@ -239,6 +246,30 @@ export interface DoGImplementation {
   dispose(): void;
 }
 
+
+interface ParamRange {
+  hardMin: number;
+  hardMax: number;
+  recommendedMin: number;
+  recommendedMax: number;
+  default: number;
+}
+
+export const DOG_PARAM_RANGES: Record<'sigma' | 'k' | 'p' | 'epsilon' | 'phi', ParamRange> = {
+  sigma: { hardMin: 0, hardMax: Infinity, recommendedMin: 0.4, recommendedMax: 7.0, default: 1.0 },
+  k:     { hardMin: 1.0, hardMax: Infinity, recommendedMin: 1.4, recommendedMax: 1.6, default: 1.6 },
+  p:     { hardMin: 0, hardMax: Infinity, recommendedMin: 0, recommendedMax: 120, default: 20 },
+  epsilon: { hardMin: 0, hardMax: 1, recommendedMin: 0.5, recommendedMax: 1.0, default: 0.5 },
+  phi:   { hardMin: 0, hardMax: Infinity, recommendedMin: 0.01, recommendedMax: 200, default: 10 },
+};
+
+export const ADOG_PARAM_RANGES = {
+  ...DOG_PARAM_RANGES,
+  tau: { hardMin: 0, hardMax: 1, recommendedMin: 0.97, recommendedMax: 1.0, default: 0.99 },
+  s:   { hardMin: 0, hardMax: Infinity, recommendedMin: 0.5, recommendedMax: 5.0, default: 2.0 },
+  noiseScaleC: { hardMin: 0, hardMax: Infinity, recommendedMin: 0, recommendedMax: 0.05, default: 0.01 },
+};
+
 /**
  * Default DoG configuration values
  * Based on paper's recommendations and Appendix A parameter ranges
@@ -270,13 +301,15 @@ export const DEFAULT_FDOG_CONFIG: FDoGConfig = {
  */
 export const DEFAULT_ADOG_CONFIG: ADoGConfig = {
   ...DEFAULT_DOG_CONFIG,
-  sigma: 1.0,               // σc
-  k: 1.6,                   // σs = k * σc
+  sigma: 1.0,
+  k: 1.6,
   tau: 0.99,
   s: 2.0,
   noiseScaleC: 0.01,
   kernelSizeMultiplier: 6,
-  thresholdStrategy: new HardThresholdStrategy(), // ADoG binarizes; hard threshold matches the paper's step-function output
+  epsilon: 0.05,
+  phi: 200,
+  thresholdStrategy: new HardThresholdStrategy(),
 };
 
 /**
