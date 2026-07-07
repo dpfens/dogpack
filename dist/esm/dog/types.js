@@ -1,4 +1,17 @@
 import { HardThresholdStrategy, SoftThresholdStrategy } from '../threshold.js';
+export const DOG_PARAM_RANGES = {
+    sigma: { hardMin: 0, hardMax: Infinity, recommendedMin: 0.4, recommendedMax: 7.0, default: 1.0 },
+    k: { hardMin: 1.0, hardMax: Infinity, recommendedMin: 1.4, recommendedMax: 1.6, default: 1.6 },
+    p: { hardMin: 0, hardMax: Infinity, recommendedMin: 0, recommendedMax: 120, default: 20 },
+    epsilon: { hardMin: 0, hardMax: 1, recommendedMin: 0.5, recommendedMax: 1.0, default: 0.5 },
+    phi: { hardMin: 0, hardMax: Infinity, recommendedMin: 0.01, recommendedMax: 200, default: 10 },
+};
+export const ADOG_PARAM_RANGES = {
+    ...DOG_PARAM_RANGES,
+    tau: { hardMin: 0, hardMax: 1, recommendedMin: 0.97, recommendedMax: 1.0, default: 0.99 },
+    s: { hardMin: 0, hardMax: Infinity, recommendedMin: 0.5, recommendedMax: 5.0, default: 2.0 },
+    noiseScaleC: { hardMin: 0, hardMax: Infinity, recommendedMin: 0, recommendedMax: 0.05, default: 0.01 },
+};
 /**
  * Default DoG configuration values
  * Based on paper's recommendations and Appendix A parameter ranges

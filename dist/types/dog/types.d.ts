@@ -215,6 +215,42 @@ export interface DoGImplementation {
     processDetailed(input: ChannelImage, overrides?: Partial<DoGConfig>): Promise<DoGProcessingResult>;
     dispose(): void;
 }
+interface ParamRange {
+    hardMin: number;
+    hardMax: number;
+    recommendedMin: number;
+    recommendedMax: number;
+    default: number;
+}
+export declare const DOG_PARAM_RANGES: Record<'sigma' | 'k' | 'p' | 'epsilon' | 'phi', ParamRange>;
+export declare const ADOG_PARAM_RANGES: {
+    tau: {
+        hardMin: number;
+        hardMax: number;
+        recommendedMin: number;
+        recommendedMax: number;
+        default: number;
+    };
+    s: {
+        hardMin: number;
+        hardMax: number;
+        recommendedMin: number;
+        recommendedMax: number;
+        default: number;
+    };
+    noiseScaleC: {
+        hardMin: number;
+        hardMax: number;
+        recommendedMin: number;
+        recommendedMax: number;
+        default: number;
+    };
+    sigma: ParamRange;
+    k: ParamRange;
+    p: ParamRange;
+    epsilon: ParamRange;
+    phi: ParamRange;
+};
 /**
  * Default DoG configuration values
  * Based on paper's recommendations and Appendix A parameter ranges
@@ -292,4 +328,5 @@ export declare const FDOG_STYLE_PRESETS: {
 export declare const ADOG_STYLE_PRESETS: {
     readonly standard: ADoGConfig;
 };
+export {};
 //# sourceMappingURL=types.d.ts.map

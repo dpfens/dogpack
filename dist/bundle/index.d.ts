@@ -369,6 +369,42 @@ interface DoGImplementation {
     processDetailed(input: ChannelImage, overrides?: Partial<DoGConfig>): Promise<DoGProcessingResult>;
     dispose(): void;
 }
+interface ParamRange {
+    hardMin: number;
+    hardMax: number;
+    recommendedMin: number;
+    recommendedMax: number;
+    default: number;
+}
+declare const DOG_PARAM_RANGES: Record<'sigma' | 'k' | 'p' | 'epsilon' | 'phi', ParamRange>;
+declare const ADOG_PARAM_RANGES: {
+    tau: {
+        hardMin: number;
+        hardMax: number;
+        recommendedMin: number;
+        recommendedMax: number;
+        default: number;
+    };
+    s: {
+        hardMin: number;
+        hardMax: number;
+        recommendedMin: number;
+        recommendedMax: number;
+        default: number;
+    };
+    noiseScaleC: {
+        hardMin: number;
+        hardMax: number;
+        recommendedMin: number;
+        recommendedMax: number;
+        default: number;
+    };
+    sigma: ParamRange;
+    k: ParamRange;
+    p: ParamRange;
+    epsilon: ParamRange;
+    phi: ParamRange;
+};
 /**
  * Default DoG configuration values
  * Based on paper's recommendations and Appendix A parameter ranges
@@ -725,6 +761,7 @@ declare class HDoG implements DoGImplementation {
  */
 declare function hdog(input: ChannelImage, config?: Partial<HDoGConfig>): Promise<ChannelImage>;
 
+declare const index$4_ADOG_PARAM_RANGES: typeof ADOG_PARAM_RANGES;
 declare const index$4_ADOG_STYLE_PRESETS: typeof ADOG_STYLE_PRESETS;
 type index$4_ADoG = ADoG;
 declare const index$4_ADoG: typeof ADoG;
@@ -734,6 +771,7 @@ declare const index$4_DEFAULT_ADOG_CONFIG: typeof DEFAULT_ADOG_CONFIG;
 declare const index$4_DEFAULT_DOG_CONFIG: typeof DEFAULT_DOG_CONFIG;
 declare const index$4_DEFAULT_FDOG_CONFIG: typeof DEFAULT_FDOG_CONFIG;
 declare const index$4_DEFAULT_HDOG_CONFIG: typeof DEFAULT_HDOG_CONFIG;
+declare const index$4_DOG_PARAM_RANGES: typeof DOG_PARAM_RANGES;
 type index$4_DoGConfig = DoGConfig;
 type index$4_DoGImplementation = DoGImplementation;
 declare const index$4_FDOG_STYLE_PRESETS: typeof FDOG_STYLE_PRESETS;
@@ -753,7 +791,7 @@ declare const index$4_fdog: typeof fdog;
 declare const index$4_hdog: typeof hdog;
 declare const index$4_xdog: typeof xdog;
 declare namespace index$4 {
-  export { index$4_ADOG_STYLE_PRESETS as ADOG_STYLE_PRESETS, index$4_ADoG as ADoG, index$4_DEFAULT_ADOG_CONFIG as DEFAULT_ADOG_CONFIG, index$4_DEFAULT_DOG_CONFIG as DEFAULT_DOG_CONFIG, index$4_DEFAULT_FDOG_CONFIG as DEFAULT_FDOG_CONFIG, index$4_DEFAULT_HDOG_CONFIG as DEFAULT_HDOG_CONFIG, index$4_FDOG_STYLE_PRESETS as FDOG_STYLE_PRESETS, index$4_FDoG as FDoG, index$4_HDoG as HDoG, index$4_STYLE_PRESETS as STYLE_PRESETS, index$4_XDoG as XDoG, index$4_adog as adog, index$4_fdog as fdog, index$4_hdog as hdog, index$4_xdog as xdog };
+  export { index$4_ADOG_PARAM_RANGES as ADOG_PARAM_RANGES, index$4_ADOG_STYLE_PRESETS as ADOG_STYLE_PRESETS, index$4_ADoG as ADoG, index$4_DEFAULT_ADOG_CONFIG as DEFAULT_ADOG_CONFIG, index$4_DEFAULT_DOG_CONFIG as DEFAULT_DOG_CONFIG, index$4_DEFAULT_FDOG_CONFIG as DEFAULT_FDOG_CONFIG, index$4_DEFAULT_HDOG_CONFIG as DEFAULT_HDOG_CONFIG, index$4_DOG_PARAM_RANGES as DOG_PARAM_RANGES, index$4_FDOG_STYLE_PRESETS as FDOG_STYLE_PRESETS, index$4_FDoG as FDoG, index$4_HDoG as HDoG, index$4_STYLE_PRESETS as STYLE_PRESETS, index$4_XDoG as XDoG, index$4_adog as adog, index$4_fdog as fdog, index$4_hdog as hdog, index$4_xdog as xdog };
   export type { index$4_ADoGConfig as ADoGConfig, index$4_ADoGProcessingResult as ADoGProcessingResult, index$4_DoGConfig as DoGConfig, index$4_DoGImplementation as DoGImplementation, index$4_FDoGConfig as FDoGConfig, index$4_HDoGConfig as HDoGConfig, index$4_HDoGProcessingResult as HDoGProcessingResult, index$4_XDoGConfig as XDoGConfig };
 }
 
