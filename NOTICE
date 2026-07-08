@@ -1,0 +1,28 @@
+DoGPack Line Drawing Library
+Copyright 2026 Doug Fenstermacher
+
+This product includes software developed as an independent TypeScript
+implementation of Difference-of-Gaussians (DoG) image stylization
+algorithms described in the following publications:
+
+  - Winnemöller, H., Kyprianidis, J. E., & Olsen, S. C. (2012).
+    "XDoG: An eXtended difference-of-Gaussians compendium including
+    advanced image stylization." Computers & Graphics, Vol. 36,
+    Issue 6, pp. 720-753.
+
+  - Kang, H., Lee, S., & Chui, C. K. (2007). "Coherent line drawing."
+    Proceedings of NPAR '07, pp. 43-50.
+
+  - Kang, H., & Stamoulis, I. (2021). "Gaussian Image Binarization."
+    International Journal of Image and Graphics, Vol. 21, No. 4, 2150047.
+
+  - Kyprianidis, J. E., & Döllner, J. (2008). "Image abstraction by
+    structure adaptive filtering." Proc. EG UK Theory and Practice of
+    Computer Graphics, pp. 51-58.
+
+  - Marr, D., & Hildreth, E. C. (1980). "Theory of edge detection."
+    Proc. Royal Society of London, Biological Sciences, Vol. 207,
+    pp. 187-217.
+
+No source code from the above publications is included in this
+software; this is an original implementation.

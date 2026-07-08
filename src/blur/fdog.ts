@@ -1,7 +1,7 @@
 /**
  * Two-pass FDoG blur: gradient-aligned DoG followed by flow-aligned smoothing
  * 
- * This implements the full FDoG blur strategy as described in Section 2.6:
+ * This implements the full FDoG blur strategy as described in the paper:
  * 1. Apply DoG across edges (gradient-aligned)
  * 2. Smooth the result along edges (flow-aligned)
  */

@@ -1,6 +1,6 @@
-# DoG Line Drawing Library
+# DoGPack Line Drawing Library
 
-A TypeScript implementation of Difference-of-Gaussians algorithms for artistic line drawing and edge stylization.
+A TypeScript implementation of Difference-of-Gaussians (DoG) algorithms for artistic line drawing and edge stylization.
 
 ## Overview
 
@@ -8,7 +8,7 @@ This library turns photos into line drawings. You give it an image, tweak a few 
 
 | Original | HDoG |
 |----------|-----|
-| ![Original](/images/dog/original.png) | ![HDoG](/images/dog/line-drawing-hdog.png) |
+| ![Original](https://raw.githubusercontent.com/dpfens/dogpack/main/images/dog/original.png) | ![HDoG](https://raw.githubusercontent.com/dpfens/dogpack/main/images/dog/line-drawing-hdog.png) |
 
 There are four main algorithms:
 * XDoG is the fast, line-only option. It applies Gaussian blurs at two different scales, subtracts them to find edges, then applies a soft threshold to create the final look. You can dial it from soft pencil shading to stark black-and-white woodcut with just a few parameter changes. Processing is nearly instant on modern hardware, but like FDoG, it only captures structure; it has no notion of tone or shading.
@@ -20,16 +20,16 @@ Both XDog and FDoG algorithms share the same parameter space for controlling lin
 
 | Subject   | Original | XDoG | FDoG | ADoG | HDoG | XDoG Multi-Scale |
 |-----------|----------|------|------|------|------|-------------------|
-| Chelsea   | ![Original](/images/chelsea/original.png) | ![XDoG](/images/chelsea/line-drawing-xdog.png) | ![FDoG](/images/chelsea/line-drawing-fdog.png) | ![ADoG](/images/chelsea/line-drawing-adog.png) | ![HDoG](/images/chelsea/line-drawing-hdog.png) | ![XDoG Multi-Scale](/images/chelsea/xdog-multiScale.png) |
-| House     | ![Original](/images/house/original.png) | ![XDoG](/images/house/line-drawing-xdog.png) | ![FDoG](/images/house/line-drawing-fdog.png) | ![ADoG](/images/house/line-drawing-adog.png) | ![HDoG](/images/house/line-drawing-hdog.png) | ![XDoG Multi-Scale](/images/house/xdog-multiScale.png) |
-| Landscape | ![Original](/images/landscape/original.png) | ![XDoG](/images/landscape/line-drawing-xdog.png) | ![FDoG](/images/landscape/line-drawing-fdog.png) | ![ADoG](/images/landscape/line-drawing-adog.png) | ![HDoG](/images/landscape/line-drawing-hdog.png) | ![XDoG Multi-Scale](/images/landscape/xdog-multiScale.png) |
-| Mandrill  | ![Original](/images/mandrill/original.png) | ![XDoG](/images/mandrill/line-drawing-xdog.png) | ![FDoG](/images/mandrill/line-drawing-fdog.png) | ![ADoG](/images/mandrill/line-drawing-adog.png) | ![HDoG](/images/mandrill/line-drawing-hdog.png) | ![XDoG Multi-Scale](/images/mandrill/xdog-multiScale.png) |
-| Peppers   | ![Original](/images/peppers/original.png) | ![XDoG](/images/peppers/line-drawing-xdog.png) | ![FDoG](/images/peppers/line-drawing-fdog.png) | ![ADoG](/images/peppers/line-drawing-adog.png) | ![HDoG](/images/peppers/line-drawing-hdog.png) | ![XDoG Multi-Scale](/images/peppers/xdog-multiScale.png) |
+| Chelsea   | ![Original](https://raw.githubusercontent.com/dpfens/dogpack/main/images/chelsea/original.png) | ![XDoG](https://raw.githubusercontent.com/dpfens/dogpack/main/images/chelsea/line-drawing-xdog.png) | ![FDoG](https://raw.githubusercontent.com/dpfens/dogpack/main/images/chelsea/line-drawing-fdog.png) | ![ADoG](https://raw.githubusercontent.com/dpfens/dogpack/main/images/chelsea/line-drawing-adog.png) | ![HDoG](https://raw.githubusercontent.com/dpfens/dogpack/main/images/chelsea/line-drawing-hdog.png) | ![XDoG Multi-Scale](https://raw.githubusercontent.com/dpfens/dogpack/main/images/chelsea/xdog-multiScale.png) |
+| House     | ![Original](https://raw.githubusercontent.com/dpfens/dogpack/main/images/house/original.png) | ![XDoG](https://raw.githubusercontent.com/dpfens/dogpack/main/images/house/line-drawing-xdog.png) | ![FDoG](https://raw.githubusercontent.com/dpfens/dogpack/main/images/house/line-drawing-fdog.png) | ![ADoG](https://raw.githubusercontent.com/dpfens/dogpack/main/images/house/line-drawing-adog.png) | ![HDoG](https://raw.githubusercontent.com/dpfens/dogpack/main/images/house/line-drawing-hdog.png) | ![XDoG Multi-Scale](https://raw.githubusercontent.com/dpfens/dogpack/main/images/house/xdog-multiScale.png) |
+| Landscape | ![Original](https://raw.githubusercontent.com/dpfens/dogpack/main/images/landscape/original.png) | ![XDoG](https://raw.githubusercontent.com/dpfens/dogpack/main/images/landscape/line-drawing-xdog.png) | ![FDoG](https://raw.githubusercontent.com/dpfens/dogpack/main/images/landscape/line-drawing-fdog.png) | ![ADoG](https://raw.githubusercontent.com/dpfens/dogpack/main/images/landscape/line-drawing-adog.png) | ![HDoG](https://raw.githubusercontent.com/dpfens/dogpack/main/images/landscape/line-drawing-hdog.png) | ![XDoG Multi-Scale](https://raw.githubusercontent.com/dpfens/dogpack/main/images/landscape/xdog-multiScale.png) |
+| Mandrill  | ![Original](https://raw.githubusercontent.com/dpfens/dogpack/main/images/mandrill/original.png) | ![XDoG](https://raw.githubusercontent.com/dpfens/dogpack/main/images/mandrill/line-drawing-xdog.png) | ![FDoG](https://raw.githubusercontent.com/dpfens/dogpack/main/images/mandrill/line-drawing-fdog.png) | ![ADoG](https://raw.githubusercontent.com/dpfens/dogpack/main/images/mandrill/line-drawing-adog.png) | ![HDoG](https://raw.githubusercontent.com/dpfens/dogpack/main/images/mandrill/line-drawing-hdog.png) | ![XDoG Multi-Scale](https://raw.githubusercontent.com/dpfens/dogpack/main/images/mandrill/xdog-multiScale.png) |
+| Peppers   | ![Original](https://raw.githubusercontent.com/dpfens/dogpack/main/images/peppers/original.png) | ![XDoG](https://raw.githubusercontent.com/dpfens/dogpack/main/images/peppers/line-drawing-xdog.png) | ![FDoG](https://raw.githubusercontent.com/dpfens/dogpack/main/images/peppers/line-drawing-fdog.png) | ![ADoG](https://raw.githubusercontent.com/dpfens/dogpack/main/images/peppers/line-drawing-adog.png) | ![HDoG](https://raw.githubusercontent.com/dpfens/dogpack/main/images/peppers/line-drawing-hdog.png) | ![XDoG Multi-Scale](https://raw.githubusercontent.com/dpfens/dogpack/main/images/peppers/xdog-multiScale.png) |
 
 ## Installation
 
 ```bash
-npm install xfdog
+npm install dogpack
 ```
 
 ## Quick Start
@@ -39,10 +39,10 @@ npm install xfdog
 The simplest way to process an image is to create an XDoG instance and pass it canvas ImageData. The filter handles grayscale conversion internally:
 
 ```typescript
-import { XDoG } from 'xdog';
+import { dog } from 'dogpack';
 
 // Create processor with default settings
-const xdog = new XDoG();
+const xdog = new dog.XDoG();
 
 // Process canvas ImageData
 const canvas = document.getElementById('myCanvas') as HTMLCanvasElement;
@@ -59,7 +59,7 @@ ctx.putImageData(result, 0, 0);
 The library includes several presets based on the parameter ranges documented in the original paper. These presets correspond to specific artistic styles demonstrated in the research:
 
 ```typescript
-import { dog } from 'xdog';
+import { dog } from 'dogpack';
 
 // Use a preset directly
 const xdog = new dog.XDoG(STYLE_PRESETS.pencilShading);
@@ -74,7 +74,7 @@ const xdog3 = XDoG.withPreset('woodcut');
 When working with images containing noise or fine textures, the FDoG produces substantially cleaner results by aligning the blur operations with the local edge structure. The technique computes an Edge Tangent Flow (ETF) from the smoothed structure tensor of image gradients, then uses this flow field to guide both the DoG computation and subsequent smoothing:
 
 ```typescript
-import { dog } from 'xdog';
+import { dog } from 'dogpack';
 
 // Configure FDoG with flow-specific parameters
 const fdog = new dog.FDoG({
@@ -98,7 +98,7 @@ const fdog2 = FDoG.withPreset('standard');
 Each parameter in the XDoG filter serves a specific purpose, and understanding their relationships allows for precise control over the output. The reparameterization used in this implementation (using `p` instead of `τ`) decouples edge sharpening strength from threshold parameters, making the filter much easier to control:
 
 ```typescript
-import { dog } from 'xdog';
+import { dog } from 'dogpack';
 
 const xdog = new dog.XDoG({
   sigma: 1.4,      // Base blur size - controls scale of detected edges
@@ -140,7 +140,7 @@ The library provides multiple thresholding strategies to handle different image 
 The classic approach using a soft tanh function: `T_ε,φ(u) = 1 + tanh(φ · (u - ε))`
 
 ```typescript
-import { dog, threshold } from 'xdog';
+import { dog, threshold } from 'dogpack';
 
 const xdog = new dog.XDoG({
   sigma: 1.4,
@@ -155,7 +155,7 @@ const xdog = new dog.XDoG({
 Uses two thresholds to produce connected edge traces, inspired by Canny edge detection:
 
 ```typescript
-import { dog, threshold } from 'xdog';
+import { dog, threshold } from 'dogpack';
 
 const xdog = new dog.XDoG({
   sigma: 1.4,
@@ -181,7 +181,7 @@ const xdog = new dog.XDoG({
 `p`, `epsilon`, and `phi` each accept either a single `number` (applied uniformly, as in every example above) or a `ChannelImage`; a per-pixel map with the same width/height as the input. This drives sharpening strength and threshold behavior from per-pixel data, most commonly a texture-strength map, instead of one global setting for the whole image.
 
 ```typescript
-import { dog } from 'xdog';
+import { dog } from 'dogpack';
 
 const xdog = new dog.XDoG({ sigma: 1.0, k: 1.6, phi: 10 });
 
@@ -197,7 +197,7 @@ Nothing else about calling XDoG/FDoG changes. Any parameter resolves per-pixel a
 The most common use is texture suppression: real photographs often have regions (skin, fabric, foliage) where fine texture creates edge noise. Score each pixel with a texture-detection preprocessor, then derive adaptive `p`/`epsilon` maps from that score:
 
 ```typescript
-import { dog, preprocess } from 'xdog';
+import { dog, preprocess } from 'dogpack';
 
 const textureMap = new preprocess.LocalVariancePreprocessor({ windowRadius: 2 }).process(grayImage);
 // textureMap: ChannelImage, 0 = pure structure, 1 = pure texture
@@ -267,7 +267,7 @@ While the standard XDoG/FDoG algorithms operate on grayscale images, color infor
 Process each color channel independently and combine the edge responses using maximum (most aggressive detection):
 
 ```typescript
-import { dog, utilities } from 'xdog';
+import { dog, utilities } from 'dogpack';
 
 async function xdogColorAware(imageData: ImageData): Promise<ImageData> {
   const width = imageData.width;
@@ -324,7 +324,7 @@ async function xdogColorAware(imageData: ImageData): Promise<ImageData> {
 Convert to Lab color space and apply weighted combination, with higher weight on luminance (L) which aligns with human perception:
 
 ```typescript
-import { dog, utilities } from 'xdog';
+import { dog, utilities } from 'dogpack';
 
 async function xdogPerceptual(imageData: ImageData): Promise<ImageData> {
   const width = imageData.width;
@@ -417,7 +417,7 @@ import {
   XDoG, 
   utilities,
   preprocess
-} from 'xdog';
+} from 'dogpack';
 
 // Convert your image to grayscale
 const grayscale = utilities.imageDataToGrayscale(canvasImageData);
@@ -447,7 +447,7 @@ The choice of preprocessing depends on the characteristics of your source image 
 For fine control over preprocessing, you can chain multiple operations using the Preprocessor class. The bilateral filter is the most important tool here—it smooths texture while preserving edges by averaging pixels based on both spatial proximity and intensity similarity:
 
 ```typescript
-import { preprocess } from 'xdog';
+import { preprocess } from 'dogpack';
 
 const preprocessor = new preprocess.Preprocessor()
   .bilateral({ sigmaSpatial: 6, sigmaRange: 0.15 })  // First pass: broad smoothing
@@ -469,7 +469,7 @@ import {
   gaussianBlur,      // Simple isotropic smoothing (less edge-preserving than bilateral)
   enhanceContrast,   // Histogram stretching to increase dynamic range
   quantize           // Reduces intensity levels for posterization effects
-} from 'xdog';
+} from 'dogpack';
 ```
 
 ## Architecture
@@ -512,7 +512,7 @@ flowchart TB
 The BlurStrategy interface allows you to implement custom blur algorithms for specialized effects. For instance, you might implement a motion-blur-aligned strategy to create speed-line effects, or a radial blur for zoom effects:
 
 ```typescript
-import { BlurStrategy, DoGProcessor, ChannelImage } from 'xdog';
+import { BlurStrategy, DoGProcessor, ChannelImage } from 'dogpack';
 
 class MyCustomBlur implements BlurStrategy {
   async blur(input: ChannelImage, sigma: number): Promise<ChannelImage> {
@@ -528,7 +528,7 @@ const processor = new DoGProcessor(new MyCustomBlur(), { sigma: 1.0, p: 20 });
 Each blur strategy provides a static method to check runtime availability, useful when some implementations may require specific browser capabilities:
 
 ```typescript
-import { blur } from 'xdog';
+import { blur } from 'dogpack';
 
 // Pure JavaScript implementations are always available
 console.log(blur.IsotropicBlur.isSupported()); // true
@@ -543,7 +543,7 @@ For performance-critical applications or batch processing, working directly with
 import { 
   dog, 
   utilities
-} from 'xdog';
+} from 'dogpack';
 
 // Convert from canvas ImageData (handles RGBA to grayscale conversion)
 const grayscale = utilities.imageDataToGrayscale(imageData);
@@ -564,7 +564,7 @@ const outputImageData = utilities.grayscaleToImageData(result);
 The Edge Tangent Flow field represents the direction of edges at each pixel and can be visualized for debugging or artistic purposes. Understanding the ETF helps in tuning the σc parameter:
 
 ```typescript
-import { dog, EdgeTangentFlow, utilities } from 'xdog';
+import { dog, EdgeTangentFlow, utilities } from 'dogpack';
 
 const fdog = new dog.FDoG();
 const grayscale = utilities.imageDataToLuminance(imageData);
@@ -645,7 +645,7 @@ The net effect: shadows get progressively denser screentone dots/noise as they g
 ### Usage
 
 ```typescript
-import { dog } from 'xdog';
+import { dog } from 'dogpack';
 
 const adog = new dog.ADoG({
   sigma: 1.0,        // σc
@@ -709,7 +709,7 @@ Because it's running FDoG (flow field computation) and two full ADoG passes, HDo
 ### Usage
 
 ```typescript
-import { dog } from 'xdog';
+import { dog } from 'dogpack';
 
 const hdog = new dog.HDoG({
   fdog: {
@@ -833,4 +833,4 @@ A few implementation notes worth knowing:
 
 ## License
 
-MIT
+Apache 2.0
