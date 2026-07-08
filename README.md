@@ -564,7 +564,7 @@ const outputImageData = utilities.grayscaleToImageData(result);
 The Edge Tangent Flow field represents the direction of edges at each pixel and can be visualized for debugging or artistic purposes. Understanding the ETF helps in tuning the σc parameter:
 
 ```typescript
-import { dog, utilities } from 'xdog';
+import { dog, EdgeTangentFlow, utilities } from 'xdog';
 
 const fdog = new dog.FDoG();
 const grayscale = utilities.imageDataToLuminance(imageData);
@@ -574,7 +574,7 @@ const etf = fdog.computeETF(grayscale);
 
 // Visualize as color image (direction encoded as hue)
 const flowViz = etf.visualizeColor();
-etf.dispose();
+EdgeTangentFlow.dispose();
 ctx.putImageData(flowViz, 0, 0);
 
 // Or draw tangent vectors manually for detailed inspection
@@ -600,7 +600,7 @@ const etf = fdog.computeETF(grayscale);
 const result1 = await fdog.processWithETF(frame1, etf);
 const result2 = await fdog.processWithETF(frame2, etf);
 fdog.dispose();
-etf.dispose();
+EdgeTangentFlow.dispose();
 ```
 
 ### Detailed Processing Pipeline
@@ -611,13 +611,16 @@ For debugging or when you need access to intermediate results, the processDetail
 const { result, etf, sharpened, thresholded, smoothed } = 
   await fdog.processDetailed(grayscale);
 
+
 // Access intermediate results:
 // - etf: the computed Edge Tangent Flow
 // - sharpened: the DoG-enhanced image before thresholding
 // - thresholded: after soft threshold applied
 // - smoothed: after flow-aligned smoothing
 // - result: final output after anti-aliasing
-etf.dispose();
+
+// cleanup afterwards
+EdgeTangentFlow.dispose();
 ```
 
 
@@ -675,9 +678,9 @@ const { result, sharpened, rawDoG, rhoMap, noisyInput } = await adog.processDeta
 
 | Parameter | Default | Range | Description |
 |-----------|---------|-------|--------------|
-| `tau` | 0.99 | 0.97–1.0 | Minimum contrast sensitivity. ρ(x) is bounded within `[tau, 1]` — lower values allow brighter regions to still pick up some texture, higher values keep them cleaner. The paper restricts this range to avoid noisy artifacts. |
+| `tau` | 0.99 | 0.97–1.0 | Minimum contrast sensitivity. ρ(x) is bounded within `[tau, 1]`.  Lower values allow brighter regions to still pick up some texture, higher values keep them cleaner. The paper restricts this range to avoid noisy artifacts. |
 | `s` | 2.0 | — | Steepness of the tone-dependent falloff used in both ρ(x) (Eq. 5) and the adaptive noise scale (Eq. 6). Larger values concentrate the density transition into darker tones, so midtones stay cleaner and only true shadows screentone heavily. |
-| `noiseScaleC` | 0.01 | 0 or positive | Strength of the adaptive noise injected before blurring (Eq. 6). Set to `0` to disable noise injection entirely — the screentone effect from ρ(x) weighting alone is often enough; noise injection adds extra grain in shadow regions. |
+| `noiseScaleC` | 0.01 | 0 or positive | Strength of the adaptive noise injected before blurring (Eq. 6). Set to `0` to disable noise injection entirely.  the screentone effect from ρ(x) weighting alone is often enough; noise injection adds extra grain in shadow regions. |
 | `kernelSizeMultiplier` | 6 | — | Kernel size multiplier for the isotropic Gaussian blur, same meaning as XDoG's parameter of the same name. |
 
 ADoG also inherits `sigma`, `k`, `epsilon`, and `phi` from the core `DoGConfig` (see the main parameter table above), though its defaults differ from XDoG's; notably a much lower `epsilon` (0.05) and higher `phi` (200), tuned for hard binarization rather than soft tonal transitions.
