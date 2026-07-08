@@ -31,7 +31,7 @@ export default [
   {
     input: 'src/index.ts',
     output: {
-      name: 'XDoG',
+      name: 'DogPack',
       file: pkg.unpkg,
       format: 'umd',
       sourcemap: true,
@@ -44,7 +44,7 @@ export default [
   {
     input: 'src/index.ts',
     output: {
-      name: 'XDoG',
+      name: 'DogPack',
       file: pkg.browser,
       format: 'umd',
       sourcemap: true,
