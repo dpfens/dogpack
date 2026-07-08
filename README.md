@@ -1,24 +1,30 @@
-# XDoG / FDoG Line Drawing Library
+# DoG Line Drawing Library
 
-A TypeScript implementation of Extended Difference-of-Gaussians (XDoG) and Flow-based Difference-of-Gaussians (FDoG) algorithms for artistic line drawing and edge stylization.
-
-Based on: "XDoG: An eXtended difference-of-Gaussians compendium including advanced image stylization" by Winnemöller et al. (2012)
+A TypeScript implementation of Difference-of-Gaussians algorithms for artistic line drawing and edge stylization.
 
 ## Overview
 
 This library turns photos into line drawings. You give it an image, tweak a few parameters, and get back stylized edges that look hand-drawn rather than computer-generated.
 
-There are two main algorithms:
-* XDoG is the fast option. It applies Gaussian blurs at two different scales, subtracts them to find edges, then applies a soft threshold to create the final look. You can dial it from soft pencil shading to stark black-and-white woodcut with just a few parameter changes. Processing is nearly instant on modern hardware.
-* FDoG is the quality option. It does everything XDoG does, but first computes a "flow field" that tracks the direction of edges throughout the image. Then it blurs along those edges instead of uniformly in all directions. The result is smoother, more coherent lines (like an illustrator would draw) but it takes 3-5x longer to process.
-Both algorithms share the same parameter space for controlling line thickness, contrast, and threshold sharpness. The only difference is whether the blur respects edge direction.
+| Original | HDoG |
+|----------|-----|
+| ![Original](/images/dog/original.png) | ![HDoG](/images/dog/line-drawing-hdog.png) |
 
-![A picture of a nice car parked on a road with a body of water as a backdrop](/images/car/demo.webp)
+There are four main algorithms:
+* XDoG is the fast, line-only option. It applies Gaussian blurs at two different scales, subtracts them to find edges, then applies a soft threshold to create the final look. You can dial it from soft pencil shading to stark black-and-white woodcut with just a few parameter changes. Processing is nearly instant on modern hardware, but like FDoG, it only captures structure; it has no notion of tone or shading.
+* FDoG is the quality line-drawing option. It does everything XDoG does, but first computes a "flow field" that tracks the direction of edges throughout the image, then blurs along those edges instead of uniformly in all directions. The result is smoother, more coherent lines (like an illustrator would draw) but it takes 3-5x longer to process. Like XDoG, it only produces lines; no tone or shading.
+* ADoG is the screentoning option. It repurposes the same Gaussian subtraction as XDoG/FDoG, but makes it sensitive to local brightness, so darker regions get denser tone and lighter regions stay sparse. The output is dot-like primitives approximating shading, similar to stippling but without a complex placement algorithm.
+* HDoG is the hybrid option. It combines FDoG's line extraction with ADoG's screentoning into one output, giving you structure and shading together where either alone falls short. It costs more than a single pass, but stays linear-time and GPU-friendly like the others.
 
-![An XDoG transformation of the nice car above, made to look like a line art sketch of the car](/images/car/xdog.png)
+Both XDog and FDoG algorithms share the same parameter space for controlling line thickness, contrast, and threshold sharpness. The only difference is whether the blur respects edge direction.
 
-![An FDoG transformation of the nice car above, a sketch of the darkened car where the shading follows the gradient of the shape of the car](/images/car/fdog.png)
-
+| Subject   | Original | XDoG | FDoG | ADoG | HDoG | XDoG Multi-Scale |
+|-----------|----------|------|------|------|------|-------------------|
+| Chelsea   | ![Original](/images/chelsea/original.png) | ![XDoG](/images/chelsea/line-drawing-xdog.png) | ![FDoG](/images/chelsea/line-drawing-fdog.png) | ![ADoG](/images/chelsea/line-drawing-adog.png) | ![HDoG](/images/chelsea/line-drawing-hdog.png) | ![XDoG Multi-Scale](/images/chelsea/xdog-multiScale.png) |
+| House     | ![Original](/images/house/original.png) | ![XDoG](/images/house/line-drawing-xdog.png) | ![FDoG](/images/house/line-drawing-fdog.png) | ![ADoG](/images/house/line-drawing-adog.png) | ![HDoG](/images/house/line-drawing-hdog.png) | ![XDoG Multi-Scale](/images/house/xdog-multiScale.png) |
+| Landscape | ![Original](/images/landscape/original.png) | ![XDoG](/images/landscape/line-drawing-xdog.png) | ![FDoG](/images/landscape/line-drawing-fdog.png) | ![ADoG](/images/landscape/line-drawing-adog.png) | ![HDoG](/images/landscape/line-drawing-hdog.png) | ![XDoG Multi-Scale](/images/landscape/xdog-multiScale.png) |
+| Mandrill  | ![Original](/images/mandrill/original.png) | ![XDoG](/images/mandrill/line-drawing-xdog.png) | ![FDoG](/images/mandrill/line-drawing-fdog.png) | ![ADoG](/images/mandrill/line-drawing-adog.png) | ![HDoG](/images/mandrill/line-drawing-hdog.png) | ![XDoG Multi-Scale](/images/mandrill/xdog-multiScale.png) |
+| Peppers   | ![Original](/images/peppers/original.png) | ![XDoG](/images/peppers/line-drawing-xdog.png) | ![FDoG](/images/peppers/line-drawing-fdog.png) | ![ADoG](/images/peppers/line-drawing-adog.png) | ![HDoG](/images/peppers/line-drawing-hdog.png) | ![XDoG Multi-Scale](/images/peppers/xdog-multiScale.png) |
 
 ## Installation
 
@@ -613,12 +619,6 @@ const { result, etf, sharpened, thresholded, smoothed } =
 // - result: final output after anti-aliasing
 etf.dispose();
 ```
-
-### Advanced Layering of XDoG/FDoG
-
-![An adult black lab laying in leaves on an autumn day.](/images/lab/black-lab.jpg)
-
-![A multi-scale structural tensor blend of XDoG and FDog transformations of the black lab image, layered together to capture both the high-level and detailed aspects in the form of a sketch.](/images/lab/xdog-multiscale.png)
 
 
 ## ADoG (Adaptive Difference of Gaussians)
