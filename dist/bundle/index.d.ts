@@ -376,35 +376,58 @@ interface ParamRange {
     recommendedMax: number;
     default: number;
 }
-declare const DOG_PARAM_RANGES: Record<'sigma' | 'k' | 'p' | 'epsilon' | 'phi', ParamRange>;
-declare const ADOG_PARAM_RANGES: {
-    tau: {
-        hardMin: number;
-        hardMax: number;
-        recommendedMin: number;
-        recommendedMax: number;
-        default: number;
-    };
-    s: {
-        hardMin: number;
-        hardMax: number;
-        recommendedMin: number;
-        recommendedMax: number;
-        default: number;
-    };
-    noiseScaleC: {
-        hardMin: number;
-        hardMax: number;
-        recommendedMin: number;
-        recommendedMax: number;
-        default: number;
-    };
-    sigma: ParamRange;
-    k: ParamRange;
-    p: ParamRange;
-    epsilon: ParamRange;
-    phi: ParamRange;
-};
+type DogConfigParamType = 'sigma' | 'k' | 'p' | 'epsilon' | 'phi';
+/**
+ * Base DoG / XDoG parameter ranges.
+ *
+ * Recommended ranges follow the span of settings in Table A.1 of
+ * Winnemöller et al., "XDoG: An eXtended difference-of-Gaussians
+ * compendium" (Computers & Graphics 36(6), 2012), which is the reference
+ * for the reparameterized (σ, k, p, φ, ε) formulation used here. In that
+ * table p ranges 15.7–120, φ ranges 0.01–10.3 (with φ >> 0.01 pushing the
+ * soft tanh ramp toward a step function — Sec. 4.1), and ε ranges 72.6–100
+ * on the paper's 0–100 luminance scale, i.e. ~0.73–1.0 once normalized.
+ * σe (== `sigma` here) ranges 0.8–6.8 across natural-media styles.
+ * k = 1.6 is Marr & Hildreth's engineering trade-off (Sec. 2.3).
+ */
+declare const DOG_PARAM_RANGES: Record<DogConfigParamType, ParamRange>;
+type XDogConfigParamType = 'kernelSizeMultiplier';
+/**
+ * XDoG-specific parameter ranges (on top of DOG_PARAM_RANGES).
+ *
+ * kernelSizeMultiplier is the Gaussian truncation radius as a multiple of
+ * σ. Winnemöller samples the Gaussian out to ~2σ for the DoG passes
+ * (Appendix A/B), but a wider window (≈6σ) captures the tail more fully;
+ * 3σ covers ~99.7% and is the practical floor for a clean kernel.
+ */
+declare const XDOG_PARAM_RANGES: Record<DogConfigParamType | XDogConfigParamType, ParamRange>;
+type FDogConfigParamType = 'sigmaC' | 'sigmaM' | 'sigmaA';
+/**
+ * FDoG-specific parameter ranges (on top of DOG_PARAM_RANGES).
+ *
+ * Ranges follow Table A.1: σc 0.10–5.84, σm 3.2–20, σa 0.6–7.2. σe is the
+ * base `sigma` and keeps its DOG_PARAM_RANGES entry. Defaults track the
+ * paper's more conservative line-drawing settings rather than the extreme
+ * pastel/woodcut ends of the table.
+ */
+declare const FDOG_PARAM_RANGES: Record<DogConfigParamType | FDogConfigParamType, ParamRange>;
+type ADogConfigParamType = 'tau' | 's' | 'noiseScaleC';
+type HDogConfigParamType = ADogConfigParamType;
+/**
+ * ADoG parameter ranges.
+ *
+ * ADoG overrides several base ranges to match its own operating regime
+ * (Gaussian Image Binarization, Sec. 3.2):
+ *   - k: fixed by σs = 1.6σc, so the recommended band tightens to 1.6.
+ *   - epsilon/phi: ADoG binarizes with a HARD threshold, so ε sits low
+ *     (screentone primitives are dark-on-white) and φ is driven high to
+ *     approximate a step function. These differ from the base DoG ranges,
+ *     which are tuned for XDoG's soft tone-mapping.
+ *   - tau, s, noiseScaleC: ADoG's own contrast-sensitivity and noise knobs.
+ */
+declare const ADOG_PARAM_RANGES: Record<DogConfigParamType | ADogConfigParamType, ParamRange>;
+/** HDoG shares ADoG's parameter regime (its screentone passes are ADoG). */
+declare const HDOG_PARAM_RANGES: Record<DogConfigParamType | HDogConfigParamType, ParamRange>;
 /**
  * Default DoG configuration values
  * Based on paper's recommendations and Appendix A parameter ranges
@@ -429,59 +452,18 @@ declare const DEFAULT_HDOG_CONFIG: HDoGConfig;
 /**
  * Preset configurations for common styles from the paper
  */
-declare const STYLE_PRESETS: {
-    /**
-     * Pencil shading style (Figure 1b, Section 5.2)
-     * High-frequency detail resembling graphite on paper
-     */
-    readonly pencilShading: DoGConfig;
-    /**
-     * Pastel style (Figure 18b, Section 5.2)
-     * Intermediate edge width with flow turbulence
-     */
-    readonly pastel: DoGConfig;
-    /**
-     * Charcoal style (Figure 18c, Section 5.2)
-     * Broad strokes from large spatial support
-     */
-    readonly charcoal: DoGConfig;
-    /**
-     * Thresholding / line art (Section 4.1)
-     * Clean black and white edges
-     */
-    readonly threshold: DoGConfig;
-    /**
-     * Woodcut style (Section 4.2, Figure 15)
-     * Aggressive flow distortion with extreme edge emphasis
-     */
-    readonly woodcut: DoGConfig;
-};
+declare const STYLE_PRESETS: Record<string, DoGConfig>;
 /**
  * Preset FDoG configurations including flow parameters
  */
-declare const FDOG_STYLE_PRESETS: {
-    /**
-     * Standard FDoG for coherent line drawing (Figure 2g)
-     */
-    readonly standard: FDoGConfig;
-    /**
-     * Pastel with flow (Figure 18b)
-     */
-    readonly pastel: FDoGConfig;
-    /**
-     * Woodcut with aggressive flow (Figure 15)
-     */
-    readonly woodcut: FDoGConfig;
-};
+declare const FDOG_STYLE_PRESETS: Record<string, FDoGConfig>;
 /**
  * Preset ADoG configurations
  * (No presets given directly in the paper's tables beyond the defaults
  * above; add named presets here as you tune them, e.g. denser/lighter
  * screentone variants.)
  */
-declare const ADOG_STYLE_PRESETS: {
-    readonly standard: ADoGConfig;
-};
+declare const ADOG_STYLE_PRESETS: Record<string, ADoGConfig>;
 
 /**
  * High-level XDoG implementation
@@ -761,6 +743,7 @@ type index$4_ADoG = ADoG;
 declare const index$4_ADoG: typeof ADoG;
 type index$4_ADoGConfig = ADoGConfig;
 type index$4_ADoGProcessingResult = ADoGProcessingResult;
+type index$4_ADogConfigParamType = ADogConfigParamType;
 declare const index$4_DEFAULT_ADOG_CONFIG: typeof DEFAULT_ADOG_CONFIG;
 declare const index$4_DEFAULT_DOG_CONFIG: typeof DEFAULT_DOG_CONFIG;
 declare const index$4_DEFAULT_FDOG_CONFIG: typeof DEFAULT_FDOG_CONFIG;
@@ -768,25 +751,33 @@ declare const index$4_DEFAULT_HDOG_CONFIG: typeof DEFAULT_HDOG_CONFIG;
 declare const index$4_DOG_PARAM_RANGES: typeof DOG_PARAM_RANGES;
 type index$4_DoGConfig = DoGConfig;
 type index$4_DoGImplementation = DoGImplementation;
+type index$4_DogConfigParamType = DogConfigParamType;
+declare const index$4_FDOG_PARAM_RANGES: typeof FDOG_PARAM_RANGES;
 declare const index$4_FDOG_STYLE_PRESETS: typeof FDOG_STYLE_PRESETS;
 type index$4_FDoG = FDoG;
 declare const index$4_FDoG: typeof FDoG;
 type index$4_FDoGConfig = FDoGConfig;
+type index$4_FDogConfigParamType = FDogConfigParamType;
+declare const index$4_HDOG_PARAM_RANGES: typeof HDOG_PARAM_RANGES;
 type index$4_HDoG = HDoG;
 declare const index$4_HDoG: typeof HDoG;
 type index$4_HDoGConfig = HDoGConfig;
 type index$4_HDoGProcessingResult = HDoGProcessingResult;
+type index$4_HDogConfigParamType = HDogConfigParamType;
+type index$4_ParamRange = ParamRange;
 declare const index$4_STYLE_PRESETS: typeof STYLE_PRESETS;
+declare const index$4_XDOG_PARAM_RANGES: typeof XDOG_PARAM_RANGES;
 type index$4_XDoG = XDoG;
 declare const index$4_XDoG: typeof XDoG;
 type index$4_XDoGConfig = XDoGConfig;
+type index$4_XDogConfigParamType = XDogConfigParamType;
 declare const index$4_adog: typeof adog;
 declare const index$4_fdog: typeof fdog;
 declare const index$4_hdog: typeof hdog;
 declare const index$4_xdog: typeof xdog;
 declare namespace index$4 {
-  export { index$4_ADOG_PARAM_RANGES as ADOG_PARAM_RANGES, index$4_ADOG_STYLE_PRESETS as ADOG_STYLE_PRESETS, index$4_ADoG as ADoG, index$4_DEFAULT_ADOG_CONFIG as DEFAULT_ADOG_CONFIG, index$4_DEFAULT_DOG_CONFIG as DEFAULT_DOG_CONFIG, index$4_DEFAULT_FDOG_CONFIG as DEFAULT_FDOG_CONFIG, index$4_DEFAULT_HDOG_CONFIG as DEFAULT_HDOG_CONFIG, index$4_DOG_PARAM_RANGES as DOG_PARAM_RANGES, index$4_FDOG_STYLE_PRESETS as FDOG_STYLE_PRESETS, index$4_FDoG as FDoG, index$4_HDoG as HDoG, index$4_STYLE_PRESETS as STYLE_PRESETS, index$4_XDoG as XDoG, index$4_adog as adog, index$4_fdog as fdog, index$4_hdog as hdog, index$4_xdog as xdog };
-  export type { index$4_ADoGConfig as ADoGConfig, index$4_ADoGProcessingResult as ADoGProcessingResult, index$4_DoGConfig as DoGConfig, index$4_DoGImplementation as DoGImplementation, index$4_FDoGConfig as FDoGConfig, index$4_HDoGConfig as HDoGConfig, index$4_HDoGProcessingResult as HDoGProcessingResult, index$4_XDoGConfig as XDoGConfig };
+  export { index$4_ADOG_PARAM_RANGES as ADOG_PARAM_RANGES, index$4_ADOG_STYLE_PRESETS as ADOG_STYLE_PRESETS, index$4_ADoG as ADoG, index$4_DEFAULT_ADOG_CONFIG as DEFAULT_ADOG_CONFIG, index$4_DEFAULT_DOG_CONFIG as DEFAULT_DOG_CONFIG, index$4_DEFAULT_FDOG_CONFIG as DEFAULT_FDOG_CONFIG, index$4_DEFAULT_HDOG_CONFIG as DEFAULT_HDOG_CONFIG, index$4_DOG_PARAM_RANGES as DOG_PARAM_RANGES, index$4_FDOG_PARAM_RANGES as FDOG_PARAM_RANGES, index$4_FDOG_STYLE_PRESETS as FDOG_STYLE_PRESETS, index$4_FDoG as FDoG, index$4_HDOG_PARAM_RANGES as HDOG_PARAM_RANGES, index$4_HDoG as HDoG, index$4_STYLE_PRESETS as STYLE_PRESETS, index$4_XDOG_PARAM_RANGES as XDOG_PARAM_RANGES, index$4_XDoG as XDoG, index$4_adog as adog, index$4_fdog as fdog, index$4_hdog as hdog, index$4_xdog as xdog };
+  export type { index$4_ADoGConfig as ADoGConfig, index$4_ADoGProcessingResult as ADoGProcessingResult, index$4_ADogConfigParamType as ADogConfigParamType, index$4_DoGConfig as DoGConfig, index$4_DoGImplementation as DoGImplementation, index$4_DogConfigParamType as DogConfigParamType, index$4_FDoGConfig as FDoGConfig, index$4_FDogConfigParamType as FDogConfigParamType, index$4_HDoGConfig as HDoGConfig, index$4_HDoGProcessingResult as HDoGProcessingResult, index$4_HDogConfigParamType as HDogConfigParamType, index$4_ParamRange as ParamRange, index$4_XDoGConfig as XDoGConfig, index$4_XDogConfigParamType as XDogConfigParamType };
 }
 
 /**
@@ -3027,4 +3018,4 @@ declare namespace index {
 }
 
 export { DEFAULT_ETF_CONFIG, DoGProcessor, EdgeTangentFlow, ThresholdModes, applyCustomThreshold, index$3 as blur, index$4 as dog, index as extensions, index$2 as preprocess, threshold, index$1 as utilities };
-export type { ADoGConfig, ADoGProcessingResult, AntiAliasingConfig, BilateralFilterConfig, BlendFunction, BlurStrategy, BlurStrategyClass, ChannelImage, ColorRetentionConfig, ColorTransformFn, DoGConfig, DoGImplementation, DoGResult, ETFConfig, ExtensionStrategy, FDoGConfig, FlowField, FlowGuidedBlurConfig, HDoGConfig, HDoGProcessingResult, HatchTexture, HatchingConfig, IsotropicBlurConfig, KuwaharaFilterConfig, LocalVarianceConfig, MaskTransformFn, MedianFilterConfig, MultiScaleConfig, MultiScaleLayer, NaturalMediaConfig, NaturalMediaStyle, PostProcessFn, RGBImage$1 as RGBImage, ThresholdConfig, ThresholdStrategy, Vec2, XDoGConfig };
+export type { ADoGConfig, ADoGProcessingResult, ADogConfigParamType, AntiAliasingConfig, BilateralFilterConfig, BlendFunction, BlurStrategy, BlurStrategyClass, ChannelImage, ColorRetentionConfig, ColorTransformFn, DoGConfig, DoGImplementation, DoGResult, DogConfigParamType, ETFConfig, ExtensionStrategy, FDoGConfig, FDogConfigParamType, FlowField, FlowGuidedBlurConfig, HDoGConfig, HDoGProcessingResult, HDogConfigParamType, HatchTexture, HatchingConfig, IsotropicBlurConfig, KuwaharaFilterConfig, LocalVarianceConfig, MaskTransformFn, MedianFilterConfig, MultiScaleConfig, MultiScaleLayer, NaturalMediaConfig, NaturalMediaStyle, ParamRange, PostProcessFn, RGBImage$1 as RGBImage, ThresholdConfig, ThresholdStrategy, Vec2, XDoGConfig };

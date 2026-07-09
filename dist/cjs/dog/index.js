@@ -1,13 +1,16 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.hdog = exports.HDoG = exports.adog = exports.ADoG = exports.fdog = exports.FDoG = exports.xdog = exports.XDoG = exports.ADOG_STYLE_PRESETS = exports.FDOG_STYLE_PRESETS = exports.STYLE_PRESETS = exports.ADOG_PARAM_RANGES = exports.DOG_PARAM_RANGES = exports.DEFAULT_HDOG_CONFIG = exports.DEFAULT_ADOG_CONFIG = exports.DEFAULT_FDOG_CONFIG = exports.DEFAULT_DOG_CONFIG = void 0;
+exports.hdog = exports.HDoG = exports.adog = exports.ADoG = exports.fdog = exports.FDoG = exports.xdog = exports.XDoG = exports.ADOG_STYLE_PRESETS = exports.FDOG_STYLE_PRESETS = exports.STYLE_PRESETS = exports.HDOG_PARAM_RANGES = exports.ADOG_PARAM_RANGES = exports.FDOG_PARAM_RANGES = exports.XDOG_PARAM_RANGES = exports.DOG_PARAM_RANGES = exports.DEFAULT_HDOG_CONFIG = exports.DEFAULT_ADOG_CONFIG = exports.DEFAULT_FDOG_CONFIG = exports.DEFAULT_DOG_CONFIG = void 0;
 var types_js_1 = require("./types.js");
 Object.defineProperty(exports, "DEFAULT_DOG_CONFIG", { enumerable: true, get: function () { return types_js_1.DEFAULT_DOG_CONFIG; } });
 Object.defineProperty(exports, "DEFAULT_FDOG_CONFIG", { enumerable: true, get: function () { return types_js_1.DEFAULT_FDOG_CONFIG; } });
 Object.defineProperty(exports, "DEFAULT_ADOG_CONFIG", { enumerable: true, get: function () { return types_js_1.DEFAULT_ADOG_CONFIG; } });
 Object.defineProperty(exports, "DEFAULT_HDOG_CONFIG", { enumerable: true, get: function () { return types_js_1.DEFAULT_HDOG_CONFIG; } });
 Object.defineProperty(exports, "DOG_PARAM_RANGES", { enumerable: true, get: function () { return types_js_1.DOG_PARAM_RANGES; } });
+Object.defineProperty(exports, "XDOG_PARAM_RANGES", { enumerable: true, get: function () { return types_js_1.XDOG_PARAM_RANGES; } });
+Object.defineProperty(exports, "FDOG_PARAM_RANGES", { enumerable: true, get: function () { return types_js_1.FDOG_PARAM_RANGES; } });
 Object.defineProperty(exports, "ADOG_PARAM_RANGES", { enumerable: true, get: function () { return types_js_1.ADOG_PARAM_RANGES; } });
+Object.defineProperty(exports, "HDOG_PARAM_RANGES", { enumerable: true, get: function () { return types_js_1.HDOG_PARAM_RANGES; } });
 Object.defineProperty(exports, "STYLE_PRESETS", { enumerable: true, get: function () { return types_js_1.STYLE_PRESETS; } });
 Object.defineProperty(exports, "FDOG_STYLE_PRESETS", { enumerable: true, get: function () { return types_js_1.FDOG_STYLE_PRESETS; } });
 Object.defineProperty(exports, "ADOG_STYLE_PRESETS", { enumerable: true, get: function () { return types_js_1.ADOG_STYLE_PRESETS; } });

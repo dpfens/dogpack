@@ -215,42 +215,65 @@ export interface DoGImplementation {
     processDetailed(input: ChannelImage, overrides?: Partial<DoGConfig>): Promise<DoGProcessingResult>;
     dispose(): void;
 }
-interface ParamRange {
+export interface ParamRange {
     hardMin: number;
     hardMax: number;
     recommendedMin: number;
     recommendedMax: number;
     default: number;
 }
-export declare const DOG_PARAM_RANGES: Record<'sigma' | 'k' | 'p' | 'epsilon' | 'phi', ParamRange>;
-export declare const ADOG_PARAM_RANGES: {
-    tau: {
-        hardMin: number;
-        hardMax: number;
-        recommendedMin: number;
-        recommendedMax: number;
-        default: number;
-    };
-    s: {
-        hardMin: number;
-        hardMax: number;
-        recommendedMin: number;
-        recommendedMax: number;
-        default: number;
-    };
-    noiseScaleC: {
-        hardMin: number;
-        hardMax: number;
-        recommendedMin: number;
-        recommendedMax: number;
-        default: number;
-    };
-    p: ParamRange;
-    sigma: ParamRange;
-    k: ParamRange;
-    epsilon: ParamRange;
-    phi: ParamRange;
-};
+export type DogConfigParamType = 'sigma' | 'k' | 'p' | 'epsilon' | 'phi';
+/**
+ * Base DoG / XDoG parameter ranges.
+ *
+ * Recommended ranges follow the span of settings in Table A.1 of
+ * Winnemöller et al., "XDoG: An eXtended difference-of-Gaussians
+ * compendium" (Computers & Graphics 36(6), 2012), which is the reference
+ * for the reparameterized (σ, k, p, φ, ε) formulation used here. In that
+ * table p ranges 15.7–120, φ ranges 0.01–10.3 (with φ >> 0.01 pushing the
+ * soft tanh ramp toward a step function — Sec. 4.1), and ε ranges 72.6–100
+ * on the paper's 0–100 luminance scale, i.e. ~0.73–1.0 once normalized.
+ * σe (== `sigma` here) ranges 0.8–6.8 across natural-media styles.
+ * k = 1.6 is Marr & Hildreth's engineering trade-off (Sec. 2.3).
+ */
+export declare const DOG_PARAM_RANGES: Record<DogConfigParamType, ParamRange>;
+export type XDogConfigParamType = 'kernelSizeMultiplier';
+/**
+ * XDoG-specific parameter ranges (on top of DOG_PARAM_RANGES).
+ *
+ * kernelSizeMultiplier is the Gaussian truncation radius as a multiple of
+ * σ. Winnemöller samples the Gaussian out to ~2σ for the DoG passes
+ * (Appendix A/B), but a wider window (≈6σ) captures the tail more fully;
+ * 3σ covers ~99.7% and is the practical floor for a clean kernel.
+ */
+export declare const XDOG_PARAM_RANGES: Record<DogConfigParamType | XDogConfigParamType, ParamRange>;
+export type FDogConfigParamType = 'sigmaC' | 'sigmaM' | 'sigmaA';
+/**
+ * FDoG-specific parameter ranges (on top of DOG_PARAM_RANGES).
+ *
+ * Ranges follow Table A.1: σc 0.10–5.84, σm 3.2–20, σa 0.6–7.2. σe is the
+ * base `sigma` and keeps its DOG_PARAM_RANGES entry. Defaults track the
+ * paper's more conservative line-drawing settings rather than the extreme
+ * pastel/woodcut ends of the table.
+ */
+export declare const FDOG_PARAM_RANGES: Record<DogConfigParamType | FDogConfigParamType, ParamRange>;
+export type ADogConfigParamType = 'tau' | 's' | 'noiseScaleC';
+export type HDogConfigParamType = ADogConfigParamType;
+/**
+ * ADoG parameter ranges.
+ *
+ * ADoG overrides several base ranges to match its own operating regime
+ * (Gaussian Image Binarization, Sec. 3.2):
+ *   - k: fixed by σs = 1.6σc, so the recommended band tightens to 1.6.
+ *   - epsilon/phi: ADoG binarizes with a HARD threshold, so ε sits low
+ *     (screentone primitives are dark-on-white) and φ is driven high to
+ *     approximate a step function. These differ from the base DoG ranges,
+ *     which are tuned for XDoG's soft tone-mapping.
+ *   - tau, s, noiseScaleC: ADoG's own contrast-sensitivity and noise knobs.
+ */
+export declare const ADOG_PARAM_RANGES: Record<DogConfigParamType | ADogConfigParamType, ParamRange>;
+/** HDoG shares ADoG's parameter regime (its screentone passes are ADoG). */
+export declare const HDOG_PARAM_RANGES: Record<DogConfigParamType | HDogConfigParamType, ParamRange>;
 /**
  * Default DoG configuration values
  * Based on paper's recommendations and Appendix A parameter ranges
@@ -275,58 +298,16 @@ export declare const DEFAULT_HDOG_CONFIG: HDoGConfig;
 /**
  * Preset configurations for common styles from the paper
  */
-export declare const STYLE_PRESETS: {
-    /**
-     * Pencil shading style (Figure 1b, Section 5.2)
-     * High-frequency detail resembling graphite on paper
-     */
-    readonly pencilShading: DoGConfig;
-    /**
-     * Pastel style (Figure 18b, Section 5.2)
-     * Intermediate edge width with flow turbulence
-     */
-    readonly pastel: DoGConfig;
-    /**
-     * Charcoal style (Figure 18c, Section 5.2)
-     * Broad strokes from large spatial support
-     */
-    readonly charcoal: DoGConfig;
-    /**
-     * Thresholding / line art (Section 4.1)
-     * Clean black and white edges
-     */
-    readonly threshold: DoGConfig;
-    /**
-     * Woodcut style (Section 4.2, Figure 15)
-     * Aggressive flow distortion with extreme edge emphasis
-     */
-    readonly woodcut: DoGConfig;
-};
+export declare const STYLE_PRESETS: Record<string, DoGConfig>;
 /**
  * Preset FDoG configurations including flow parameters
  */
-export declare const FDOG_STYLE_PRESETS: {
-    /**
-     * Standard FDoG for coherent line drawing (Figure 2g)
-     */
-    readonly standard: FDoGConfig;
-    /**
-     * Pastel with flow (Figure 18b)
-     */
-    readonly pastel: FDoGConfig;
-    /**
-     * Woodcut with aggressive flow (Figure 15)
-     */
-    readonly woodcut: FDoGConfig;
-};
+export declare const FDOG_STYLE_PRESETS: Record<string, FDoGConfig>;
 /**
  * Preset ADoG configurations
  * (No presets given directly in the paper's tables beyond the defaults
  * above; add named presets here as you tune them, e.g. denser/lighter
  * screentone variants.)
  */
-export declare const ADOG_STYLE_PRESETS: {
-    readonly standard: ADoGConfig;
-};
-export {};
+export declare const ADOG_STYLE_PRESETS: Record<string, ADoGConfig>;
 //# sourceMappingURL=types.d.ts.map

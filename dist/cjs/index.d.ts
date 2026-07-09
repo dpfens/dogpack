@@ -83,7 +83,7 @@
  */
 export type { BlurStrategy, BlurStrategyClass } from './types.js';
 export * as dog from './dog/index.js';
-export type { DoGConfig, DoGImplementation, XDoGConfig, FDoGConfig, ADoGConfig, HDoGConfig, ADoGProcessingResult, HDoGProcessingResult } from './dog/types.js';
+export type { DoGConfig, DoGImplementation, DogConfigParamType, XDoGConfig, FDoGConfig, FDogConfigParamType, ADoGConfig, ADogConfigParamType, HDoGConfig, HDogConfigParamType, ADoGProcessingResult, HDoGProcessingResult, ParamRange } from './dog/types.js';
 export { DoGProcessor, ThresholdModes, applyCustomThreshold } from './processor.js';
 export * as blur from './blur/index.js';
 export type { IsotropicBlurConfig, FlowGuidedBlurConfig } from './blur/index.js';
