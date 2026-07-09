@@ -245,9 +245,9 @@ export declare const ADOG_PARAM_RANGES: {
         recommendedMax: number;
         default: number;
     };
+    p: ParamRange;
     sigma: ParamRange;
     k: ParamRange;
-    p: ParamRange;
     epsilon: ParamRange;
     phi: ParamRange;
 };

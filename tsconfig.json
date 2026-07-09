@@ -27,7 +27,7 @@
 
     // Interop
     "importHelpers": true,              // still useful to reduce tslib duplication
-    "skipLibCheck": true,
+    "skipLibCheck": false,
     "forceConsistentCasingInFileNames": true
   },
   "include": ["src/**/*"],

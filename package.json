@@ -18,11 +18,6 @@
       "import": "./dist/esm/index.js",
       "require": "./dist/cjs/index.js"
     },
-    "./bundle": {
-      "types": "./dist/bundle/index.d.ts",
-      "import": "./dist/bundle/index.mjs",
-      "require": "./dist/bundle/index.cjs"
-    },
     "./dog": {
       "types": "./dist/types/dog/index.d.ts",
       "import": "./dist/esm/dog/index.js",
@@ -62,7 +57,6 @@
   },
   "typesVersions": {
     "*": {
-      "bundle": ["./dist/bundle/index.d.ts"],
       "dog": ["./dist/types/dog/index.d.ts"],
       "blur": ["./dist/types/blur/index.d.ts"],
       "etf": ["./dist/types/etf/index.d.ts"],

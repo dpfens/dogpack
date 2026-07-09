@@ -1,11 +1,8 @@
 /**
- * High-level XDoG and FDoG implementations
+ * High-level HDoG implementations
  *
- * These classes provide convenient wrappers that compose the blur strategies
+ * This class provides a convenient wrapper that compose the blur strategies
  * and DoG processor together.
- *
- * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
- * advanced image stylization" by Winnemöller et al. (2012)
  */
 import { type ChannelImage } from '../types.js';
 import { type DoGImplementation, type HDoGConfig, type HDoGProcessingResult } from './types.js';

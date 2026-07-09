@@ -1,12 +1,9 @@
 "use strict";
 /**
- * High-level XDoG and FDoG implementations
+ * High-level ADog implementations
  *
  * These classes provide convenient wrappers that compose the blur strategies
  * and DoG processor together.
- *
- * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
- * advanced image stylization" by Winnemöller et al. (2012)
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ADoG = void 0;

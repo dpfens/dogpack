@@ -85,6 +85,16 @@
 // High-level API
 export type {BlurStrategy, BlurStrategyClass} from './types.js';
 export * as dog from './dog/index.js';
+export type {
+  DoGConfig,
+  DoGImplementation,
+  XDoGConfig,
+  FDoGConfig,
+  ADoGConfig,
+  HDoGConfig,
+  ADoGProcessingResult,
+  HDoGProcessingResult
+} from './dog/types.js';
 
 // Core processor (for advanced usage)
 export { DoGProcessor, ThresholdModes, applyCustomThreshold } from './processor.js';
@@ -102,6 +112,7 @@ export { EdgeTangentFlow } from './etf/index.js';
 // Preprocessing
 
 export * as preprocess from './preprocess/index.js'
+export type { LocalVarianceConfig } from './preprocess/index.js'
 
 export type {
   ThresholdConfig,

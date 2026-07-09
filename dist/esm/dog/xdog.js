@@ -1,7 +1,7 @@
 /**
- * High-level XDoG and FDoG implementations
+ * High-level XDoG implementation
  *
- * These classes provide convenient wrappers that compose the blur strategies
+ * This class provides a convenient wrapper that compose the blur strategies
  * and DoG processor together.
  *
  * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
