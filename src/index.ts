@@ -88,12 +88,17 @@ export * as dog from './dog/index.js';
 export type {
   DoGConfig,
   DoGImplementation,
+  DogConfigParamType,
   XDoGConfig,
   FDoGConfig,
+  FDogConfigParamType,
   ADoGConfig,
+  ADogConfigParamType,
   HDoGConfig,
+  HDogConfigParamType,
   ADoGProcessingResult,
-  HDoGProcessingResult
+  HDoGProcessingResult,
+  ParamRange
 } from './dog/types.js';
 
 // Core processor (for advanced usage)
