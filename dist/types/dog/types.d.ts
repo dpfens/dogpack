@@ -221,6 +221,7 @@ export interface ParamRange {
     recommendedMin: number;
     recommendedMax: number;
     default: number;
+    step: number;
 }
 export type DogConfigParamType = 'sigma' | 'k' | 'p' | 'epsilon' | 'phi';
 /**
@@ -247,7 +248,6 @@ export type XDogConfigParamType = 'kernelSizeMultiplier';
  * 3σ covers ~99.7% and is the practical floor for a clean kernel.
  */
 export declare const XDOG_PARAM_RANGES: Record<DogConfigParamType | XDogConfigParamType, ParamRange>;
-export type FDogConfigParamType = 'sigmaC' | 'sigmaM' | 'sigmaA';
 /**
  * FDoG-specific parameter ranges (on top of DOG_PARAM_RANGES).
  *
@@ -256,9 +256,8 @@ export type FDogConfigParamType = 'sigmaC' | 'sigmaM' | 'sigmaA';
  * paper's more conservative line-drawing settings rather than the extreme
  * pastel/woodcut ends of the table.
  */
+export type FDogConfigParamType = 'sigmaC' | 'sigmaM' | 'sigmaA';
 export declare const FDOG_PARAM_RANGES: Record<DogConfigParamType | FDogConfigParamType, ParamRange>;
-export type ADogConfigParamType = 'tau' | 's' | 'noiseScaleC';
-export type HDogConfigParamType = ADogConfigParamType;
 /**
  * ADoG parameter ranges.
  *
@@ -271,7 +270,9 @@ export type HDogConfigParamType = ADogConfigParamType;
  *     which are tuned for XDoG's soft tone-mapping.
  *   - tau, s, noiseScaleC: ADoG's own contrast-sensitivity and noise knobs.
  */
+export type ADogConfigParamType = 'tau' | 's' | 'noiseScaleC' | 'kernelSizeMultiplier';
 export declare const ADOG_PARAM_RANGES: Record<DogConfigParamType | ADogConfigParamType, ParamRange>;
+export type HDogConfigParamType = ADogConfigParamType | 'adogSecondaryScaleFactor';
 /** HDoG shares ADoG's parameter regime (its screentone passes are ADoG). */
 export declare const HDOG_PARAM_RANGES: Record<DogConfigParamType | HDogConfigParamType, ParamRange>;
 /**
@@ -310,4 +311,5 @@ export declare const FDOG_STYLE_PRESETS: Record<string, FDoGConfig>;
  * screentone variants.)
  */
 export declare const ADOG_STYLE_PRESETS: Record<string, ADoGConfig>;
+export declare const HDOG_STYLE_PRESETS: Record<string, HDoGConfig>;
 //# sourceMappingURL=types.d.ts.map

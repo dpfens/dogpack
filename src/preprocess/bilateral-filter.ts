@@ -1,4 +1,4 @@
-import type { ChannelImage } from '../types.js';
+import type { ChannelImage, Preprocessor } from '../types.js';
 import { createChannelImage } from '../utils/index.js';
 
 /**
@@ -6,45 +6,50 @@ import { createChannelImage } from '../utils/index.js';
  * not part of ThresholdStrategy. Compose manually:
  *
  *   const sharpened = await dog.processNoThreshold(input);
- *   const smoothed = bilateralFilter(sharpened, radius, sigmaIntensity);
+ *   const smoothed = new BilateralFilter(radius, sigmaIntensity).process(sharpened);
  *   const result = new SoftThresholdStrategy().threshold(smoothed, { epsilon, phi });
  */
-export function bilateralFilter(
-  image: ChannelImage,
-  radius: number = 3,
-  sigmaIntensity: number = 0.2
-): ChannelImage {
-  const output = createChannelImage(image.width, image.height);
-  const { width, height, data } = image;
-  const sigmaSpatial = radius / 2;
 
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const idx = y * width + x;
-      const centerValue = data[idx];
-      let weightedSum = 0;
-      let weightSum = 0;
+export class BilateralFilter implements Preprocessor {
 
-      for (let dy = -radius; dy <= radius; dy++) {
-        for (let dx = -radius; dx <= radius; dx++) {
-          const ny = y + dy;
-          const nx = x + dx;
-          if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-            const neighborValue = data[ny * width + nx];
-            const spatialDist = Math.sqrt(dx * dx + dy * dy);
-            const spatialWeight = Math.exp(-(spatialDist * spatialDist) / (2 * sigmaSpatial * sigmaSpatial));
-            const intensityDiff = neighborValue - centerValue;
-            const intensityWeight = Math.exp(-(intensityDiff * intensityDiff) / (2 * sigmaIntensity * sigmaIntensity));
-            const weight = spatialWeight * intensityWeight;
-            weightedSum += neighborValue * weight;
-            weightSum += weight;
+  constructor(
+    private radius: number = 3,
+    private sigmaIntensity: number = 0.2
+  ) {}
+
+  process(input: ChannelImage): ChannelImage {
+    const output = createChannelImage(input.width, input.height);
+    const { width, height, data } = input;
+    const sigmaSpatial = this.radius / 2;
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = y * width + x;
+        const centerValue = data[idx];
+        let weightedSum = 0;
+        let weightSum = 0;
+
+        for (let dy = -this.radius; dy <= this.radius; dy++) {
+          for (let dx = -this.radius; dx <= this.radius; dx++) {
+            const ny = y + dy;
+            const nx = x + dx;
+            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+              const neighborValue = data[ny * width + nx];
+              const spatialDist = Math.sqrt(dx * dx + dy * dy);
+              const spatialWeight = Math.exp(-(spatialDist * spatialDist) / (2 * sigmaSpatial * sigmaSpatial));
+              const intensityDiff = neighborValue - centerValue;
+              const intensityWeight = Math.exp(-(intensityDiff * intensityDiff) / (2 * this.sigmaIntensity * this.sigmaIntensity));
+              const weight = spatialWeight * intensityWeight;
+              weightedSum += neighborValue * weight;
+              weightSum += weight;
+            }
           }
         }
+
+        output.data[idx] = weightedSum / weightSum;
       }
-
-      output.data[idx] = weightedSum / weightSum;
     }
-  }
 
-  return output;
+    return output;
+  };
 }

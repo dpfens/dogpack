@@ -4,16 +4,8 @@
  * These classes provide convenient wrappers that compose the blur strategies
  * and DoG processor together.
  */
-import { type ChannelImage, type BlurStrategy } from '../types.js';
-import { type ADoGConfig, type ADoGProcessingResult, type DoGConfig, type DoGImplementation } from './types.js';
-/**
- * XDoG configuration combining DoG parameters with isotropic blur options
- */
-export interface XDoGConfig extends DoGConfig {
-    /** Kernel size multiplier for Gaussian blur (default: 6) */
-    kernelSizeMultiplier?: number;
-    blurStrategy?: BlurStrategy;
-}
+import { type ChannelImage } from '../types.js';
+import { type ADoGConfig, type ADoGProcessingResult, type DoGImplementation } from './types.js';
 export declare class ADoG implements DoGImplementation {
     private config;
     private blurStrategy;

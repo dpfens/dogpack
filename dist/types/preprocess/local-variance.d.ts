@@ -42,7 +42,7 @@
  *
  * @packageDocumentation
  */
-import type { ChannelImage } from "../types.js";
+import type { ChannelImage, Preprocessor } from "../types.js";
 /**
  * Configuration for Local Variance Texture Detection
  *
@@ -116,7 +116,7 @@ export interface LocalVarianceConfig {
  * // Now use textureMap with your own edge detection
  * ```
  */
-export declare class LocalVariancePreprocessor {
+export declare class LocalVariancePreprocessor implements Preprocessor {
     private config;
     constructor(config?: Partial<LocalVarianceConfig>);
     /**
@@ -159,7 +159,7 @@ export declare class LocalVariancePreprocessor {
  *
  * Use this for real-time applications. Basic version is fine for batch processing.
  */
-export declare class LocalVariancePreprocessorOptimized {
+export declare class LocalVariancePreprocessorOptimized implements Preprocessor {
     private config;
     constructor(config?: Partial<LocalVarianceConfig>);
     /**

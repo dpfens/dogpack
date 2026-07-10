@@ -8,7 +8,7 @@
  * preprocessing for "indication" - attenuating weak edges while
  * preserving strong edges.
  */
-import type { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from '../types.js';
+import type { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig, Preprocessor } from '../types.js';
 /**
  * Bilateral Filter
  *
@@ -22,14 +22,22 @@ import type { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaF
  * "prioritization mechanism" for indication - attenuating weak edges
  * while supporting strong edges.
  */
-export declare function bilateralFilter(input: ChannelImage, config?: Partial<BilateralFilterConfig>): ChannelImage;
+export declare class BilateralFilter implements Preprocessor {
+    private readonly config;
+    constructor(config?: Partial<BilateralFilterConfig>);
+    process(input: ChannelImage): ChannelImage;
+}
 /**
  * Median Filter
  *
  * Replaces each pixel with the median of its neighborhood.
  * Excellent for removing salt-and-pepper noise and small texture details.
  */
-export declare function medianFilter(input: ChannelImage, config?: Partial<MedianFilterConfig>): ChannelImage;
+export declare class MedianFilter implements Preprocessor {
+    private readonly config;
+    constructor(config?: Partial<MedianFilterConfig>);
+    process(input: ChannelImage): ChannelImage;
+}
 /**
  * Kuwahara Filter
  *
@@ -38,28 +46,45 @@ export declare function medianFilter(input: ChannelImage, config?: Partial<Media
  * lowest variance, and uses its mean. Creates flat regions with
  * preserved edges - great for a more stylized look.
  */
-export declare function kuwaharaFilter(input: ChannelImage, config?: Partial<KuwaharaFilterConfig>): ChannelImage;
+export declare class KuwaharaFilter implements Preprocessor {
+    private readonly config;
+    constructor(config?: Partial<KuwaharaFilterConfig>);
+    process(input: ChannelImage): ChannelImage;
+}
 /**
  * Gaussian Blur
  *
  * Simple Gaussian smoothing. Less edge-preserving than bilateral,
  * but faster. Good for very noisy images or when used with small sigma.
  */
-export declare function gaussianBlur(input: ChannelImage, sigma?: number): ChannelImage;
+export declare class GaussianBlur implements Preprocessor {
+    private readonly sigma;
+    constructor(sigma?: number);
+    process(input: ChannelImage): ChannelImage;
+}
 /**
  * Contrast Enhancement
  *
  * Stretches the histogram to use the full 0-1 range.
  * Can help make edges more distinct before processing.
  */
-export declare function enhanceContrast(input: ChannelImage, blackPoint?: number, whitePoint?: number): ChannelImage;
+export declare class ContrastEnhancer implements Preprocessor {
+    private readonly blackPoint;
+    private readonly whitePoint;
+    constructor(blackPoint?: number, whitePoint?: number);
+    process(input: ChannelImage): ChannelImage;
+}
 /**
  * Quantize to reduce color levels
  *
  * Reduces the number of intensity levels, creating a posterized effect.
  * Can help reduce noise by grouping similar intensities together.
  */
-export declare function quantize(input: ChannelImage, levels?: number): ChannelImage;
+export declare class Quantizer implements Preprocessor {
+    private readonly levels;
+    constructor(levels?: number);
+    process(input: ChannelImage): ChannelImage;
+}
 /**
  * Preset preprocessing pipelines for common use cases
  */
@@ -93,7 +118,7 @@ export declare const PreprocessingPresets: {
 /**
  * Convenience class for chaining preprocessing operations
  */
-export declare class Preprocessor {
+export declare class PreprocessingPipeline {
     private operations;
     /**
      * Add bilateral filter to the pipeline
@@ -119,6 +144,10 @@ export declare class Preprocessor {
      * Add quantization to the pipeline
      */
     quantize(levels?: number): this;
+    /**
+     * Add an arbitrary custom preprocessing strategy to the pipeline
+     */
+    use(preprocessor: Preprocessor): this;
     /**
      * Apply all operations in sequence
      */

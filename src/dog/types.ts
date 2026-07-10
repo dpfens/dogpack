@@ -253,6 +253,7 @@ export interface ParamRange {
   recommendedMin: number;
   recommendedMax: number;
   default: number;
+  step: number;
 }
 
 export type DogConfigParamType = 'sigma' | 'k' | 'p' | 'epsilon' | 'phi';
@@ -271,11 +272,11 @@ export type DogConfigParamType = 'sigma' | 'k' | 'p' | 'epsilon' | 'phi';
  * k = 1.6 is Marr & Hildreth's engineering trade-off (Sec. 2.3).
  */
 export const DOG_PARAM_RANGES: Record<DogConfigParamType, ParamRange> = {
-  sigma: { hardMin: 0, hardMax: Infinity, recommendedMin: 0.4, recommendedMax: 7.0, default: 1.0 },
-  k:     { hardMin: 1.0, hardMax: Infinity, recommendedMin: 1.4, recommendedMax: 1.6, default: 1.6 },
-  p:     { hardMin: 0, hardMax: Infinity, recommendedMin: 0, recommendedMax: 120, default: 20 },
-  epsilon: { hardMin: 0, hardMax: 1, recommendedMin: 0.5, recommendedMax: 1.0, default: 0.5 },
-  phi:   { hardMin: 0, hardMax: Infinity, recommendedMin: 0.01, recommendedMax: 200, default: 10 },
+  sigma:   { hardMin: 0,   hardMax: Infinity, recommendedMin: 0.4,  recommendedMax: 7.0,  default: 1.0, step: 0.1 },
+  k:       { hardMin: 1.0, hardMax: Infinity, recommendedMin: 1.4,  recommendedMax: 1.6,  default: 1.6, step: 0.01 },
+  p:       { hardMin: 0,   hardMax: Infinity, recommendedMin: 0,    recommendedMax: 120,  default: 20,  step: 1 },
+  epsilon: { hardMin: 0,   hardMax: 1,        recommendedMin: 0.5,  recommendedMax: 1.0,  default: 0.5, step: 0.01 },
+  phi:     { hardMin: 0,   hardMax: Infinity, recommendedMin: 0.01, recommendedMax: 200,  default: 10,  step: 0.5 },
 } as const;
 
 export type XDogConfigParamType = 'kernelSizeMultiplier';
@@ -290,13 +291,8 @@ export type XDogConfigParamType = 'kernelSizeMultiplier';
  */
 export const XDOG_PARAM_RANGES: Record<DogConfigParamType | XDogConfigParamType, ParamRange> = {
   ...DOG_PARAM_RANGES,
-  kernelSizeMultiplier: { hardMin: 1, hardMax: Infinity, recommendedMin: 3, recommendedMax: 8, default: 6 },
+  kernelSizeMultiplier: { hardMin: 1, hardMax: Infinity, recommendedMin: 3, recommendedMax: 8, default: 6, step: 1 },
 } as const;
-
-// NOTE: the previous typing had a stray leading space in ' sigmaM' and was
-// missing 'sigma'/'sigmaE'. σe is `sigma` from DoGConfig, so the FDoG-only
-// params are just σc, σm, σa.
-export type FDogConfigParamType = 'sigmaC' | 'sigmaM' | 'sigmaA';
 
 /**
  * FDoG-specific parameter ranges (on top of DOG_PARAM_RANGES).
@@ -306,15 +302,13 @@ export type FDogConfigParamType = 'sigmaC' | 'sigmaM' | 'sigmaA';
  * paper's more conservative line-drawing settings rather than the extreme
  * pastel/woodcut ends of the table.
  */
+export type FDogConfigParamType = 'sigmaC' | 'sigmaM' | 'sigmaA';
 export const FDOG_PARAM_RANGES: Record<DogConfigParamType | FDogConfigParamType, ParamRange> = {
   ...DOG_PARAM_RANGES,
-  sigmaC: { hardMin: 0, hardMax: Infinity, recommendedMin: 0.1, recommendedMax: 6.0, default: 2.5 },
-  sigmaM: { hardMin: 0, hardMax: Infinity, recommendedMin: 3.0, recommendedMax: 20.0, default: 4.0 },
-  sigmaA: { hardMin: 0, hardMax: Infinity, recommendedMin: 0.5, recommendedMax: 7.2, default: 1.0 },
+  sigmaC: { hardMin: 0, hardMax: Infinity, recommendedMin: 0.1, recommendedMax: 6.0,  default: 2.5, step: 0.1 },
+  sigmaM: { hardMin: 0, hardMax: Infinity, recommendedMin: 3.0, recommendedMax: 20.0, default: 4.0, step: 0.5 },
+  sigmaA: { hardMin: 0, hardMax: Infinity, recommendedMin: 0.5, recommendedMax: 7.2,  default: 1.0, step: 0.1 },
 } as const;
-
-export type ADogConfigParamType = 'tau' | 's'| 'noiseScaleC';
-export type HDogConfigParamType  = ADogConfigParamType;
 
 /**
  * ADoG parameter ranges.
@@ -328,19 +322,24 @@ export type HDogConfigParamType  = ADogConfigParamType;
  *     which are tuned for XDoG's soft tone-mapping.
  *   - tau, s, noiseScaleC: ADoG's own contrast-sensitivity and noise knobs.
  */
+export type ADogConfigParamType = 'tau' | 's'| 'noiseScaleC' | 'kernelSizeMultiplier';
 export const ADOG_PARAM_RANGES: Record<DogConfigParamType | ADogConfigParamType, ParamRange> = {
   ...DOG_PARAM_RANGES,
-  k:       { hardMin: 1.0, hardMax: Infinity, recommendedMin: 1.6, recommendedMax: 1.6, default: 1.6 },
-  epsilon: { hardMin: 0, hardMax: 1, recommendedMin: 0.0, recommendedMax: 0.2, default: 0.05 },
-  phi:     { hardMin: 0, hardMax: Infinity, recommendedMin: 100, recommendedMax: 200, default: 200 },
-  tau: { hardMin: 0, hardMax: 1, recommendedMin: 0.97, recommendedMax: 1.0, default: 0.99 },
-  s:   { hardMin: 0, hardMax: Infinity, recommendedMin: 0.5, recommendedMax: 5.0, default: 2.0 },
-  noiseScaleC: { hardMin: 0, hardMax: Infinity, recommendedMin: 0, recommendedMax: 0.05, default: 0.01 },
+  kernelSizeMultiplier: XDOG_PARAM_RANGES.kernelSizeMultiplier,
+  k:       { hardMin: 1.0, hardMax: Infinity, recommendedMin: 1.6, recommendedMax: 1.6, default: 1.6, step: 0.01 },
+  epsilon: { hardMin: 0, hardMax: 1, recommendedMin: 0.0,  recommendedMax: 0.2, default: 0.05, step: 0.01 },
+  phi:     { hardMin: 0, hardMax: Infinity, recommendedMin: 100, recommendedMax: 200, default: 200, step: 5 },
+  tau: { hardMin: 0, hardMax: 1, recommendedMin: 0.97, recommendedMax: 1.0, default: 0.99, step: 0.005 },
+  s:   { hardMin: 0, hardMax: Infinity, recommendedMin: 0.5, recommendedMax: 5.0, default: 2.0, step: 0.1 },
+  noiseScaleC: { hardMin: 0, hardMax: Infinity, recommendedMin: 0, recommendedMax: 0.05, default: 0.01, step: 0.005 },
 } as const;
+
+export type HDogConfigParamType  = ADogConfigParamType | 'adogSecondaryScaleFactor';
 
 /** HDoG shares ADoG's parameter regime (its screentone passes are ADoG). */
 export const HDOG_PARAM_RANGES: Record<DogConfigParamType | HDogConfigParamType, ParamRange> = {
   ...ADOG_PARAM_RANGES,
+  adogSecondaryScaleFactor: { hardMin: 1.0, hardMax: Infinity, recommendedMin: 2.0, recommendedMax: 6.0, default: 4.0, step: 0.25 },
 } as const;
 
 /**
@@ -505,4 +504,18 @@ export const ADOG_STYLE_PRESETS: Record<string, ADoGConfig> = {
   standard: {
     ...DEFAULT_ADOG_CONFIG,
   } as ADoGConfig,
+} as const;
+
+export const HDOG_STYLE_PRESETS: Record<string, HDoGConfig> = {
+  /**
+   * Paper defaults (Sec. 3.1–3.3): σc=1.0, k=1.6 (σs=1.6σc), σm=3.0,
+   * σa≈1.0 (not explicitly stated as a default in the paper's FDoG
+   * section, so this uses a light anti-aliasing value), τ=0.99, s=2.0,
+   * noiseScaleC=0.01, s'=4s. This is the closest match to Figs. 13–14.
+   */
+  default: {
+    fdog: DEFAULT_FDOG_CONFIG,
+    adog: DEFAULT_ADOG_CONFIG,
+    adogSecondaryScaleFactor: 4,
+  }
 } as const;

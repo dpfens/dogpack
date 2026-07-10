@@ -30,7 +30,7 @@ class XDoG {
     constructor(config = {}) {
         const { kernelSizeMultiplier, ...dogConfig } = config;
         this.config = { ...types_js_1.DEFAULT_DOG_CONFIG, kernelSizeMultiplier: 6, ...config };
-        const blurStrategy = new isotropic_js_1.IsotropicBlur({
+        const blurStrategy = config.blurStrategy ?? new isotropic_js_1.IsotropicBlur({
             kernelSizeMultiplier: this.config.kernelSizeMultiplier,
         });
         this.processor = new processor_js_1.DoGProcessor(blurStrategy, dogConfig);

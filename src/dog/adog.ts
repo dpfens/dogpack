@@ -6,22 +6,13 @@
  */
 
 import { 
-  type ChannelImage,  
-  type BlurStrategy,
+  type ChannelImage
 } from '../types.js';
 import { createChannelImage, imageDataToLuminance, luminanceToImageData } from '../utils/index.js';
 import { IsotropicBlur } from '../blur/isotropic.js';
 import { gaussianSample } from '../utils/index.js';
-import { DEFAULT_ADOG_CONFIG, type ADoGConfig, type ADoGProcessingResult, type DoGConfig, type DoGImplementation } from './types.js';
+import { DEFAULT_ADOG_CONFIG, type ADoGConfig, type ADoGProcessingResult, type DoGImplementation } from './types.js';
 
-/**
- * XDoG configuration combining DoG parameters with isotropic blur options
- */
-export interface XDoGConfig extends DoGConfig {
-  /** Kernel size multiplier for Gaussian blur (default: 6) */
-  kernelSizeMultiplier?: number;
-  blurStrategy?: BlurStrategy;
-}
 
 export class ADoG implements DoGImplementation {
   private config: ADoGConfig;

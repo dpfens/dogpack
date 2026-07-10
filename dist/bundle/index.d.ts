@@ -61,6 +61,21 @@ interface BlurStrategyClass {
     getUnsupportedReason?(): string | undefined;
 }
 /**
+ * Abstract preprocessing strategy interface
+ * Implementations provide different image preprocessing/conditioning
+ * operations (bilateral filtering, median filtering, Kuwahara filtering,
+ * Gaussian blur, contrast enhancement, quantization, etc.) applied to an
+ * image before line detection.
+ */
+interface Preprocessor {
+    /**
+     * Apply this preprocessing operation to an image
+     * @param input Source image
+     * @returns Processed image
+     */
+    process(input: ChannelImage): ChannelImage;
+}
+/**
  * Flow field representing edge tangent directions at each pixel
  */
 interface FlowField {
@@ -375,6 +390,7 @@ interface ParamRange {
     recommendedMin: number;
     recommendedMax: number;
     default: number;
+    step: number;
 }
 type DogConfigParamType = 'sigma' | 'k' | 'p' | 'epsilon' | 'phi';
 /**
@@ -401,7 +417,6 @@ type XDogConfigParamType = 'kernelSizeMultiplier';
  * 3σ covers ~99.7% and is the practical floor for a clean kernel.
  */
 declare const XDOG_PARAM_RANGES: Record<DogConfigParamType | XDogConfigParamType, ParamRange>;
-type FDogConfigParamType = 'sigmaC' | 'sigmaM' | 'sigmaA';
 /**
  * FDoG-specific parameter ranges (on top of DOG_PARAM_RANGES).
  *
@@ -410,9 +425,8 @@ type FDogConfigParamType = 'sigmaC' | 'sigmaM' | 'sigmaA';
  * paper's more conservative line-drawing settings rather than the extreme
  * pastel/woodcut ends of the table.
  */
+type FDogConfigParamType = 'sigmaC' | 'sigmaM' | 'sigmaA';
 declare const FDOG_PARAM_RANGES: Record<DogConfigParamType | FDogConfigParamType, ParamRange>;
-type ADogConfigParamType = 'tau' | 's' | 'noiseScaleC';
-type HDogConfigParamType = ADogConfigParamType;
 /**
  * ADoG parameter ranges.
  *
@@ -425,7 +439,9 @@ type HDogConfigParamType = ADogConfigParamType;
  *     which are tuned for XDoG's soft tone-mapping.
  *   - tau, s, noiseScaleC: ADoG's own contrast-sensitivity and noise knobs.
  */
+type ADogConfigParamType = 'tau' | 's' | 'noiseScaleC' | 'kernelSizeMultiplier';
 declare const ADOG_PARAM_RANGES: Record<DogConfigParamType | ADogConfigParamType, ParamRange>;
+type HDogConfigParamType = ADogConfigParamType | 'adogSecondaryScaleFactor';
 /** HDoG shares ADoG's parameter regime (its screentone passes are ADoG). */
 declare const HDOG_PARAM_RANGES: Record<DogConfigParamType | HDogConfigParamType, ParamRange>;
 /**
@@ -464,6 +480,7 @@ declare const FDOG_STYLE_PRESETS: Record<string, FDoGConfig>;
  * screentone variants.)
  */
 declare const ADOG_STYLE_PRESETS: Record<string, ADoGConfig>;
+declare const HDOG_STYLE_PRESETS: Record<string, HDoGConfig>;
 
 /**
  * High-level XDoG implementation
@@ -759,6 +776,7 @@ declare const index$4_FDoG: typeof FDoG;
 type index$4_FDoGConfig = FDoGConfig;
 type index$4_FDogConfigParamType = FDogConfigParamType;
 declare const index$4_HDOG_PARAM_RANGES: typeof HDOG_PARAM_RANGES;
+declare const index$4_HDOG_STYLE_PRESETS: typeof HDOG_STYLE_PRESETS;
 type index$4_HDoG = HDoG;
 declare const index$4_HDoG: typeof HDoG;
 type index$4_HDoGConfig = HDoGConfig;
@@ -776,7 +794,7 @@ declare const index$4_fdog: typeof fdog;
 declare const index$4_hdog: typeof hdog;
 declare const index$4_xdog: typeof xdog;
 declare namespace index$4 {
-  export { index$4_ADOG_PARAM_RANGES as ADOG_PARAM_RANGES, index$4_ADOG_STYLE_PRESETS as ADOG_STYLE_PRESETS, index$4_ADoG as ADoG, index$4_DEFAULT_ADOG_CONFIG as DEFAULT_ADOG_CONFIG, index$4_DEFAULT_DOG_CONFIG as DEFAULT_DOG_CONFIG, index$4_DEFAULT_FDOG_CONFIG as DEFAULT_FDOG_CONFIG, index$4_DEFAULT_HDOG_CONFIG as DEFAULT_HDOG_CONFIG, index$4_DOG_PARAM_RANGES as DOG_PARAM_RANGES, index$4_FDOG_PARAM_RANGES as FDOG_PARAM_RANGES, index$4_FDOG_STYLE_PRESETS as FDOG_STYLE_PRESETS, index$4_FDoG as FDoG, index$4_HDOG_PARAM_RANGES as HDOG_PARAM_RANGES, index$4_HDoG as HDoG, index$4_STYLE_PRESETS as STYLE_PRESETS, index$4_XDOG_PARAM_RANGES as XDOG_PARAM_RANGES, index$4_XDoG as XDoG, index$4_adog as adog, index$4_fdog as fdog, index$4_hdog as hdog, index$4_xdog as xdog };
+  export { index$4_ADOG_PARAM_RANGES as ADOG_PARAM_RANGES, index$4_ADOG_STYLE_PRESETS as ADOG_STYLE_PRESETS, index$4_ADoG as ADoG, index$4_DEFAULT_ADOG_CONFIG as DEFAULT_ADOG_CONFIG, index$4_DEFAULT_DOG_CONFIG as DEFAULT_DOG_CONFIG, index$4_DEFAULT_FDOG_CONFIG as DEFAULT_FDOG_CONFIG, index$4_DEFAULT_HDOG_CONFIG as DEFAULT_HDOG_CONFIG, index$4_DOG_PARAM_RANGES as DOG_PARAM_RANGES, index$4_FDOG_PARAM_RANGES as FDOG_PARAM_RANGES, index$4_FDOG_STYLE_PRESETS as FDOG_STYLE_PRESETS, index$4_FDoG as FDoG, index$4_HDOG_PARAM_RANGES as HDOG_PARAM_RANGES, index$4_HDOG_STYLE_PRESETS as HDOG_STYLE_PRESETS, index$4_HDoG as HDoG, index$4_STYLE_PRESETS as STYLE_PRESETS, index$4_XDOG_PARAM_RANGES as XDOG_PARAM_RANGES, index$4_XDoG as XDoG, index$4_adog as adog, index$4_fdog as fdog, index$4_hdog as hdog, index$4_xdog as xdog };
   export type { index$4_ADoGConfig as ADoGConfig, index$4_ADoGProcessingResult as ADoGProcessingResult, index$4_ADogConfigParamType as ADogConfigParamType, index$4_DoGConfig as DoGConfig, index$4_DoGImplementation as DoGImplementation, index$4_DogConfigParamType as DogConfigParamType, index$4_FDoGConfig as FDoGConfig, index$4_FDogConfigParamType as FDogConfigParamType, index$4_HDoGConfig as HDoGConfig, index$4_HDoGProcessingResult as HDoGProcessingResult, index$4_HDogConfigParamType as HDogConfigParamType, index$4_ParamRange as ParamRange, index$4_XDoGConfig as XDoGConfig, index$4_XDogConfigParamType as XDogConfigParamType };
 }
 
@@ -1393,7 +1411,7 @@ interface LocalVarianceConfig {
  * // Now use textureMap with your own edge detection
  * ```
  */
-declare class LocalVariancePreprocessor {
+declare class LocalVariancePreprocessor implements Preprocessor {
     private config;
     constructor(config?: Partial<LocalVarianceConfig>);
     /**
@@ -1436,7 +1454,7 @@ declare class LocalVariancePreprocessor {
  *
  * Use this for real-time applications. Basic version is fine for batch processing.
  */
-declare class LocalVariancePreprocessorOptimized {
+declare class LocalVariancePreprocessorOptimized implements Preprocessor {
     private config;
     constructor(config?: Partial<LocalVarianceConfig>);
     /**
@@ -1494,14 +1512,22 @@ declare class LocalVariancePreprocessorOptimized {
  * "prioritization mechanism" for indication - attenuating weak edges
  * while supporting strong edges.
  */
-declare function bilateralFilter(input: ChannelImage, config?: Partial<BilateralFilterConfig>): ChannelImage;
+declare class BilateralFilter implements Preprocessor {
+    private readonly config;
+    constructor(config?: Partial<BilateralFilterConfig>);
+    process(input: ChannelImage): ChannelImage;
+}
 /**
  * Median Filter
  *
  * Replaces each pixel with the median of its neighborhood.
  * Excellent for removing salt-and-pepper noise and small texture details.
  */
-declare function medianFilter(input: ChannelImage, config?: Partial<MedianFilterConfig>): ChannelImage;
+declare class MedianFilter implements Preprocessor {
+    private readonly config;
+    constructor(config?: Partial<MedianFilterConfig>);
+    process(input: ChannelImage): ChannelImage;
+}
 /**
  * Kuwahara Filter
  *
@@ -1510,28 +1536,45 @@ declare function medianFilter(input: ChannelImage, config?: Partial<MedianFilter
  * lowest variance, and uses its mean. Creates flat regions with
  * preserved edges - great for a more stylized look.
  */
-declare function kuwaharaFilter(input: ChannelImage, config?: Partial<KuwaharaFilterConfig>): ChannelImage;
+declare class KuwaharaFilter implements Preprocessor {
+    private readonly config;
+    constructor(config?: Partial<KuwaharaFilterConfig>);
+    process(input: ChannelImage): ChannelImage;
+}
 /**
  * Gaussian Blur
  *
  * Simple Gaussian smoothing. Less edge-preserving than bilateral,
  * but faster. Good for very noisy images or when used with small sigma.
  */
-declare function gaussianBlur(input: ChannelImage, sigma?: number): ChannelImage;
+declare class GaussianBlur implements Preprocessor {
+    private readonly sigma;
+    constructor(sigma?: number);
+    process(input: ChannelImage): ChannelImage;
+}
 /**
  * Contrast Enhancement
  *
  * Stretches the histogram to use the full 0-1 range.
  * Can help make edges more distinct before processing.
  */
-declare function enhanceContrast(input: ChannelImage, blackPoint?: number, whitePoint?: number): ChannelImage;
+declare class ContrastEnhancer implements Preprocessor {
+    private readonly blackPoint;
+    private readonly whitePoint;
+    constructor(blackPoint?: number, whitePoint?: number);
+    process(input: ChannelImage): ChannelImage;
+}
 /**
  * Quantize to reduce color levels
  *
  * Reduces the number of intensity levels, creating a posterized effect.
  * Can help reduce noise by grouping similar intensities together.
  */
-declare function quantize(input: ChannelImage, levels?: number): ChannelImage;
+declare class Quantizer implements Preprocessor {
+    private readonly levels;
+    constructor(levels?: number);
+    process(input: ChannelImage): ChannelImage;
+}
 /**
  * Preset preprocessing pipelines for common use cases
  */
@@ -1565,7 +1608,7 @@ declare const PreprocessingPresets: {
 /**
  * Convenience class for chaining preprocessing operations
  */
-declare class Preprocessor {
+declare class PreprocessingPipeline {
     private operations;
     /**
      * Add bilateral filter to the pipeline
@@ -1592,6 +1635,10 @@ declare class Preprocessor {
      */
     quantize(levels?: number): this;
     /**
+     * Add an arbitrary custom preprocessing strategy to the pipeline
+     */
+    use(preprocessor: Preprocessor): this;
+    /**
      * Apply all operations in sequence
      */
     apply(input: ChannelImage): ChannelImage;
@@ -1616,12 +1663,37 @@ declare class Preprocessor {
  * - Quantization
  */
 
-declare function bilateralFilterWebGL(input: ChannelImage, config: BilateralFilterConfig): ChannelImage;
-declare function gaussianBlurWebGL(input: ChannelImage, sigma?: number): ChannelImage;
-declare function medianFilterWebGL(input: ChannelImage, config: MedianFilterConfig): ChannelImage;
-declare function kuwaharaFilterWebGL(input: ChannelImage, config: KuwaharaFilterConfig): ChannelImage;
-declare function enhanceContrastWebGL(input: ChannelImage, blackPoint?: number, whitePoint?: number): ChannelImage;
-declare function quantizeWebGL(input: ChannelImage, levels?: number): ChannelImage;
+declare class BilateralFilterWebGL implements Preprocessor {
+    private readonly config;
+    constructor(config?: Partial<BilateralFilterConfig>);
+    process(input: ChannelImage): ChannelImage;
+}
+declare class GaussianBlurWebGL implements Preprocessor {
+    private readonly sigma;
+    constructor(sigma?: number);
+    process(input: ChannelImage): ChannelImage;
+}
+declare class MedianFilterWebGL implements Preprocessor {
+    private readonly config;
+    constructor(config?: Partial<MedianFilterConfig>);
+    process(input: ChannelImage): ChannelImage;
+}
+declare class KuwaharaFilterWebGL implements Preprocessor {
+    private readonly config;
+    constructor(config?: Partial<KuwaharaFilterConfig>);
+    process(input: ChannelImage): ChannelImage;
+}
+declare class ContrastEnhancerWebGL implements Preprocessor {
+    private readonly blackPoint;
+    private readonly whitePoint;
+    constructor(blackPoint?: number, whitePoint?: number);
+    process(input: ChannelImage): ChannelImage;
+}
+declare class QuantizerWebGL implements Preprocessor {
+    private readonly levels;
+    constructor(levels?: number);
+    process(input: ChannelImage): ChannelImage;
+}
 declare const PreprocessingPresetsWebGL: {
     light: (input: ChannelImage) => ChannelImage;
     standard: (input: ChannelImage) => ChannelImage;
@@ -1629,7 +1701,15 @@ declare const PreprocessingPresetsWebGL: {
     artistic: (input: ChannelImage) => ChannelImage;
     nature: (input: ChannelImage) => ChannelImage;
 };
-declare class PreprocessorWebGL {
+/**
+ * Convenience class for chaining WebGL-accelerated preprocessing operations
+ *
+ * Note: renamed from `PreprocessorWebGL` to `PreprocessingPipelineWebGL`
+ * since `Preprocessor` is now the shared strategy interface implemented by
+ * BilateralFilterWebGL, MedianFilterWebGL, KuwaharaFilterWebGL,
+ * GaussianBlurWebGL, ContrastEnhancerWebGL, and QuantizerWebGL above.
+ */
+declare class PreprocessingPipelineWebGL {
     private operations;
     bilateral(config?: Partial<BilateralFilterConfig>): this;
     median(config?: Partial<MedianFilterConfig>): this;
@@ -1637,6 +1717,10 @@ declare class PreprocessorWebGL {
     gaussian(sigma?: number): this;
     contrast(blackPoint?: number, whitePoint?: number): this;
     quantize(levels?: number): this;
+    /**
+     * Add an arbitrary custom preprocessing strategy to the pipeline
+     */
+    use(preprocessor: Preprocessor): this;
     apply(input: ChannelImage): ChannelImage;
     clear(): this;
 }
@@ -1649,57 +1733,69 @@ declare function isWebGLAvailable(): boolean;
  */
 declare function disposeWebGL(): void;
 
+type webgl_BilateralFilterWebGL = BilateralFilterWebGL;
+declare const webgl_BilateralFilterWebGL: typeof BilateralFilterWebGL;
+type webgl_ContrastEnhancerWebGL = ContrastEnhancerWebGL;
+declare const webgl_ContrastEnhancerWebGL: typeof ContrastEnhancerWebGL;
+type webgl_GaussianBlurWebGL = GaussianBlurWebGL;
+declare const webgl_GaussianBlurWebGL: typeof GaussianBlurWebGL;
+type webgl_KuwaharaFilterWebGL = KuwaharaFilterWebGL;
+declare const webgl_KuwaharaFilterWebGL: typeof KuwaharaFilterWebGL;
+type webgl_MedianFilterWebGL = MedianFilterWebGL;
+declare const webgl_MedianFilterWebGL: typeof MedianFilterWebGL;
+type webgl_PreprocessingPipelineWebGL = PreprocessingPipelineWebGL;
+declare const webgl_PreprocessingPipelineWebGL: typeof PreprocessingPipelineWebGL;
 declare const webgl_PreprocessingPresetsWebGL: typeof PreprocessingPresetsWebGL;
-type webgl_PreprocessorWebGL = PreprocessorWebGL;
-declare const webgl_PreprocessorWebGL: typeof PreprocessorWebGL;
-declare const webgl_bilateralFilterWebGL: typeof bilateralFilterWebGL;
+type webgl_QuantizerWebGL = QuantizerWebGL;
+declare const webgl_QuantizerWebGL: typeof QuantizerWebGL;
 declare const webgl_disposeWebGL: typeof disposeWebGL;
-declare const webgl_enhanceContrastWebGL: typeof enhanceContrastWebGL;
-declare const webgl_gaussianBlurWebGL: typeof gaussianBlurWebGL;
 declare const webgl_isWebGLAvailable: typeof isWebGLAvailable;
-declare const webgl_kuwaharaFilterWebGL: typeof kuwaharaFilterWebGL;
-declare const webgl_medianFilterWebGL: typeof medianFilterWebGL;
-declare const webgl_quantizeWebGL: typeof quantizeWebGL;
 declare namespace webgl {
   export {
+    BilateralFilterWebGL as BilateralFilter,
+    webgl_BilateralFilterWebGL as BilateralFilterWebGL,
+    ContrastEnhancerWebGL as ContrastEnhancer,
+    webgl_ContrastEnhancerWebGL as ContrastEnhancerWebGL,
+    GaussianBlurWebGL as GaussianBlur,
+    webgl_GaussianBlurWebGL as GaussianBlurWebGL,
+    KuwaharaFilterWebGL as KuwaharaFilter,
+    webgl_KuwaharaFilterWebGL as KuwaharaFilterWebGL,
+    MedianFilterWebGL as MedianFilter,
+    webgl_MedianFilterWebGL as MedianFilterWebGL,
+    PreprocessingPipelineWebGL as PreprocessingPipeline,
+    webgl_PreprocessingPipelineWebGL as PreprocessingPipelineWebGL,
     PreprocessingPresetsWebGL as PreprocessingPresets,
     webgl_PreprocessingPresetsWebGL as PreprocessingPresetsWebGL,
-    PreprocessorWebGL as Preprocessor,
-    webgl_PreprocessorWebGL as PreprocessorWebGL,
-    bilateralFilterWebGL as bilateralFilter,
-    webgl_bilateralFilterWebGL as bilateralFilterWebGL,
+    QuantizerWebGL as Quantizer,
+    webgl_QuantizerWebGL as QuantizerWebGL,
     webgl_disposeWebGL as disposeWebGL,
-    enhanceContrastWebGL as enhanceContrast,
-    webgl_enhanceContrastWebGL as enhanceContrastWebGL,
-    gaussianBlurWebGL as gaussianBlur,
-    webgl_gaussianBlurWebGL as gaussianBlurWebGL,
     webgl_isWebGLAvailable as isWebGLAvailable,
-    kuwaharaFilterWebGL as kuwaharaFilter,
-    webgl_kuwaharaFilterWebGL as kuwaharaFilterWebGL,
-    medianFilterWebGL as medianFilter,
-    webgl_medianFilterWebGL as medianFilterWebGL,
-    quantizeWebGL as quantize,
-    webgl_quantizeWebGL as quantizeWebGL,
   };
 }
 
+type index$2_BilateralFilter = BilateralFilter;
+declare const index$2_BilateralFilter: typeof BilateralFilter;
+type index$2_ContrastEnhancer = ContrastEnhancer;
+declare const index$2_ContrastEnhancer: typeof ContrastEnhancer;
+type index$2_GaussianBlur = GaussianBlur;
+declare const index$2_GaussianBlur: typeof GaussianBlur;
+type index$2_KuwaharaFilter = KuwaharaFilter;
+declare const index$2_KuwaharaFilter: typeof KuwaharaFilter;
 type index$2_LocalVarianceConfig = LocalVarianceConfig;
 type index$2_LocalVariancePreprocessor = LocalVariancePreprocessor;
 declare const index$2_LocalVariancePreprocessor: typeof LocalVariancePreprocessor;
 type index$2_LocalVariancePreprocessorOptimized = LocalVariancePreprocessorOptimized;
 declare const index$2_LocalVariancePreprocessorOptimized: typeof LocalVariancePreprocessorOptimized;
+type index$2_MedianFilter = MedianFilter;
+declare const index$2_MedianFilter: typeof MedianFilter;
+type index$2_PreprocessingPipeline = PreprocessingPipeline;
+declare const index$2_PreprocessingPipeline: typeof PreprocessingPipeline;
 declare const index$2_PreprocessingPresets: typeof PreprocessingPresets;
-type index$2_Preprocessor = Preprocessor;
-declare const index$2_Preprocessor: typeof Preprocessor;
-declare const index$2_bilateralFilter: typeof bilateralFilter;
-declare const index$2_enhanceContrast: typeof enhanceContrast;
-declare const index$2_gaussianBlur: typeof gaussianBlur;
-declare const index$2_kuwaharaFilter: typeof kuwaharaFilter;
-declare const index$2_medianFilter: typeof medianFilter;
-declare const index$2_quantize: typeof quantize;
+type index$2_Quantizer = Quantizer;
+declare const index$2_Quantizer: typeof Quantizer;
 declare const index$2_webgl: typeof webgl;
 declare namespace index$2 {
-  export { index$2_LocalVariancePreprocessor as LocalVariancePreprocessor, index$2_LocalVariancePreprocessorOptimized as LocalVariancePreprocessorOptimized, index$2_PreprocessingPresets as PreprocessingPresets, index$2_Preprocessor as Preprocessor, index$2_bilateralFilter as bilateralFilter, index$2_enhanceContrast as enhanceContrast, index$2_gaussianBlur as gaussianBlur, index$2_kuwaharaFilter as kuwaharaFilter, index$2_medianFilter as medianFilter, index$2_quantize as quantize, index$2_webgl as webgl };
+  export { index$2_BilateralFilter as BilateralFilter, index$2_ContrastEnhancer as ContrastEnhancer, index$2_GaussianBlur as GaussianBlur, index$2_KuwaharaFilter as KuwaharaFilter, index$2_LocalVariancePreprocessor as LocalVariancePreprocessor, index$2_LocalVariancePreprocessorOptimized as LocalVariancePreprocessorOptimized, index$2_MedianFilter as MedianFilter, index$2_PreprocessingPipeline as PreprocessingPipeline, index$2_PreprocessingPresets as PreprocessingPresets, index$2_Quantizer as Quantizer, index$2_webgl as webgl };
   export type { index$2_LocalVarianceConfig as LocalVarianceConfig };
 }
 
@@ -3018,4 +3114,4 @@ declare namespace index {
 }
 
 export { DEFAULT_ETF_CONFIG, DoGProcessor, EdgeTangentFlow, ThresholdModes, applyCustomThreshold, index$3 as blur, index$4 as dog, index as extensions, index$2 as preprocess, threshold, index$1 as utilities };
-export type { ADoGConfig, ADoGProcessingResult, ADogConfigParamType, AntiAliasingConfig, BilateralFilterConfig, BlendFunction, BlurStrategy, BlurStrategyClass, ChannelImage, ColorRetentionConfig, ColorTransformFn, DoGConfig, DoGImplementation, DoGResult, DogConfigParamType, ETFConfig, ExtensionStrategy, FDoGConfig, FDogConfigParamType, FlowField, FlowGuidedBlurConfig, HDoGConfig, HDoGProcessingResult, HDogConfigParamType, HatchTexture, HatchingConfig, IsotropicBlurConfig, KuwaharaFilterConfig, LocalVarianceConfig, MaskTransformFn, MedianFilterConfig, MultiScaleConfig, MultiScaleLayer, NaturalMediaConfig, NaturalMediaStyle, ParamRange, PostProcessFn, RGBImage$1 as RGBImage, ThresholdConfig, ThresholdStrategy, Vec2, XDoGConfig };
+export type { ADoGConfig, ADoGProcessingResult, ADogConfigParamType, AntiAliasingConfig, BilateralFilterConfig, BlendFunction, BlurStrategy, BlurStrategyClass, ChannelImage, ColorRetentionConfig, ColorTransformFn, DoGConfig, DoGImplementation, DoGResult, DogConfigParamType, ETFConfig, ExtensionStrategy, FDoGConfig, FDogConfigParamType, FlowField, FlowGuidedBlurConfig, HDoGConfig, HDoGProcessingResult, HDogConfigParamType, HatchTexture, HatchingConfig, IsotropicBlurConfig, KuwaharaFilterConfig, LocalVarianceConfig, MaskTransformFn, MedianFilterConfig, MultiScaleConfig, MultiScaleLayer, NaturalMediaConfig, NaturalMediaStyle, ParamRange, PostProcessFn, Preprocessor, RGBImage$1 as RGBImage, ThresholdConfig, ThresholdStrategy, Vec2, XDoGConfig };

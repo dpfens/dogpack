@@ -61,6 +61,21 @@ export interface BlurStrategyClass {
     getUnsupportedReason?(): string | undefined;
 }
 /**
+ * Abstract preprocessing strategy interface
+ * Implementations provide different image preprocessing/conditioning
+ * operations (bilateral filtering, median filtering, Kuwahara filtering,
+ * Gaussian blur, contrast enhancement, quantization, etc.) applied to an
+ * image before line detection.
+ */
+export interface Preprocessor {
+    /**
+     * Apply this preprocessing operation to an image
+     * @param input Source image
+     * @returns Processed image
+     */
+    process(input: ChannelImage): ChannelImage;
+}
+/**
  * Flow field representing edge tangent directions at each pixel
  */
 export interface FlowField {
