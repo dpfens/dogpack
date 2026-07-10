@@ -34,7 +34,7 @@ export class XDoG implements DoGImplementation {
     
     this.config = { ...DEFAULT_DOG_CONFIG, kernelSizeMultiplier: 6, ...config };
 
-    const blurStrategy = new IsotropicBlur({
+    const blurStrategy = config.blurStrategy ?? new IsotropicBlur({
       kernelSizeMultiplier: this.config.kernelSizeMultiplier,
     });
     

@@ -10,7 +10,7 @@
  */
 
 
-import type { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from '../types.js';
+import type { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig, Preprocessor } from '../types.js';
 import { createChannelImage, getPixel, generateGaussianKernel } from '../utils/index.js';
 
 
@@ -42,59 +42,64 @@ const DEFAULT_KUWAHARA_CONFIG: KuwaharaFilterConfig = {
  * "prioritization mechanism" for indication - attenuating weak edges
  * while supporting strong edges.
  */
-export function bilateralFilter(
-  input: ChannelImage,
-  config: Partial<BilateralFilterConfig> = {}
-): ChannelImage {
-  const cfg = { ...DEFAULT_BILATERAL_CONFIG, ...config };
-  const { width, height } = input;
-  const output = createChannelImage(width, height);
-  
-  const radius = Math.ceil(cfg.sigmaSpatial * (cfg.radiusMultiplier ?? 2));
-  const sigmaSpatial2 = 2 * cfg.sigmaSpatial * cfg.sigmaSpatial;
-  const sigmaRange2 = 2 * cfg.sigmaRange * cfg.sigmaRange;
-  
-  // Precompute spatial weights
-  const spatialWeights: number[] = [];
-  for (let dy = -radius; dy <= radius; dy++) {
-    for (let dx = -radius; dx <= radius; dx++) {
-      const dist2 = dx * dx + dy * dy;
-      spatialWeights.push(Math.exp(-dist2 / sigmaSpatial2));
-    }
+export class BilateralFilter implements Preprocessor {
+  private readonly config: BilateralFilterConfig;
+
+  constructor(config: Partial<BilateralFilterConfig> = {}) {
+    this.config = { ...DEFAULT_BILATERAL_CONFIG, ...config };
   }
-  
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const centerValue = getPixel(input, x, y);
-      
-      let sum = 0;
-      let weightSum = 0;
-      let idx = 0;
-      
-      for (let dy = -radius; dy <= radius; dy++) {
-        for (let dx = -radius; dx <= radius; dx++) {
-          const nx = x + dx;
-          const ny = y + dy;
-          const neighborValue = getPixel(input, nx, ny);
-          
-          // Range weight based on intensity difference
-          const intensityDiff = neighborValue - centerValue;
-          const rangeWeight = Math.exp(-(intensityDiff * intensityDiff) / sigmaRange2);
-          
-          // Combined weight
-          const weight = spatialWeights[idx] * rangeWeight;
-          
-          sum += neighborValue * weight;
-          weightSum += weight;
-          idx++;
-        }
+
+  process(input: ChannelImage): ChannelImage {
+    const cfg = this.config;
+    const { width, height } = input;
+    const output = createChannelImage(width, height);
+
+    const radius = Math.ceil(cfg.sigmaSpatial * (cfg.radiusMultiplier ?? 2));
+    const sigmaSpatial2 = 2 * cfg.sigmaSpatial * cfg.sigmaSpatial;
+    const sigmaRange2 = 2 * cfg.sigmaRange * cfg.sigmaRange;
+
+    // Precompute spatial weights
+    const spatialWeights: number[] = [];
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        const dist2 = dx * dx + dy * dy;
+        spatialWeights.push(Math.exp(-dist2 / sigmaSpatial2));
       }
-      
-      output.data[y * width + x] = weightSum > 0 ? sum / weightSum : centerValue;
     }
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const centerValue = getPixel(input, x, y);
+
+        let sum = 0;
+        let weightSum = 0;
+        let idx = 0;
+
+        for (let dy = -radius; dy <= radius; dy++) {
+          for (let dx = -radius; dx <= radius; dx++) {
+            const nx = x + dx;
+            const ny = y + dy;
+            const neighborValue = getPixel(input, nx, ny);
+
+            // Range weight based on intensity difference
+            const intensityDiff = neighborValue - centerValue;
+            const rangeWeight = Math.exp(-(intensityDiff * intensityDiff) / sigmaRange2);
+
+            // Combined weight
+            const weight = spatialWeights[idx] * rangeWeight;
+
+            sum += neighborValue * weight;
+            weightSum += weight;
+            idx++;
+          }
+        }
+
+        output.data[y * width + x] = weightSum > 0 ? sum / weightSum : centerValue;
+      }
+    }
+
+    return output;
   }
-  
-  return output;
 }
 
 /**
@@ -103,35 +108,39 @@ export function bilateralFilter(
  * Replaces each pixel with the median of its neighborhood.
  * Excellent for removing salt-and-pepper noise and small texture details.
  */
-export function medianFilter(
-  input: ChannelImage,
-  config: Partial<MedianFilterConfig> = {}
-): ChannelImage {
-  const cfg = { ...DEFAULT_MEDIAN_CONFIG, ...config };
-  const { width, height } = input;
-  const output = createChannelImage(width, height);
-  
-  const radius = cfg.radius;
-  const kernelSize = (2 * radius + 1) * (2 * radius + 1);
-  const values: number[] = new Array(kernelSize);
-  
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      let idx = 0;
-      
-      for (let dy = -radius; dy <= radius; dy++) {
-        for (let dx = -radius; dx <= radius; dx++) {
-          values[idx++] = getPixel(input, x + dx, y + dy);
-        }
-      }
-      
-      // Sort and take median
-      values.sort((a, b) => a - b);
-      output.data[y * width + x] = values[Math.floor(kernelSize / 2)];
-    }
+export class MedianFilter implements Preprocessor {
+  private readonly config: MedianFilterConfig;
+
+  constructor(config: Partial<MedianFilterConfig> = {}) {
+    this.config = { ...DEFAULT_MEDIAN_CONFIG, ...config };
   }
-  
-  return output;
+
+  process(input: ChannelImage): ChannelImage {
+    const { width, height } = input;
+    const output = createChannelImage(width, height);
+
+    const radius = this.config.radius;
+    const kernelSize = (2 * radius + 1) * (2 * radius + 1);
+    const values: number[] = new Array(kernelSize);
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        let idx = 0;
+
+        for (let dy = -radius; dy <= radius; dy++) {
+          for (let dx = -radius; dx <= radius; dx++) {
+            values[idx++] = getPixel(input, x + dx, y + dy);
+          }
+        }
+
+        // Sort and take median
+        values.sort((a, b) => a - b);
+        output.data[y * width + x] = values[Math.floor(kernelSize / 2)];
+      }
+    }
+
+    return output;
+  }
 }
 
 /**
@@ -142,57 +151,61 @@ export function medianFilter(
  * lowest variance, and uses its mean. Creates flat regions with
  * preserved edges - great for a more stylized look.
  */
-export function kuwaharaFilter(
-  input: ChannelImage,
-  config: Partial<KuwaharaFilterConfig> = {}
-): ChannelImage {
-  const cfg = { ...DEFAULT_KUWAHARA_CONFIG, ...config };
-  const { width, height } = input;
-  const output = createChannelImage(width, height);
-  
-  const r = cfg.radius;
-  
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      // Four quadrants: top-left, top-right, bottom-left, bottom-right
-      const quadrants = [
-        { startX: -r, endX: 0, startY: -r, endY: 0 },
-        { startX: 0, endX: r, startY: -r, endY: 0 },
-        { startX: -r, endX: 0, startY: 0, endY: r },
-        { startX: 0, endX: r, startY: 0, endY: r },
-      ];
-      
-      let minVariance = Infinity;
-      let bestMean = getPixel(input, x, y);
-      
-      for (const q of quadrants) {
-        let sum = 0;
-        let sumSq = 0;
-        let count = 0;
-        
-        for (let dy = q.startY; dy <= q.endY; dy++) {
-          for (let dx = q.startX; dx <= q.endX; dx++) {
-            const val = getPixel(input, x + dx, y + dy);
-            sum += val;
-            sumSq += val * val;
-            count++;
+export class KuwaharaFilter implements Preprocessor {
+  private readonly config: KuwaharaFilterConfig;
+
+  constructor(config: Partial<KuwaharaFilterConfig> = {}) {
+    this.config = { ...DEFAULT_KUWAHARA_CONFIG, ...config };
+  }
+
+  process(input: ChannelImage): ChannelImage {
+    const { width, height } = input;
+    const output = createChannelImage(width, height);
+
+    const r = this.config.radius;
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        // Four quadrants: top-left, top-right, bottom-left, bottom-right
+        const quadrants = [
+          { startX: -r, endX: 0, startY: -r, endY: 0 },
+          { startX: 0, endX: r, startY: -r, endY: 0 },
+          { startX: -r, endX: 0, startY: 0, endY: r },
+          { startX: 0, endX: r, startY: 0, endY: r },
+        ];
+
+        let minVariance = Infinity;
+        let bestMean = getPixel(input, x, y);
+
+        for (const q of quadrants) {
+          let sum = 0;
+          let sumSq = 0;
+          let count = 0;
+
+          for (let dy = q.startY; dy <= q.endY; dy++) {
+            for (let dx = q.startX; dx <= q.endX; dx++) {
+              const val = getPixel(input, x + dx, y + dy);
+              sum += val;
+              sumSq += val * val;
+              count++;
+            }
+          }
+
+          const mean = sum / count;
+          const variance = (sumSq / count) - (mean * mean);
+
+          if (variance < minVariance) {
+            minVariance = variance;
+            bestMean = mean;
           }
         }
-        
-        const mean = sum / count;
-        const variance = (sumSq / count) - (mean * mean);
-        
-        if (variance < minVariance) {
-          minVariance = variance;
-          bestMean = mean;
-        }
+
+        output.data[y * width + x] = bestMean;
       }
-      
-      output.data[y * width + x] = bestMean;
     }
+
+    return output;
   }
-  
-  return output;
 }
 
 /**
@@ -201,45 +214,51 @@ export function kuwaharaFilter(
  * Simple Gaussian smoothing. Less edge-preserving than bilateral,
  * but faster. Good for very noisy images or when used with small sigma.
  */
-export function gaussianBlur(
-  input: ChannelImage,
-  sigma: number = 1.0
-): ChannelImage {
-  const { width, height } = input;
-  
-  if (sigma < 0.1) {
-    return { data: new Float32Array(input.data), width, height };
+export class GaussianBlur implements Preprocessor {
+  private readonly sigma: number;
+
+  constructor(sigma: number = 1.0) {
+    this.sigma = sigma;
   }
-  
-  const radius = Math.ceil(sigma * 3);
-  const kernelSize = radius * 2 + 1;
-  const kernel = generateGaussianKernel(sigma, kernelSize);
-  
-  // Horizontal pass
-  const temp = createChannelImage(width, height);
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      let val = 0;
-      for (let k = 0; k < kernelSize; k++) {
-        val += getPixel(input, x + k - radius, y) * kernel[k];
-      }
-      temp.data[y * width + x] = val;
+
+  process(input: ChannelImage): ChannelImage {
+    const { width, height } = input;
+    const sigma = this.sigma;
+
+    if (sigma < 0.1) {
+      return { data: new Float32Array(input.data), width, height };
     }
-  }
-  
-  // Vertical pass
-  const output = createChannelImage(width, height);
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      let val = 0;
-      for (let k = 0; k < kernelSize; k++) {
-        val += getPixel(temp, x, y + k - radius) * kernel[k];
+
+    const radius = Math.ceil(sigma * 3);
+    const kernelSize = radius * 2 + 1;
+    const kernel = generateGaussianKernel(sigma, kernelSize);
+
+    // Horizontal pass
+    const temp = createChannelImage(width, height);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        let val = 0;
+        for (let k = 0; k < kernelSize; k++) {
+          val += getPixel(input, x + k - radius, y) * kernel[k];
+        }
+        temp.data[y * width + x] = val;
       }
-      output.data[y * width + x] = val;
     }
+
+    // Vertical pass
+    const output = createChannelImage(width, height);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        let val = 0;
+        for (let k = 0; k < kernelSize; k++) {
+          val += getPixel(temp, x, y + k - radius) * kernel[k];
+        }
+        output.data[y * width + x] = val;
+      }
+    }
+
+    return output;
   }
-  
-  return output;
 }
 
 /**
@@ -248,30 +267,36 @@ export function gaussianBlur(
  * Stretches the histogram to use the full 0-1 range.
  * Can help make edges more distinct before processing.
  */
-export function enhanceContrast(
-  input: ChannelImage,
-  blackPoint: number = 0.01,
-  whitePoint: number = 0.99
-): ChannelImage {
-  const { width, height, data } = input;
-  const output = createChannelImage(width, height);
-  const size = width * height;
-  
-  // Find histogram percentiles
-  const sorted = new Float32Array(data).sort();
-  const minVal = sorted[Math.floor(size * blackPoint)];
-  const maxVal = sorted[Math.floor(size * whitePoint)];
-  const range = maxVal - minVal;
-  
-  if (range < 0.01) {
-    return { data: new Float32Array(data), width, height };
+export class ContrastEnhancer implements Preprocessor {
+  private readonly blackPoint: number;
+  private readonly whitePoint: number;
+
+  constructor(blackPoint: number = 0.01, whitePoint: number = 0.99) {
+    this.blackPoint = blackPoint;
+    this.whitePoint = whitePoint;
   }
-  
-  for (let i = 0; i < size; i++) {
-    output.data[i] = Math.max(0, Math.min(1, (data[i] - minVal) / range));
+
+  process(input: ChannelImage): ChannelImage {
+    const { width, height, data } = input;
+    const output = createChannelImage(width, height);
+    const size = width * height;
+
+    // Find histogram percentiles
+    const sorted = new Float32Array(data).sort();
+    const minVal = sorted[Math.floor(size * this.blackPoint)];
+    const maxVal = sorted[Math.floor(size * this.whitePoint)];
+    const range = maxVal - minVal;
+
+    if (range < 0.01) {
+      return { data: new Float32Array(data), width, height };
+    }
+
+    for (let i = 0; i < size; i++) {
+      output.data[i] = Math.max(0, Math.min(1, (data[i] - minVal) / range));
+    }
+
+    return output;
   }
-  
-  return output;
 }
 
 /**
@@ -280,21 +305,26 @@ export function enhanceContrast(
  * Reduces the number of intensity levels, creating a posterized effect.
  * Can help reduce noise by grouping similar intensities together.
  */
-export function quantize(
-  input: ChannelImage,
-  levels: number = 8
-): ChannelImage {
-  const { width, height, data } = input;
-  const output = createChannelImage(width, height);
-  const size = width * height;
-  
-  const step = 1 / (levels - 1);
-  
-  for (let i = 0; i < size; i++) {
-    output.data[i] = Math.round(data[i] / step) * step;
+export class Quantizer implements Preprocessor {
+  private readonly levels: number;
+
+  constructor(levels: number = 8) {
+    this.levels = levels;
   }
-  
-  return output;
+
+  process(input: ChannelImage): ChannelImage {
+    const { width, height, data } = input;
+    const output = createChannelImage(width, height);
+    const size = width * height;
+
+    const step = 1 / (this.levels - 1);
+
+    for (let i = 0; i < size; i++) {
+      output.data[i] = Math.round(data[i] / step) * step;
+    }
+
+    return output;
+  }
 }
 
 /**
@@ -306,46 +336,46 @@ export const PreprocessingPresets = {
    * Good for: Clean studio photos, illustrations
    */
   light: (input: ChannelImage): ChannelImage => {
-    return bilateralFilter(input, { sigmaSpatial: 2, sigmaRange: 0.08 });
+    return new BilateralFilter({ sigmaSpatial: 2, sigmaRange: 0.08 }).process(input);
   },
-  
+
   /**
    * Standard preprocessing - balanced smoothing
    * Good for: Most outdoor photos, portraits
    */
   standard: (input: ChannelImage): ChannelImage => {
-    return bilateralFilter(input, { sigmaSpatial: 4, sigmaRange: 0.1 });
+    return new BilateralFilter({ sigmaSpatial: 4, sigmaRange: 0.1 }).process(input);
   },
-  
+
   /**
    * Heavy preprocessing - aggressive noise removal
    * Good for: Very textured images (grass, foliage, fabric)
    */
   heavy: (input: ChannelImage): ChannelImage => {
-    let result = bilateralFilter(input, { sigmaSpatial: 5, sigmaRange: 0.12 });
-    result = bilateralFilter(result, { sigmaSpatial: 3, sigmaRange: 0.1 });
+    let result = new BilateralFilter({ sigmaSpatial: 5, sigmaRange: 0.12 }).process(input);
+    result = new BilateralFilter({ sigmaSpatial: 3, sigmaRange: 0.1 }).process(result);
     return result;
   },
-  
+
   /**
    * Artistic preprocessing - painterly smoothing
    * Good for: Stylized/artistic output
    */
   artistic: (input: ChannelImage): ChannelImage => {
-    let result = kuwaharaFilter(input, { radius: 4 });
-    result = bilateralFilter(result, { sigmaSpatial: 2, sigmaRange: 0.08 });
+    let result = new KuwaharaFilter({ radius: 4 }).process(input);
+    result = new BilateralFilter({ sigmaSpatial: 2, sigmaRange: 0.08 }).process(result);
     return result;
   },
-  
+
   /**
    * Photo preprocessing - for photos with grass/nature
    * Good for: Landscape, outdoor scenes
    */
   nature: (input: ChannelImage): ChannelImage => {
     // First pass: aggressive bilateral to smooth texture
-    let result = bilateralFilter(input, { sigmaSpatial: 6, sigmaRange: 0.15 });
+    let result = new BilateralFilter({ sigmaSpatial: 6, sigmaRange: 0.15 }).process(input);
     // Second pass: lighter bilateral to clean up
-    result = bilateralFilter(result, { sigmaSpatial: 3, sigmaRange: 0.08 });
+    result = new BilateralFilter({ sigmaSpatial: 3, sigmaRange: 0.08 }).process(result);
     return result;
   },
 };
@@ -353,68 +383,76 @@ export const PreprocessingPresets = {
 /**
  * Convenience class for chaining preprocessing operations
  */
-export class Preprocessor {
-  private operations: Array<(img: ChannelImage) => ChannelImage> = [];
-  
+export class PreprocessingPipeline {
+  private operations: Preprocessor[] = [];
+
   /**
    * Add bilateral filter to the pipeline
    */
   bilateral(config?: Partial<BilateralFilterConfig>): this {
-    this.operations.push(img => bilateralFilter(img, config));
+    this.operations.push(new BilateralFilter(config));
     return this;
   }
-  
+
   /**
    * Add median filter to the pipeline
    */
   median(config?: Partial<MedianFilterConfig>): this {
-    this.operations.push(img => medianFilter(img, config));
+    this.operations.push(new MedianFilter(config));
     return this;
   }
-  
+
   /**
    * Add Kuwahara filter to the pipeline
    */
   kuwahara(config?: Partial<KuwaharaFilterConfig>): this {
-    this.operations.push(img => kuwaharaFilter(img, config));
+    this.operations.push(new KuwaharaFilter(config));
     return this;
   }
-  
+
   /**
    * Add Gaussian blur to the pipeline
    */
   gaussian(sigma?: number): this {
-    this.operations.push(img => gaussianBlur(img, sigma));
+    this.operations.push(new GaussianBlur(sigma));
     return this;
   }
-  
+
   /**
    * Add contrast enhancement to the pipeline
    */
   contrast(blackPoint?: number, whitePoint?: number): this {
-    this.operations.push(img => enhanceContrast(img, blackPoint, whitePoint));
+    this.operations.push(new ContrastEnhancer(blackPoint, whitePoint));
     return this;
   }
-  
+
   /**
    * Add quantization to the pipeline
    */
   quantize(levels?: number): this {
-    this.operations.push(img => quantize(img, levels));
+    this.operations.push(new Quantizer(levels));
     return this;
   }
-  
+
+  /**
+   * Add an arbitrary custom preprocessing strategy to the pipeline
+   */
+  use(preprocessor: Preprocessor): this {
+    this.operations.push(preprocessor);
+    return this;
+  }
+
   /**
    * Apply all operations in sequence
    */
   apply(input: ChannelImage): ChannelImage {
     let result = input;
     for (const op of this.operations) {
-      result = op(result);
+      result = op.process(result);
     }
     return result;
   }
-  
+
   /**
    * Clear all operations
    */

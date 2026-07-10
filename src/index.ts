@@ -134,7 +134,8 @@ export type {
   ETFConfig,
   BilateralFilterConfig,
   MedianFilterConfig,
-  KuwaharaFilterConfig
+  KuwaharaFilterConfig,
+  Preprocessor
 } from './types.js';
 
 export {

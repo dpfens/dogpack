@@ -17,7 +17,22 @@
 // Types
 // ============================================================================
 
-import type { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig } from '../types.js';
+import type { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig, Preprocessor } from '../types.js';
+
+// Default config values (mirrors the CPU implementation in preprocess.ts)
+const DEFAULT_BILATERAL_CONFIG: BilateralFilterConfig = {
+  sigmaSpatial: 3,
+  sigmaRange: 0.1,
+  radiusMultiplier: 2,
+};
+
+const DEFAULT_MEDIAN_CONFIG: MedianFilterConfig = {
+  radius: 2,
+};
+
+const DEFAULT_KUWAHARA_CONFIG: KuwaharaFilterConfig = {
+  radius: 3,
+};
 
 // ============================================================================
 // WebGL Context Management
@@ -359,54 +374,60 @@ void main() {
 }
 `;
 
-export function bilateralFilterWebGL(
-  input: ChannelImage,
-  config: BilateralFilterConfig
-): ChannelImage {
-  const gl = getGL();
-  if (!gl) {
-    console.warn('WebGL not available, using CPU fallback');
-    return bilateralFilterCPU(input, config);
+export class BilateralFilterWebGL implements Preprocessor {
+  private readonly config: BilateralFilterConfig;
+
+  constructor(config: Partial<BilateralFilterConfig> = {}) {
+    this.config = { ...DEFAULT_BILATERAL_CONFIG, ...config };
   }
-  
-  const { width, height, data } = input;
-  const sigmaSpatial = config.sigmaSpatial;
-  const sigmaRange = config.sigmaRange;
-  const radiusMultiplier = config.radiusMultiplier ?? 2;
-  const radius = Math.ceil(sigmaSpatial * radiusMultiplier);
-  
-  // Resize canvas if needed
-  if (canvas!.width !== width || canvas!.height !== height) {
-    canvas!.width = width;
-    canvas!.height = height;
+
+  process(input: ChannelImage): ChannelImage {
+    const config = this.config;
+    const gl = getGL();
+    if (!gl) {
+      console.warn('WebGL not available, using CPU fallback');
+      return bilateralFilterCPU(input, config);
+    }
+
+    const { width, height, data } = input;
+    const sigmaSpatial = config.sigmaSpatial;
+    const sigmaRange = config.sigmaRange;
+    const radiusMultiplier = config.radiusMultiplier ?? 2;
+    const radius = Math.ceil(sigmaSpatial * radiusMultiplier);
+
+    // Resize canvas if needed
+    if (canvas!.width !== width || canvas!.height !== height) {
+      canvas!.width = width;
+      canvas!.height = height;
+    }
+
+    const program = createProgram(BILATERAL_FRAG, 'bilateral');
+    if (!program) return bilateralFilterCPU(input, config);
+
+    const inputTex = createInputTexture(data, width, height);
+    const output = createFramebuffer(width, height);
+
+    if (!inputTex || !output) {
+      if (inputTex) gl.deleteTexture(inputTex);
+      return bilateralFilterCPU(input, config);
+    }
+
+    renderPass(program, inputTex, output.fb, width, height, {
+      u_texelSize: [1.0 / width, 1.0 / height],
+      u_sigmaSpatial2: 2.0 * sigmaSpatial * sigmaSpatial,
+      u_sigmaRange2: 2.0 * sigmaRange * sigmaRange,
+      u_radius: radius,
+    });
+
+    const result = readResult(output.fb, width, height);
+
+    // Cleanup
+    gl.deleteTexture(inputTex);
+    gl.deleteTexture(output.tex);
+    gl.deleteFramebuffer(output.fb);
+
+    return { data: result, width, height };
   }
-  
-  const program = createProgram(BILATERAL_FRAG, 'bilateral');
-  if (!program) return bilateralFilterCPU(input, config);
-  
-  const inputTex = createInputTexture(data, width, height);
-  const output = createFramebuffer(width, height);
-  
-  if (!inputTex || !output) {
-    if (inputTex) gl.deleteTexture(inputTex);
-    return bilateralFilterCPU(input, config);
-  }
-  
-  renderPass(program, inputTex, output.fb, width, height, {
-    u_texelSize: [1.0 / width, 1.0 / height],
-    u_sigmaSpatial2: 2.0 * sigmaSpatial * sigmaSpatial,
-    u_sigmaRange2: 2.0 * sigmaRange * sigmaRange,
-    u_radius: radius,
-  });
-  
-  const result = readResult(output.fb, width, height);
-  
-  // Cleanup
-  gl.deleteTexture(inputTex);
-  gl.deleteTexture(output.tex);
-  gl.deleteFramebuffer(output.fb);
-  
-  return { data: result, width, height };
 }
 
 // ============================================================================
@@ -471,65 +492,74 @@ void main() {
 }
 `;
 
-export function gaussianBlurWebGL(input: ChannelImage, sigma: number = 1.0): ChannelImage {
-  if (sigma < 0.1) {
-    return { data: new Float32Array(input.data), width: input.width, height: input.height };
+export class GaussianBlurWebGL implements Preprocessor {
+  private readonly sigma: number;
+
+  constructor(sigma: number = 1.0) {
+    this.sigma = sigma;
   }
-  
-  const gl = getGL();
-  if (!gl) {
-    console.warn('WebGL not available, using CPU fallback');
-    return gaussianBlurCPU(input, sigma);
+
+  process(input: ChannelImage): ChannelImage {
+    const sigma = this.sigma;
+    if (sigma < 0.1) {
+      return { data: new Float32Array(input.data), width: input.width, height: input.height };
+    }
+
+    const gl = getGL();
+    if (!gl) {
+      console.warn('WebGL not available, using CPU fallback');
+      return gaussianBlurCPU(input, sigma);
+    }
+
+    const { width, height, data } = input;
+    const radius = Math.ceil(sigma * 3);
+    const sigma2 = 2.0 * sigma * sigma;
+
+    if (canvas!.width !== width || canvas!.height !== height) {
+      canvas!.width = width;
+      canvas!.height = height;
+    }
+
+    const hProgram = createProgram(GAUSSIAN_H_FRAG, 'gaussianH');
+    const vProgram = createProgram(GAUSSIAN_V_FRAG, 'gaussianV');
+
+    if (!hProgram || !vProgram) return gaussianBlurCPU(input, sigma);
+
+    const inputTex = createInputTexture(data, width, height);
+    const tempFb = createFramebuffer(width, height);
+    const outputFb = createFramebuffer(width, height);
+
+    if (!inputTex || !tempFb || !outputFb) {
+      if (inputTex) gl.deleteTexture(inputTex);
+      if (tempFb) { gl.deleteFramebuffer(tempFb.fb); gl.deleteTexture(tempFb.tex); }
+      return gaussianBlurCPU(input, sigma);
+    }
+
+    // Horizontal pass
+    renderPass(hProgram, inputTex, tempFb.fb, width, height, {
+      u_texelSizeX: 1.0 / width,
+      u_radius: radius,
+      u_sigma2: sigma2,
+    });
+
+    // Vertical pass
+    renderPass(vProgram, tempFb.tex, outputFb.fb, width, height, {
+      u_texelSizeY: 1.0 / height,
+      u_radius: radius,
+      u_sigma2: sigma2,
+    });
+
+    const result = readResult(outputFb.fb, width, height);
+
+    // Cleanup
+    gl.deleteTexture(inputTex);
+    gl.deleteTexture(tempFb.tex);
+    gl.deleteFramebuffer(tempFb.fb);
+    gl.deleteTexture(outputFb.tex);
+    gl.deleteFramebuffer(outputFb.fb);
+
+    return { data: result, width, height };
   }
-  
-  const { width, height, data } = input;
-  const radius = Math.ceil(sigma * 3);
-  const sigma2 = 2.0 * sigma * sigma;
-  
-  if (canvas!.width !== width || canvas!.height !== height) {
-    canvas!.width = width;
-    canvas!.height = height;
-  }
-  
-  const hProgram = createProgram(GAUSSIAN_H_FRAG, 'gaussianH');
-  const vProgram = createProgram(GAUSSIAN_V_FRAG, 'gaussianV');
-  
-  if (!hProgram || !vProgram) return gaussianBlurCPU(input, sigma);
-  
-  const inputTex = createInputTexture(data, width, height);
-  const tempFb = createFramebuffer(width, height);
-  const outputFb = createFramebuffer(width, height);
-  
-  if (!inputTex || !tempFb || !outputFb) {
-    if (inputTex) gl.deleteTexture(inputTex);
-    if (tempFb) { gl.deleteFramebuffer(tempFb.fb); gl.deleteTexture(tempFb.tex); }
-    return gaussianBlurCPU(input, sigma);
-  }
-  
-  // Horizontal pass
-  renderPass(hProgram, inputTex, tempFb.fb, width, height, {
-    u_texelSizeX: 1.0 / width,
-    u_radius: radius,
-    u_sigma2: sigma2,
-  });
-  
-  // Vertical pass
-  renderPass(vProgram, tempFb.tex, outputFb.fb, width, height, {
-    u_texelSizeY: 1.0 / height,
-    u_radius: radius,
-    u_sigma2: sigma2,
-  });
-  
-  const result = readResult(outputFb.fb, width, height);
-  
-  // Cleanup
-  gl.deleteTexture(inputTex);
-  gl.deleteTexture(tempFb.tex);
-  gl.deleteFramebuffer(tempFb.fb);
-  gl.deleteTexture(outputFb.tex);
-  gl.deleteFramebuffer(outputFb.fb);
-  
-  return { data: result, width, height };
 }
 
 // ============================================================================
@@ -637,49 +667,58 @@ void main() {
 }
 `;
 
-export function medianFilterWebGL(input: ChannelImage, config: MedianFilterConfig): ChannelImage {
-  const gl = getGL();
-  if (!gl) {
-    console.warn('WebGL not available, using CPU fallback');
-    return medianFilterCPU(input, config);
+export class MedianFilterWebGL implements Preprocessor {
+  private readonly config: MedianFilterConfig;
+
+  constructor(config: Partial<MedianFilterConfig> = {}) {
+    this.config = { ...DEFAULT_MEDIAN_CONFIG, ...config };
   }
-  
-  const { width, height, data } = input;
-  const radius = config.radius;
-  
-  if (canvas!.width !== width || canvas!.height !== height) {
-    canvas!.width = width;
-    canvas!.height = height;
+
+  process(input: ChannelImage): ChannelImage {
+    const config = this.config;
+    const gl = getGL();
+    if (!gl) {
+      console.warn('WebGL not available, using CPU fallback');
+      return medianFilterCPU(input, config);
+    }
+
+    const { width, height, data } = input;
+    const radius = config.radius;
+
+    if (canvas!.width !== width || canvas!.height !== height) {
+      canvas!.width = width;
+      canvas!.height = height;
+    }
+
+    // Use exact sorting for small kernels, histogram for large
+    const shaderSource = radius <= 2 ? MEDIAN_SMALL_FRAG : MEDIAN_FRAG;
+    const cacheKey = radius <= 2 ? 'medianSmall' : 'medianLarge';
+
+    const program = createProgram(shaderSource, cacheKey);
+    if (!program) return medianFilterCPU(input, config);
+
+    const inputTex = createInputTexture(data, width, height);
+    const output = createFramebuffer(width, height);
+
+    if (!inputTex || !output) {
+      if (inputTex) gl.deleteTexture(inputTex);
+      return medianFilterCPU(input, config);
+    }
+
+    renderPass(program, inputTex, output.fb, width, height, {
+      u_texelSize: [1.0 / width, 1.0 / height],
+      u_radius: radius,
+    });
+
+    const result = readResult(output.fb, width, height);
+
+    // Cleanup
+    gl.deleteTexture(inputTex);
+    gl.deleteTexture(output.tex);
+    gl.deleteFramebuffer(output.fb);
+
+    return { data: result, width, height };
   }
-  
-  // Use exact sorting for small kernels, histogram for large
-  const shaderSource = radius <= 2 ? MEDIAN_SMALL_FRAG : MEDIAN_FRAG;
-  const cacheKey = radius <= 2 ? 'medianSmall' : 'medianLarge';
-  
-  const program = createProgram(shaderSource, cacheKey);
-  if (!program) return medianFilterCPU(input, config);
-  
-  const inputTex = createInputTexture(data, width, height);
-  const output = createFramebuffer(width, height);
-  
-  if (!inputTex || !output) {
-    if (inputTex) gl.deleteTexture(inputTex);
-    return medianFilterCPU(input, config);
-  }
-  
-  renderPass(program, inputTex, output.fb, width, height, {
-    u_texelSize: [1.0 / width, 1.0 / height],
-    u_radius: radius,
-  });
-  
-  const result = readResult(output.fb, width, height);
-  
-  // Cleanup
-  gl.deleteTexture(inputTex);
-  gl.deleteTexture(output.tex);
-  gl.deleteFramebuffer(output.fb);
-  
-  return { data: result, width, height };
 }
 
 // ============================================================================
@@ -740,45 +779,54 @@ void main() {
 }
 `;
 
-export function kuwaharaFilterWebGL(input: ChannelImage, config: KuwaharaFilterConfig): ChannelImage {
-  const gl = getGL();
-  if (!gl) {
-    console.warn('WebGL not available, using CPU fallback');
-    return kuwaharaFilterCPU(input, config);
+export class KuwaharaFilterWebGL implements Preprocessor {
+  private readonly config: KuwaharaFilterConfig;
+
+  constructor(config: Partial<KuwaharaFilterConfig> = {}) {
+    this.config = { ...DEFAULT_KUWAHARA_CONFIG, ...config };
   }
-  
-  const { width, height, data } = input;
-  const radius = config.radius;
-  
-  if (canvas!.width !== width || canvas!.height !== height) {
-    canvas!.width = width;
-    canvas!.height = height;
+
+  process(input: ChannelImage): ChannelImage {
+    const config = this.config;
+    const gl = getGL();
+    if (!gl) {
+      console.warn('WebGL not available, using CPU fallback');
+      return kuwaharaFilterCPU(input, config);
+    }
+
+    const { width, height, data } = input;
+    const radius = config.radius;
+
+    if (canvas!.width !== width || canvas!.height !== height) {
+      canvas!.width = width;
+      canvas!.height = height;
+    }
+
+    const program = createProgram(KUWAHARA_FRAG, 'kuwahara');
+    if (!program) return kuwaharaFilterCPU(input, config);
+
+    const inputTex = createInputTexture(data, width, height);
+    const output = createFramebuffer(width, height);
+
+    if (!inputTex || !output) {
+      if (inputTex) gl.deleteTexture(inputTex);
+      return kuwaharaFilterCPU(input, config);
+    }
+
+    renderPass(program, inputTex, output.fb, width, height, {
+      u_texelSize: [1.0 / width, 1.0 / height],
+      u_radius: radius,
+    });
+
+    const result = readResult(output.fb, width, height);
+
+    // Cleanup
+    gl.deleteTexture(inputTex);
+    gl.deleteTexture(output.tex);
+    gl.deleteFramebuffer(output.fb);
+
+    return { data: result, width, height };
   }
-  
-  const program = createProgram(KUWAHARA_FRAG, 'kuwahara');
-  if (!program) return kuwaharaFilterCPU(input, config);
-  
-  const inputTex = createInputTexture(data, width, height);
-  const output = createFramebuffer(width, height);
-  
-  if (!inputTex || !output) {
-    if (inputTex) gl.deleteTexture(inputTex);
-    return kuwaharaFilterCPU(input, config);
-  }
-  
-  renderPass(program, inputTex, output.fb, width, height, {
-    u_texelSize: [1.0 / width, 1.0 / height],
-    u_radius: radius,
-  });
-  
-  const result = readResult(output.fb, width, height);
-  
-  // Cleanup
-  gl.deleteTexture(inputTex);
-  gl.deleteTexture(output.tex);
-  gl.deleteFramebuffer(output.fb);
-  
-  return { data: result, width, height };
 }
 
 // ============================================================================
@@ -808,75 +856,82 @@ void main() {
 }
 `;
 
-export function enhanceContrastWebGL(
-  input: ChannelImage,
-  blackPoint: number = 0.01,
-  whitePoint: number = 0.99
-): ChannelImage {
-  const gl = getGL();
-  const { width, height, data } = input;
-  
-  // Calculate percentiles on CPU (fast enough, O(n log n))
-  const sorted = new Float32Array(data).sort((a, b) => a - b);
-  const minVal = sorted[Math.floor(data.length * blackPoint)];
-  const maxVal = sorted[Math.floor(data.length * whitePoint)];
-  
-  if (!gl) {
-    // CPU fallback
-    const result = new Float32Array(data.length);
-    const range = maxVal - minVal;
-    if (range < 0.01) {
-      result.set(data);
-    } else {
+export class ContrastEnhancerWebGL implements Preprocessor {
+  private readonly blackPoint: number;
+  private readonly whitePoint: number;
+
+  constructor(blackPoint: number = 0.01, whitePoint: number = 0.99) {
+    this.blackPoint = blackPoint;
+    this.whitePoint = whitePoint;
+  }
+
+  process(input: ChannelImage): ChannelImage {
+    const { blackPoint, whitePoint } = this;
+    const gl = getGL();
+    const { width, height, data } = input;
+
+    // Calculate percentiles on CPU (fast enough, O(n log n))
+    const sorted = new Float32Array(data).sort((a, b) => a - b);
+    const minVal = sorted[Math.floor(data.length * blackPoint)];
+    const maxVal = sorted[Math.floor(data.length * whitePoint)];
+
+    if (!gl) {
+      // CPU fallback
+      const result = new Float32Array(data.length);
+      const range = maxVal - minVal;
+      if (range < 0.01) {
+        result.set(data);
+      } else {
+        for (let i = 0; i < data.length; i++) {
+          result[i] = Math.max(0, Math.min(1, (data[i] - minVal) / range));
+        }
+      }
+      return { data: result, width, height };
+    }
+
+    if (canvas!.width !== width || canvas!.height !== height) {
+      canvas!.width = width;
+      canvas!.height = height;
+    }
+
+    const program = createProgram(CONTRAST_FRAG, 'contrast');
+    if (!program) {
+      // CPU fallback inline
+      const result = new Float32Array(data.length);
+      const range = maxVal - minVal;
       for (let i = 0; i < data.length; i++) {
         result[i] = Math.max(0, Math.min(1, (data[i] - minVal) / range));
       }
+      return { data: result, width, height };
     }
+
+    const inputTex = createInputTexture(data, width, height);
+    const output = createFramebuffer(width, height);
+
+    if (!inputTex || !output) {
+      if (inputTex) gl.deleteTexture(inputTex);
+      const result = new Float32Array(data.length);
+      const range = maxVal - minVal;
+      for (let i = 0; i < data.length; i++) {
+        result[i] = Math.max(0, Math.min(1, (data[i] - minVal) / range));
+      }
+      return { data: result, width, height };
+    }
+
+    renderPass(program, inputTex, output.fb, width, height, {
+      u_minVal: minVal,
+      u_maxVal: maxVal,
+    });
+
+    const result = readResult(output.fb, width, height);
+
+    // Cleanup
+    gl.deleteTexture(inputTex);
+    gl.deleteTexture(output.tex);
+    gl.deleteFramebuffer(output.fb);
+
     return { data: result, width, height };
   }
-  
-  if (canvas!.width !== width || canvas!.height !== height) {
-    canvas!.width = width;
-    canvas!.height = height;
-  }
-  
-  const program = createProgram(CONTRAST_FRAG, 'contrast');
-  if (!program) {
-    // CPU fallback inline
-    const result = new Float32Array(data.length);
-    const range = maxVal - minVal;
-    for (let i = 0; i < data.length; i++) {
-      result[i] = Math.max(0, Math.min(1, (data[i] - minVal) / range));
-    }
-    return { data: result, width, height };
-  }
-  
-  const inputTex = createInputTexture(data, width, height);
-  const output = createFramebuffer(width, height);
-  
-  if (!inputTex || !output) {
-    if (inputTex) gl.deleteTexture(inputTex);
-    const result = new Float32Array(data.length);
-    const range = maxVal - minVal;
-    for (let i = 0; i < data.length; i++) {
-      result[i] = Math.max(0, Math.min(1, (data[i] - minVal) / range));
-    }
-    return { data: result, width, height };
-  }
-  
-  renderPass(program, inputTex, output.fb, width, height, {
-    u_minVal: minVal,
-    u_maxVal: maxVal,
-  });
-  
-  const result = readResult(output.fb, width, height);
-  
-  // Cleanup
-  gl.deleteTexture(inputTex);
-  gl.deleteTexture(output.tex);
-  gl.deleteFramebuffer(output.fb);
-  
-  return { data: result, width, height };
 }
 
 // ============================================================================
@@ -901,61 +956,70 @@ void main() {
 }
 `;
 
-export function quantizeWebGL(input: ChannelImage, levels: number = 8): ChannelImage {
-  const gl = getGL();
-  if (!gl) {
-    // CPU fallback
+export class QuantizerWebGL implements Preprocessor {
+  private readonly levels: number;
+
+  constructor(levels: number = 8) {
+    this.levels = levels;
+  }
+
+  process(input: ChannelImage): ChannelImage {
+    const levels = this.levels;
+    const gl = getGL();
+    if (!gl) {
+      // CPU fallback
+      const { width, height, data } = input;
+      const result = new Float32Array(data.length);
+      const step = 1 / (levels - 1);
+      for (let i = 0; i < data.length; i++) {
+        result[i] = Math.round(data[i] / step) * step;
+      }
+      return { data: result, width, height };
+    }
+
     const { width, height, data } = input;
-    const result = new Float32Array(data.length);
-    const step = 1 / (levels - 1);
-    for (let i = 0; i < data.length; i++) {
-      result[i] = Math.round(data[i] / step) * step;
+
+    if (canvas!.width !== width || canvas!.height !== height) {
+      canvas!.width = width;
+      canvas!.height = height;
     }
+
+    const program = createProgram(QUANTIZE_FRAG, 'quantize');
+    if (!program) {
+      const result = new Float32Array(data.length);
+      const step = 1 / (levels - 1);
+      for (let i = 0; i < data.length; i++) {
+        result[i] = Math.round(data[i] / step) * step;
+      }
+      return { data: result, width, height };
+    }
+
+    const inputTex = createInputTexture(data, width, height);
+    const output = createFramebuffer(width, height);
+
+    if (!inputTex || !output) {
+      if (inputTex) gl.deleteTexture(inputTex);
+      const result = new Float32Array(data.length);
+      const step = 1 / (levels - 1);
+      for (let i = 0; i < data.length; i++) {
+        result[i] = Math.round(data[i] / step) * step;
+      }
+      return { data: result, width, height };
+    }
+
+    renderPass(program, inputTex, output.fb, width, height, {
+      u_levels: levels,
+    });
+
+    const result = readResult(output.fb, width, height);
+
+    // Cleanup
+    gl.deleteTexture(inputTex);
+    gl.deleteTexture(output.tex);
+    gl.deleteFramebuffer(output.fb);
+
     return { data: result, width, height };
   }
-  
-  const { width, height, data } = input;
-  
-  if (canvas!.width !== width || canvas!.height !== height) {
-    canvas!.width = width;
-    canvas!.height = height;
-  }
-  
-  const program = createProgram(QUANTIZE_FRAG, 'quantize');
-  if (!program) {
-    const result = new Float32Array(data.length);
-    const step = 1 / (levels - 1);
-    for (let i = 0; i < data.length; i++) {
-      result[i] = Math.round(data[i] / step) * step;
-    }
-    return { data: result, width, height };
-  }
-  
-  const inputTex = createInputTexture(data, width, height);
-  const output = createFramebuffer(width, height);
-  
-  if (!inputTex || !output) {
-    if (inputTex) gl.deleteTexture(inputTex);
-    const result = new Float32Array(data.length);
-    const step = 1 / (levels - 1);
-    for (let i = 0; i < data.length; i++) {
-      result[i] = Math.round(data[i] / step) * step;
-    }
-    return { data: result, width, height };
-  }
-  
-  renderPass(program, inputTex, output.fb, width, height, {
-    u_levels: levels,
-  });
-  
-  const result = readResult(output.fb, width, height);
-  
-  // Cleanup
-  gl.deleteTexture(inputTex);
-  gl.deleteTexture(output.tex);
-  gl.deleteFramebuffer(output.fb);
-  
-  return { data: result, width, height };
 }
 
 // ============================================================================
@@ -1140,28 +1204,28 @@ function kuwaharaFilterCPU(input: ChannelImage, config: KuwaharaFilterConfig): C
 
 export const PreprocessingPresetsWebGL = {
   light: (input: ChannelImage): ChannelImage => {
-    return bilateralFilterWebGL(input, { sigmaSpatial: 2, sigmaRange: 0.08 });
+    return new BilateralFilterWebGL({ sigmaSpatial: 2, sigmaRange: 0.08 }).process(input);
   },
-  
+
   standard: (input: ChannelImage): ChannelImage => {
-    return bilateralFilterWebGL(input, { sigmaSpatial: 4, sigmaRange: 0.1 });
+    return new BilateralFilterWebGL({ sigmaSpatial: 4, sigmaRange: 0.1 }).process(input);
   },
-  
+
   heavy: (input: ChannelImage): ChannelImage => {
-    let result = bilateralFilterWebGL(input, { sigmaSpatial: 5, sigmaRange: 0.12 });
-    result = bilateralFilterWebGL(result, { sigmaSpatial: 3, sigmaRange: 0.1 });
+    let result = new BilateralFilterWebGL({ sigmaSpatial: 5, sigmaRange: 0.12 }).process(input);
+    result = new BilateralFilterWebGL({ sigmaSpatial: 3, sigmaRange: 0.1 }).process(result);
     return result;
   },
-  
+
   artistic: (input: ChannelImage): ChannelImage => {
-    let result = kuwaharaFilterWebGL(input, { radius: 4 });
-    result = bilateralFilterWebGL(result, { sigmaSpatial: 2, sigmaRange: 0.08 });
+    let result = new KuwaharaFilterWebGL({ radius: 4 }).process(input);
+    result = new BilateralFilterWebGL({ sigmaSpatial: 2, sigmaRange: 0.08 }).process(result);
     return result;
   },
-  
+
   nature: (input: ChannelImage): ChannelImage => {
-    let result = bilateralFilterWebGL(input, { sigmaSpatial: 6, sigmaRange: 0.15 });
-    result = bilateralFilterWebGL(result, { sigmaSpatial: 3, sigmaRange: 0.08 });
+    let result = new BilateralFilterWebGL({ sigmaSpatial: 6, sigmaRange: 0.15 }).process(input);
+    result = new BilateralFilterWebGL({ sigmaSpatial: 3, sigmaRange: 0.08 }).process(result);
     return result;
   },
 };
@@ -1170,50 +1234,63 @@ export const PreprocessingPresetsWebGL = {
 // PREPROCESSOR CLASS (Fluent API)
 // ============================================================================
 
-export class PreprocessorWebGL {
-  private operations: Array<(img: ChannelImage) => ChannelImage> = [];
-  
+/**
+ * Convenience class for chaining WebGL-accelerated preprocessing operations
+ *
+ * Note: renamed from `PreprocessorWebGL` to `PreprocessingPipelineWebGL`
+ * since `Preprocessor` is now the shared strategy interface implemented by
+ * BilateralFilterWebGL, MedianFilterWebGL, KuwaharaFilterWebGL,
+ * GaussianBlurWebGL, ContrastEnhancerWebGL, and QuantizerWebGL above.
+ */
+export class PreprocessingPipelineWebGL {
+  private operations: Preprocessor[] = [];
+
   bilateral(config?: Partial<BilateralFilterConfig>): this {
-    const cfg = { sigmaSpatial: 3, sigmaRange: 0.1, ...config };
-    this.operations.push(img => bilateralFilterWebGL(img, cfg));
+    this.operations.push(new BilateralFilterWebGL(config));
     return this;
   }
-  
+
   median(config?: Partial<MedianFilterConfig>): this {
-    const cfg = { radius: 2, ...config };
-    this.operations.push(img => medianFilterWebGL(img, cfg));
+    this.operations.push(new MedianFilterWebGL(config));
     return this;
   }
-  
+
   kuwahara(config?: Partial<KuwaharaFilterConfig>): this {
-    const cfg = { radius: 3, ...config };
-    this.operations.push(img => kuwaharaFilterWebGL(img, cfg));
+    this.operations.push(new KuwaharaFilterWebGL(config));
     return this;
   }
-  
+
   gaussian(sigma: number = 1.0): this {
-    this.operations.push(img => gaussianBlurWebGL(img, sigma));
+    this.operations.push(new GaussianBlurWebGL(sigma));
     return this;
   }
-  
+
   contrast(blackPoint: number = 0.01, whitePoint: number = 0.99): this {
-    this.operations.push(img => enhanceContrastWebGL(img, blackPoint, whitePoint));
+    this.operations.push(new ContrastEnhancerWebGL(blackPoint, whitePoint));
     return this;
   }
-  
+
   quantize(levels: number = 8): this {
-    this.operations.push(img => quantizeWebGL(img, levels));
+    this.operations.push(new QuantizerWebGL(levels));
     return this;
   }
-  
+
+  /**
+   * Add an arbitrary custom preprocessing strategy to the pipeline
+   */
+  use(preprocessor: Preprocessor): this {
+    this.operations.push(preprocessor);
+    return this;
+  }
+
   apply(input: ChannelImage): ChannelImage {
     let result = input;
     for (const op of this.operations) {
-      result = op(result);
+      result = op.process(result);
     }
     return result;
   }
-  
+
   clear(): this {
     this.operations = [];
     return this;
@@ -1256,12 +1333,12 @@ export function disposeWebGL(): void {
 // ============================================================================
 
 export {
-  bilateralFilterWebGL as bilateralFilter,
-  medianFilterWebGL as medianFilter,
-  kuwaharaFilterWebGL as kuwaharaFilter,
-  gaussianBlurWebGL as gaussianBlur,
-  enhanceContrastWebGL as enhanceContrast,
-  quantizeWebGL as quantize,
+  BilateralFilterWebGL as BilateralFilter,
+  MedianFilterWebGL as MedianFilter,
+  KuwaharaFilterWebGL as KuwaharaFilter,
+  GaussianBlurWebGL as GaussianBlur,
+  ContrastEnhancerWebGL as ContrastEnhancer,
+  QuantizerWebGL as Quantizer,
   PreprocessingPresetsWebGL as PreprocessingPresets,
-  PreprocessorWebGL as Preprocessor,
+  PreprocessingPipelineWebGL as PreprocessingPipeline,
 };
