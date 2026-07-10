@@ -5,30 +5,10 @@
  * Used for the DoG computation in FDoG, where we want to blur across
  * edges but not along them.
  */
-import type { BlurStrategy, ChannelImage, FlowField } from '../types.js';
-import { createChannelImage, getPixelBilinear, generateGaussianKernel } from '../utils/index.js';
-import { BaseCPUBlur } from './base.js';
+import { DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, type BlurStrategy, type ChannelImage, type FlowField, type GradientAlignedBlurConfig } from '../../types.js';
+import { createChannelImage, getPixelBilinear, generateGaussianKernel } from '../../utils/index.js';
+import { BaseCPUBlur } from '../base.js';
 
-/**
- * Configuration for flow-guided blur
- */
-export interface GradientAlignedBlurConfig {
-  /** 
-   * Kernel size multiplier for flow-aligned LIC (default: 6)
-   */
-  kernelSizeMultiplier: number;
-  
-  /**
-   * Step size for line integral convolution (default: 1.0)
-   * Smaller values give smoother integration but cost more
-   */
-  stepSize: number;
-}
-
-const DEFAULT_FLOW_CONFIG: GradientAlignedBlurConfig = {
-  kernelSizeMultiplier: 6,
-  stepSize: 1.0,
-};
 
 export class CPUGradientAlignedBlur extends BaseCPUBlur implements BlurStrategy {
   private config: GradientAlignedBlurConfig;
@@ -38,7 +18,7 @@ export class CPUGradientAlignedBlur extends BaseCPUBlur implements BlurStrategy 
     config: Partial<GradientAlignedBlurConfig> = {}
   ) {
     super();
-    this.config = { ...DEFAULT_FLOW_CONFIG, ...config };
+    this.config = { ...DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, ...config };
   }
 
   dispose(): void {}

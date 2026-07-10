@@ -10,5 +10,4 @@ export {
 export type {
     FlowGuidedBlurConfig
 } from './flow-guided.js';
-export { GradientAlignedBlur } from './gradient-aligned.js';
-export type { GradientAlignedBlurConfig } from './gradient-aligned.js';
+export { GradientAlignedBlur } from './gradient-aligned/index.js';
