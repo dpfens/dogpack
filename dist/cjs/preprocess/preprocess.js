@@ -8,18 +8,6 @@
  *
  *   - WebGL 2.0 available  -> delegates to the GPU implementation (webgl.ts)
  *   - WebGL 2.0 unavailable -> delegates to the CPU implementation (cpu.ts)
- *
- * Why this exists:
- * `webgl.ts` already contains an internal CPU fallback inside every
- * `process()` call, but that's a *runtime* safety net for when a shader
- * fails to compile/link or a framebuffer can't be created mid-session —
- * it still probes/initializes a WebGL context on every call. Here we
- * decide the backend up front and never touch WebGL at all on a machine
- * that doesn't support it, and never re-run capability detection per call.
- *
- * The per-call fallback inside webgl.ts is left intact and still protects
- * against WebGL "supported but broken" edge cases after we've committed
- * to the GPU path.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.disposeWebGL = exports.isWebGLAvailable = exports.PreprocessingPipeline = exports.PreprocessingPresets = exports.Quantizer = exports.ContrastEnhancer = exports.GaussianBlur = exports.KuwaharaFilter = exports.MedianFilter = exports.BilateralFilter = void 0;

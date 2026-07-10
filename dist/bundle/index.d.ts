@@ -1586,18 +1586,6 @@ declare namespace webgl {
  *
  *   - WebGL 2.0 available  -> delegates to the GPU implementation (webgl.ts)
  *   - WebGL 2.0 unavailable -> delegates to the CPU implementation (cpu.ts)
- *
- * Why this exists:
- * `webgl.ts` already contains an internal CPU fallback inside every
- * `process()` call, but that's a *runtime* safety net for when a shader
- * fails to compile/link or a framebuffer can't be created mid-session —
- * it still probes/initializes a WebGL context on every call. Here we
- * decide the backend up front and never touch WebGL at all on a machine
- * that doesn't support it, and never re-run capability detection per call.
- *
- * The per-call fallback inside webgl.ts is left intact and still protects
- * against WebGL "supported but broken" edge cases after we've committed
- * to the GPU path.
  */
 
 /**
@@ -1843,6 +1831,8 @@ declare function gaussianSample(): number;
  * performance -- validate upstream if inputs could mismatch.
  */
 declare function andCombine(images: ChannelImage[]): ChannelImage;
+declare function isWebGLComputeSupported(): boolean;
+declare function isWebGPUSupported(): Promise<boolean>;
 
 declare const index$1_andCombine: typeof andCombine;
 declare const index$1_at: typeof at;
@@ -1857,6 +1847,8 @@ declare const index$1_getIndex: typeof getIndex;
 declare const index$1_getPixel: typeof getPixel;
 declare const index$1_getPixelBilinear: typeof getPixelBilinear;
 declare const index$1_imageDataToLuminance: typeof imageDataToLuminance;
+declare const index$1_isWebGLComputeSupported: typeof isWebGLComputeSupported;
+declare const index$1_isWebGPUSupported: typeof isWebGPUSupported;
 declare const index$1_lerp: typeof lerp;
 declare const index$1_luminanceToImageData: typeof luminanceToImageData;
 declare const index$1_normalizeVec2: typeof normalizeVec2;
@@ -1878,6 +1870,8 @@ declare namespace index$1 {
     index$1_getPixel as getPixel,
     index$1_getPixelBilinear as getPixelBilinear,
     index$1_imageDataToLuminance as imageDataToLuminance,
+    index$1_isWebGLComputeSupported as isWebGLComputeSupported,
+    index$1_isWebGPUSupported as isWebGPUSupported,
     index$1_lerp as lerp,
     index$1_luminanceToImageData as luminanceToImageData,
     index$1_normalizeVec2 as normalizeVec2,
@@ -3053,4 +3047,4 @@ declare namespace index {
 }
 
 export { DEFAULT_ETF_CONFIG, DoGProcessor, EdgeTangentFlow, ThresholdModes, applyCustomThreshold, index$3 as blur, index$4 as dog, index as extensions, index$2 as preprocess, threshold, index$1 as utilities };
-export type { ADoGConfig, ADoGProcessingResult, ADogConfigParamType, AntiAliasingConfig, BilateralFilterConfig, BlendFunction, BlurStrategy, BlurStrategyClass, ChannelImage, ColorRetentionConfig, ColorTransformFn, DoGConfig, DoGImplementation, DoGResult, DogConfigParamType, ETFConfig, ExtensionStrategy, FDoGConfig, FDogConfigParamType, FlowField, FlowGuidedBlurConfig, HDoGConfig, HDoGProcessingResult, HDogConfigParamType, HatchTexture, HatchingConfig, IsotropicBlurConfig, KuwaharaFilterConfig, LocalVarianceConfig, MaskTransformFn, MedianFilterConfig, MultiScaleConfig, MultiScaleLayer, NaturalMediaConfig, NaturalMediaStyle, ParamRange, PostProcessFn, Preprocessor, RGBImage$1 as RGBImage, ThresholdConfig, ThresholdStrategy, Vec2, XDoGConfig };
+export type { ADoGConfig, ADoGProcessingResult, ADogConfigParamType, AntiAliasingConfig, BackendOptions, BilateralFilterConfig, BlendFunction, BlurStrategy, BlurStrategyClass, ChannelImage, ColorRetentionConfig, ColorTransformFn, DoGConfig, DoGImplementation, DoGResult, DogConfigParamType, ETFConfig, ExtensionStrategy, FDoGConfig, FDogConfigParamType, FlowField, FlowGuidedBlurConfig, HDoGConfig, HDoGProcessingResult, HDogConfigParamType, HatchTexture, HatchingConfig, IsotropicBlurConfig, KuwaharaFilterConfig, LocalVarianceConfig, MaskTransformFn, MedianFilterConfig, MultiScaleConfig, MultiScaleLayer, NaturalMediaConfig, NaturalMediaStyle, ParamRange, PostProcessFn, Preprocessor, RGBImage$1 as RGBImage, ThresholdConfig, ThresholdStrategy, Vec2, XDoGConfig };

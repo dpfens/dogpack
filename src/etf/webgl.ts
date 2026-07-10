@@ -7,7 +7,7 @@
  */
 
 import { type ChannelImage, type FlowField, type Vec2, type ETFConfig, DEFAULT_ETF_CONFIG } from '../types.js';
-import { createChannelImage} from '../utils/index.js';
+import { createChannelImage, isWebGLComputeSupported} from '../utils/index.js';
 
 /**
  * WebGL context and resources for ETF computation
@@ -251,7 +251,6 @@ export class EdgeTangentFlowWebGL implements FlowField {
   readonly height: number;
   
   private static resources: WebGLResources | null = null;
-  private static supported: boolean | null = null;
   
   private constructor(tangents: Vec2[], width: number, height: number) {
     this.tangents = tangents;
@@ -278,27 +277,7 @@ export class EdgeTangentFlowWebGL implements FlowField {
    * Check if WebGL2 is supported
    */
   static isSupported(): boolean {
-    if (this.supported !== null) {
-      return this.supported;
-    }
-    
-    try {
-      const canvas = typeof OffscreenCanvas !== 'undefined' 
-        ? new OffscreenCanvas(1, 1)
-        : document.createElement('canvas');
-      const gl = canvas.getContext('webgl2') as WebGL2RenderingContext | null;
-      this.supported = gl !== null;
-      
-      // Check for required extensions/features
-      if (gl) {
-        const ext = gl.getExtension('EXT_color_buffer_float');
-        this.supported = ext !== null;
-      }
-    } catch {
-      this.supported = false;
-    }
-    
-    return this.supported;
+    return isWebGLComputeSupported();
   }
   
   /**

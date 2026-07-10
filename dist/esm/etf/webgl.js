@@ -6,7 +6,7 @@
  * tangent extraction on the GPU.
  */
 import { DEFAULT_ETF_CONFIG } from '../types.js';
-import { createChannelImage } from '../utils/index.js';
+import { createChannelImage, isWebGLComputeSupported } from '../utils/index.js';
 /**
  * Shader source code
  */
@@ -223,7 +223,6 @@ export class EdgeTangentFlowWebGL {
     width;
     height;
     static resources = null;
-    static supported = null;
     constructor(tangents, width, height) {
         this.tangents = tangents;
         this.width = width;
@@ -246,25 +245,7 @@ export class EdgeTangentFlowWebGL {
      * Check if WebGL2 is supported
      */
     static isSupported() {
-        if (this.supported !== null) {
-            return this.supported;
-        }
-        try {
-            const canvas = typeof OffscreenCanvas !== 'undefined'
-                ? new OffscreenCanvas(1, 1)
-                : document.createElement('canvas');
-            const gl = canvas.getContext('webgl2');
-            this.supported = gl !== null;
-            // Check for required extensions/features
-            if (gl) {
-                const ext = gl.getExtension('EXT_color_buffer_float');
-                this.supported = ext !== null;
-            }
-        }
-        catch {
-            this.supported = false;
-        }
-        return this.supported;
+        return isWebGLComputeSupported();
     }
     /**
      * Initialize WebGL resources (lazy initialization)

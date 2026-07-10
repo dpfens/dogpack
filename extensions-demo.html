@@ -1078,7 +1078,7 @@
         function applyPreprocessing(luminance) {
             const mode = preprocessMode.value;
             if (mode === 'none') return luminance;        
-            const preprocessFn = preprocess.webgl.PreprocessingPresetsWebGL[mode];
+            const preprocessFn = preprocess.PreprocessingPresets[mode];
             if (preprocessFn) {
                 return preprocessFn(luminance);
             }

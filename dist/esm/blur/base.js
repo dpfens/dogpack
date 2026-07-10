@@ -1,3 +1,4 @@
+import { isWebGLComputeSupported } from "../utils/index.js";
 export class BaseCPUBlur {
     dispose() { }
     /**
@@ -19,22 +20,7 @@ export class BaseWebGLBlur {
      * Check if WebGL2 is supported in the current environment
      */
     static isSupported() {
-        try {
-            if (typeof OffscreenCanvas !== 'undefined') {
-                const canvas = new OffscreenCanvas(1, 1);
-                const gl = canvas.getContext('webgl2');
-                return gl !== null;
-            }
-            else if (typeof document !== 'undefined') {
-                const canvas = document.createElement('canvas');
-                const gl = canvas.getContext('webgl2');
-                return gl !== null;
-            }
-            return false;
-        }
-        catch {
-            return false;
-        }
+        return isWebGLComputeSupported();
     }
     /**
      * Get reason if WebGL2 is not supported

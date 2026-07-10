@@ -14,7 +14,6 @@ export declare class EdgeTangentFlowWebGL implements FlowField {
     readonly width: number;
     readonly height: number;
     private static resources;
-    private static supported;
     private constructor();
     getTangent(x: number, y: number): Vec2;
     getTangentArray(): Float32Array;

@@ -2,7 +2,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.FlowGuidedBlur = exports.WebGPUFlowGuidedBlur = exports.WebGLFlowGuidedBlur = exports.CPUFlowGuidedBlur = void 0;
 const index_js_1 = require("../utils/index.js");
-const webgl_js_1 = require("../utils/webgl.js");
 const base_js_1 = require("./base.js");
 const DEFAULT_FLOW_CONFIG = {
     kernelSizeMultiplier: 6,
@@ -172,6 +171,43 @@ const DEFAULT_WEBGL_CONFIG = {
     kernelSizeMultiplier: 6,
     maxKernelSize: 63,
 };
+function compileShader(gl, source, type) {
+    const shader = gl.createShader(type);
+    if (!shader) {
+        throw new Error('Failed to create shader');
+    }
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        const info = gl.getShaderInfoLog(shader);
+        gl.deleteShader(shader);
+        throw new Error(`Shader compilation failed: ${info}`);
+    }
+    return shader;
+}
+/**
+ * Create a WebGL2 program from vertex and fragment shaders
+ */
+function createProgram(gl, vertexSource, fragmentSource) {
+    const vertexShader = compileShader(gl, vertexSource, gl.VERTEX_SHADER);
+    const fragmentShader = compileShader(gl, fragmentSource, gl.FRAGMENT_SHADER);
+    const program = gl.createProgram();
+    if (!program) {
+        throw new Error('Failed to create program');
+    }
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        const info = gl.getProgramInfoLog(program);
+        gl.deleteProgram(program);
+        throw new Error(`Program linking failed: ${info}`);
+    }
+    // Clean up shaders (they're now part of the program)
+    gl.deleteShader(vertexShader);
+    gl.deleteShader(fragmentShader);
+    return program;
+}
 /**
  * WebGL2-accelerated flow-guided blur
  * Uses line integral convolution along edge tangent directions
@@ -203,7 +239,7 @@ class WebGLFlowGuidedBlur extends base_js_1.BaseWebGLBlur {
         const gl = canvas.getContext('webgl2');
         if (!gl)
             throw new Error('WebGL2 is not supported');
-        const program = (0, webgl_js_1.createProgram)(gl, VERTEX_SHADER, FLOW_BLUR_SHADER);
+        const program = createProgram(gl, VERTEX_SHADER, FLOW_BLUR_SHADER);
         const quadBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([

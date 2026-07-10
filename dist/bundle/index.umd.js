@@ -234,6 +234,54 @@
         }
         return output;
     }
+    let webglComputeSupportCache = null;
+    function isWebGLComputeSupported() {
+        if (webglComputeSupportCache !== null)
+            return webglComputeSupportCache;
+        try {
+            const canvas = typeof OffscreenCanvas !== 'undefined'
+                ? new OffscreenCanvas(1, 1)
+                : typeof document !== 'undefined'
+                    ? document.createElement('canvas')
+                    : null;
+            if (!canvas) {
+                webglComputeSupportCache = false;
+                return webglComputeSupportCache;
+            }
+            const gl = canvas.getContext('webgl2');
+            if (!gl) {
+                webglComputeSupportCache = false;
+                return webglComputeSupportCache;
+            }
+            // Exclude software rasterizers — too slow to be a useful compute fallback
+            const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+            const renderer = debugInfo
+                ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL)
+                : '';
+            const isSoftware = /swiftshader|software|llvmpipe/i.test(renderer);
+            // Required for float render targets, used in most GPGPU-style passes
+            const hasFloatTargets = gl.getExtension('EXT_color_buffer_float') !== null;
+            gl.getExtension('WEBGL_lose_context')?.loseContext();
+            webglComputeSupportCache = !isSoftware && hasFloatTargets;
+            return webglComputeSupportCache;
+        }
+        catch {
+            webglComputeSupportCache = false;
+            return webglComputeSupportCache;
+        }
+    }
+    async function isWebGPUSupported() {
+        if (typeof navigator === 'undefined' || !('gpu' in navigator)) {
+            return false;
+        }
+        try {
+            const adapter = await navigator.gpu.requestAdapter();
+            return adapter !== null;
+        }
+        catch {
+            return false;
+        }
+    }
 
     var index$4 = /*#__PURE__*/Object.freeze({
         __proto__: null,
@@ -250,6 +298,8 @@
         getPixel: getPixel,
         getPixelBilinear: getPixelBilinear,
         imageDataToLuminance: imageDataToLuminance,
+        isWebGLComputeSupported: isWebGLComputeSupported,
+        isWebGPUSupported: isWebGPUSupported,
         lerp: lerp,
         luminanceToImageData: luminanceToImageData,
         normalizeVec2: normalizeVec2,
@@ -866,22 +916,7 @@
          * Check if WebGL2 is supported in the current environment
          */
         static isSupported() {
-            try {
-                if (typeof OffscreenCanvas !== 'undefined') {
-                    const canvas = new OffscreenCanvas(1, 1);
-                    const gl = canvas.getContext('webgl2');
-                    return gl !== null;
-                }
-                else if (typeof document !== 'undefined') {
-                    const canvas = document.createElement('canvas');
-                    const gl = canvas.getContext('webgl2');
-                    return gl !== null;
-                }
-                return false;
-            }
-            catch {
-                return false;
-            }
+            return isWebGLComputeSupported();
         }
         /**
          * Get reason if WebGL2 is not supported
@@ -1984,7 +2019,6 @@ void main() {
         width;
         height;
         static resources = null;
-        static supported = null;
         constructor(tangents, width, height) {
             this.tangents = tangents;
             this.width = width;
@@ -2007,25 +2041,7 @@ void main() {
          * Check if WebGL2 is supported
          */
         static isSupported() {
-            if (this.supported !== null) {
-                return this.supported;
-            }
-            try {
-                const canvas = typeof OffscreenCanvas !== 'undefined'
-                    ? new OffscreenCanvas(1, 1)
-                    : document.createElement('canvas');
-                const gl = canvas.getContext('webgl2');
-                this.supported = gl !== null;
-                // Check for required extensions/features
-                if (gl) {
-                    const ext = gl.getExtension('EXT_color_buffer_float');
-                    this.supported = ext !== null;
-                }
-            }
-            catch {
-                this.supported = false;
-            }
-            return this.supported;
+            return isWebGLComputeSupported();
         }
         /**
          * Initialize WebGL resources (lazy initialization)
@@ -2820,47 +2836,6 @@ void main() {
         }
     }
 
-    /**
-     * Compile a WebGL2 shader
-     */
-    function compileShader$1(gl, source, type) {
-        const shader = gl.createShader(type);
-        if (!shader) {
-            throw new Error('Failed to create shader');
-        }
-        gl.shaderSource(shader, source);
-        gl.compileShader(shader);
-        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-            const info = gl.getShaderInfoLog(shader);
-            gl.deleteShader(shader);
-            throw new Error(`Shader compilation failed: ${info}`);
-        }
-        return shader;
-    }
-    /**
-     * Create a WebGL2 program from vertex and fragment shaders
-     */
-    function createProgram$1(gl, vertexSource, fragmentSource) {
-        const vertexShader = compileShader$1(gl, vertexSource, gl.VERTEX_SHADER);
-        const fragmentShader = compileShader$1(gl, fragmentSource, gl.FRAGMENT_SHADER);
-        const program = gl.createProgram();
-        if (!program) {
-            throw new Error('Failed to create program');
-        }
-        gl.attachShader(program, vertexShader);
-        gl.attachShader(program, fragmentShader);
-        gl.linkProgram(program);
-        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-            const info = gl.getProgramInfoLog(program);
-            gl.deleteProgram(program);
-            throw new Error(`Program linking failed: ${info}`);
-        }
-        // Clean up shaders (they're now part of the program)
-        gl.deleteShader(vertexShader);
-        gl.deleteShader(fragmentShader);
-        return program;
-    }
-
     const DEFAULT_FLOW_CONFIG = {
         kernelSizeMultiplier: 6,
         stepSize: 1.0,
@@ -3028,6 +3003,43 @@ void main() {
         kernelSizeMultiplier: 6,
         maxKernelSize: 63,
     };
+    function compileShader$1(gl, source, type) {
+        const shader = gl.createShader(type);
+        if (!shader) {
+            throw new Error('Failed to create shader');
+        }
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            const info = gl.getShaderInfoLog(shader);
+            gl.deleteShader(shader);
+            throw new Error(`Shader compilation failed: ${info}`);
+        }
+        return shader;
+    }
+    /**
+     * Create a WebGL2 program from vertex and fragment shaders
+     */
+    function createProgram$1(gl, vertexSource, fragmentSource) {
+        const vertexShader = compileShader$1(gl, vertexSource, gl.VERTEX_SHADER);
+        const fragmentShader = compileShader$1(gl, fragmentSource, gl.FRAGMENT_SHADER);
+        const program = gl.createProgram();
+        if (!program) {
+            throw new Error('Failed to create program');
+        }
+        gl.attachShader(program, vertexShader);
+        gl.attachShader(program, fragmentShader);
+        gl.linkProgram(program);
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            const info = gl.getProgramInfoLog(program);
+            gl.deleteProgram(program);
+            throw new Error(`Program linking failed: ${info}`);
+        }
+        // Clean up shaders (they're now part of the program)
+        gl.deleteShader(vertexShader);
+        gl.deleteShader(fragmentShader);
+        return program;
+    }
     /**
      * WebGL2-accelerated flow-guided blur
      * Uses line integral convolution along edge tangent directions
@@ -5442,18 +5454,6 @@ void main() {
      *
      *   - WebGL 2.0 available  -> delegates to the GPU implementation (webgl.ts)
      *   - WebGL 2.0 unavailable -> delegates to the CPU implementation (cpu.ts)
-     *
-     * Why this exists:
-     * `webgl.ts` already contains an internal CPU fallback inside every
-     * `process()` call, but that's a *runtime* safety net for when a shader
-     * fails to compile/link or a framebuffer can't be created mid-session —
-     * it still probes/initializes a WebGL context on every call. Here we
-     * decide the backend up front and never touch WebGL at all on a machine
-     * that doesn't support it, and never re-run capability detection per call.
-     *
-     * The per-call fallback inside webgl.ts is left intact and still protects
-     * against WebGL "supported but broken" edge cases after we've committed
-     * to the GPU path.
      */
     function useWebGL(options) {
         if (options?.forceCPU)

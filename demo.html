@@ -1151,7 +1151,7 @@
             const mode = preprocessMode.value;
             if (mode === 'none') return grayscale;
             
-            const preprocessFn = preprocess.webgl.PreprocessingPresetsWebGL[mode];
+            const preprocessFn = preprocess.PreprocessingPresets[mode];
             if (preprocessFn) {
                 return preprocessFn(grayscale);
             }

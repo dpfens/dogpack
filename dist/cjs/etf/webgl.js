@@ -226,7 +226,6 @@ class EdgeTangentFlowWebGL {
     width;
     height;
     static resources = null;
-    static supported = null;
     constructor(tangents, width, height) {
         this.tangents = tangents;
         this.width = width;
@@ -249,25 +248,7 @@ class EdgeTangentFlowWebGL {
      * Check if WebGL2 is supported
      */
     static isSupported() {
-        if (this.supported !== null) {
-            return this.supported;
-        }
-        try {
-            const canvas = typeof OffscreenCanvas !== 'undefined'
-                ? new OffscreenCanvas(1, 1)
-                : document.createElement('canvas');
-            const gl = canvas.getContext('webgl2');
-            this.supported = gl !== null;
-            // Check for required extensions/features
-            if (gl) {
-                const ext = gl.getExtension('EXT_color_buffer_float');
-                this.supported = ext !== null;
-            }
-        }
-        catch {
-            this.supported = false;
-        }
-        return this.supported;
+        return (0, index_js_1.isWebGLComputeSupported)();
     }
     /**
      * Initialize WebGL resources (lazy initialization)

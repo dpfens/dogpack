@@ -89,7 +89,7 @@ export * as blur from './blur/index.js';
 export type { IsotropicBlurConfig, FlowGuidedBlurConfig } from './blur/index.js';
 export { EdgeTangentFlow } from './etf/index.js';
 export * as preprocess from './preprocess/index.js';
-export type { LocalVarianceConfig } from './preprocess/index.js';
+export type { LocalVarianceConfig, BackendOptions } from './preprocess/index.js';
 export type { ThresholdConfig, ThresholdStrategy } from './threshold.js';
 export * as threshold from './threshold.js';
 export type { Vec2, ChannelImage, RGBImage, FlowField, ETFConfig, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig, Preprocessor } from './types.js';
