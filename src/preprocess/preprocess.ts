@@ -1,335 +1,175 @@
 /**
- * Preprocessing module for XDoG/FDoG
- * 
- * Provides filters to prepare images before line detection.
- * These help reduce noise and texture while preserving important edges.
- * 
- * Section 3.2 of the paper discusses the importance of bilateral
- * preprocessing for "indication" - attenuating weak edges while
- * preserving strong edges.
+ * Composed Preprocessing Module for XDoG/FDoG
+ *
+ * This module is the single entry point the rest of the codebase should
+ * import from. Each exported class picks its backend ONCE, at
+ * construction time:
+ *
+ *   - WebGL 2.0 available  -> delegates to the GPU implementation (webgl.ts)
+ *   - WebGL 2.0 unavailable -> delegates to the CPU implementation (cpu.ts)
  */
 
+import type {
+  ChannelImage,
+  BilateralFilterConfig,
+  MedianFilterConfig,
+  KuwaharaFilterConfig,
+  Preprocessor,
+} from '../types.js';
 
-import type { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig, Preprocessor } from '../types.js';
-import { createChannelImage, getPixel, generateGaussianKernel } from '../utils/index.js';
+import {
+  BilateralFilterWebGL,
+  MedianFilterWebGL,
+  KuwaharaFilterWebGL,
+  GaussianBlurWebGL,
+  ContrastEnhancerWebGL,
+  QuantizerWebGL,
+  isWebGLAvailable,
+  disposeWebGL,
+} from './webgl.js';
 
+import {
+  BilateralFilter as BilateralFilterCPU,
+  MedianFilter as MedianFilterCPU,
+  KuwaharaFilter as KuwaharaFilterCPU,
+  GaussianBlur as GaussianBlurCPU,
+  ContrastEnhancer as ContrastEnhancerCPU,
+  Quantizer as QuantizerCPU,
+} from './cpu.js';
 
-const DEFAULT_BILATERAL_CONFIG: BilateralFilterConfig = {
-  sigmaSpatial: 3,
-  sigmaRange: 0.1,
-  radiusMultiplier: 2,
-};
-
-const DEFAULT_MEDIAN_CONFIG: MedianFilterConfig = {
-  radius: 2,
-};
-
-
-const DEFAULT_KUWAHARA_CONFIG: KuwaharaFilterConfig = {
-  radius: 3,
-};
+// ============================================================================
+// Backend selection
+// ============================================================================
 
 /**
- * Bilateral Filter
- * 
- * Edge-preserving smoothing filter that averages pixels based on both
- * spatial proximity AND intensity similarity. This smooths out texture
- * (like grass) while keeping strong edges (like the car outline) sharp.
- * 
- * This is the recommended preprocessing for most images.
- * 
- * As mentioned in Section 3.2, bilateral filtering can serve as a
- * "prioritization mechanism" for indication - attenuating weak edges
- * while supporting strong edges.
+ * Optional override for backend selection. Useful for tests (deterministic
+ * CPU output, or running in a Node environment with no WebGL at all) or for
+ * explicitly forcing a backend regardless of what the environment supports.
+ */
+export interface BackendOptions {
+  /** Force CPU even if WebGL is available. Default: false. */
+  forceCPU?: boolean;
+}
+
+function useWebGL(options?: BackendOptions): boolean {
+  if (options?.forceCPU) return false;
+  return isWebGLAvailable();
+}
+
+// ============================================================================
+// Composed Filters
+// ============================================================================
+
+/**
+ * Edge-preserving smoothing filter. Uses the GPU implementation when
+ * available, otherwise falls back to the CPU implementation.
  */
 export class BilateralFilter implements Preprocessor {
-  private readonly config: BilateralFilterConfig;
+  private readonly instance: Preprocessor;
 
-  constructor(config: Partial<BilateralFilterConfig> = {}) {
-    this.config = { ...DEFAULT_BILATERAL_CONFIG, ...config };
+  constructor(config: Partial<BilateralFilterConfig> = {}, options?: BackendOptions) {
+    this.instance = useWebGL(options)
+      ? new BilateralFilterWebGL(config)
+      : new BilateralFilterCPU(config);
   }
 
   process(input: ChannelImage): ChannelImage {
-    const cfg = this.config;
-    const { width, height } = input;
-    const output = createChannelImage(width, height);
-
-    const radius = Math.ceil(cfg.sigmaSpatial * (cfg.radiusMultiplier ?? 2));
-    const sigmaSpatial2 = 2 * cfg.sigmaSpatial * cfg.sigmaSpatial;
-    const sigmaRange2 = 2 * cfg.sigmaRange * cfg.sigmaRange;
-
-    // Precompute spatial weights
-    const spatialWeights: number[] = [];
-    for (let dy = -radius; dy <= radius; dy++) {
-      for (let dx = -radius; dx <= radius; dx++) {
-        const dist2 = dx * dx + dy * dy;
-        spatialWeights.push(Math.exp(-dist2 / sigmaSpatial2));
-      }
-    }
-
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const centerValue = getPixel(input, x, y);
-
-        let sum = 0;
-        let weightSum = 0;
-        let idx = 0;
-
-        for (let dy = -radius; dy <= radius; dy++) {
-          for (let dx = -radius; dx <= radius; dx++) {
-            const nx = x + dx;
-            const ny = y + dy;
-            const neighborValue = getPixel(input, nx, ny);
-
-            // Range weight based on intensity difference
-            const intensityDiff = neighborValue - centerValue;
-            const rangeWeight = Math.exp(-(intensityDiff * intensityDiff) / sigmaRange2);
-
-            // Combined weight
-            const weight = spatialWeights[idx] * rangeWeight;
-
-            sum += neighborValue * weight;
-            weightSum += weight;
-            idx++;
-          }
-        }
-
-        output.data[y * width + x] = weightSum > 0 ? sum / weightSum : centerValue;
-      }
-    }
-
-    return output;
+    return this.instance.process(input);
   }
 }
 
 /**
- * Median Filter
- * 
- * Replaces each pixel with the median of its neighborhood.
- * Excellent for removing salt-and-pepper noise and small texture details.
+ * Median filter for salt-and-pepper noise removal.
  */
 export class MedianFilter implements Preprocessor {
-  private readonly config: MedianFilterConfig;
+  private readonly instance: Preprocessor;
 
-  constructor(config: Partial<MedianFilterConfig> = {}) {
-    this.config = { ...DEFAULT_MEDIAN_CONFIG, ...config };
+  constructor(config: Partial<MedianFilterConfig> = {}, options?: BackendOptions) {
+    this.instance = useWebGL(options)
+      ? new MedianFilterWebGL(config)
+      : new MedianFilterCPU(config);
   }
 
   process(input: ChannelImage): ChannelImage {
-    const { width, height } = input;
-    const output = createChannelImage(width, height);
-
-    const radius = this.config.radius;
-    const kernelSize = (2 * radius + 1) * (2 * radius + 1);
-    const values: number[] = new Array(kernelSize);
-
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        let idx = 0;
-
-        for (let dy = -radius; dy <= radius; dy++) {
-          for (let dx = -radius; dx <= radius; dx++) {
-            values[idx++] = getPixel(input, x + dx, y + dy);
-          }
-        }
-
-        // Sort and take median
-        values.sort((a, b) => a - b);
-        output.data[y * width + x] = values[Math.floor(kernelSize / 2)];
-      }
-    }
-
-    return output;
+    return this.instance.process(input);
   }
 }
 
 /**
- * Kuwahara Filter
- * 
- * Artistic smoothing filter that creates a painterly effect.
- * Divides the neighborhood into 4 quadrants, finds the one with
- * lowest variance, and uses its mean. Creates flat regions with
- * preserved edges - great for a more stylized look.
+ * Kuwahara filter for a painterly, stylized effect.
  */
 export class KuwaharaFilter implements Preprocessor {
-  private readonly config: KuwaharaFilterConfig;
+  private readonly instance: Preprocessor;
 
-  constructor(config: Partial<KuwaharaFilterConfig> = {}) {
-    this.config = { ...DEFAULT_KUWAHARA_CONFIG, ...config };
+  constructor(config: Partial<KuwaharaFilterConfig> = {}, options?: BackendOptions) {
+    this.instance = useWebGL(options)
+      ? new KuwaharaFilterWebGL(config)
+      : new KuwaharaFilterCPU(config);
   }
 
   process(input: ChannelImage): ChannelImage {
-    const { width, height } = input;
-    const output = createChannelImage(width, height);
-
-    const r = this.config.radius;
-
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        // Four quadrants: top-left, top-right, bottom-left, bottom-right
-        const quadrants = [
-          { startX: -r, endX: 0, startY: -r, endY: 0 },
-          { startX: 0, endX: r, startY: -r, endY: 0 },
-          { startX: -r, endX: 0, startY: 0, endY: r },
-          { startX: 0, endX: r, startY: 0, endY: r },
-        ];
-
-        let minVariance = Infinity;
-        let bestMean = getPixel(input, x, y);
-
-        for (const q of quadrants) {
-          let sum = 0;
-          let sumSq = 0;
-          let count = 0;
-
-          for (let dy = q.startY; dy <= q.endY; dy++) {
-            for (let dx = q.startX; dx <= q.endX; dx++) {
-              const val = getPixel(input, x + dx, y + dy);
-              sum += val;
-              sumSq += val * val;
-              count++;
-            }
-          }
-
-          const mean = sum / count;
-          const variance = (sumSq / count) - (mean * mean);
-
-          if (variance < minVariance) {
-            minVariance = variance;
-            bestMean = mean;
-          }
-        }
-
-        output.data[y * width + x] = bestMean;
-      }
-    }
-
-    return output;
+    return this.instance.process(input);
   }
 }
 
 /**
- * Gaussian Blur
- * 
- * Simple Gaussian smoothing. Less edge-preserving than bilateral,
- * but faster. Good for very noisy images or when used with small sigma.
+ * Separable Gaussian blur.
  */
 export class GaussianBlur implements Preprocessor {
-  private readonly sigma: number;
+  private readonly instance: Preprocessor;
 
-  constructor(sigma: number = 1.0) {
-    this.sigma = sigma;
+  constructor(sigma: number = 1.0, options?: BackendOptions) {
+    this.instance = useWebGL(options)
+      ? new GaussianBlurWebGL(sigma)
+      : new GaussianBlurCPU(sigma);
   }
 
   process(input: ChannelImage): ChannelImage {
-    const { width, height } = input;
-    const sigma = this.sigma;
-
-    if (sigma < 0.1) {
-      return { data: new Float32Array(input.data), width, height };
-    }
-
-    const radius = Math.ceil(sigma * 3);
-    const kernelSize = radius * 2 + 1;
-    const kernel = generateGaussianKernel(sigma, kernelSize);
-
-    // Horizontal pass
-    const temp = createChannelImage(width, height);
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        let val = 0;
-        for (let k = 0; k < kernelSize; k++) {
-          val += getPixel(input, x + k - radius, y) * kernel[k];
-        }
-        temp.data[y * width + x] = val;
-      }
-    }
-
-    // Vertical pass
-    const output = createChannelImage(width, height);
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        let val = 0;
-        for (let k = 0; k < kernelSize; k++) {
-          val += getPixel(temp, x, y + k - radius) * kernel[k];
-        }
-        output.data[y * width + x] = val;
-      }
-    }
-
-    return output;
+    return this.instance.process(input);
   }
 }
 
 /**
- * Contrast Enhancement
- * 
- * Stretches the histogram to use the full 0-1 range.
- * Can help make edges more distinct before processing.
+ * Histogram-percentile contrast stretch.
  */
 export class ContrastEnhancer implements Preprocessor {
-  private readonly blackPoint: number;
-  private readonly whitePoint: number;
+  private readonly instance: Preprocessor;
 
-  constructor(blackPoint: number = 0.01, whitePoint: number = 0.99) {
-    this.blackPoint = blackPoint;
-    this.whitePoint = whitePoint;
+  constructor(blackPoint: number = 0.01, whitePoint: number = 0.99, options?: BackendOptions) {
+    this.instance = useWebGL(options)
+      ? new ContrastEnhancerWebGL(blackPoint, whitePoint)
+      : new ContrastEnhancerCPU(blackPoint, whitePoint);
   }
 
   process(input: ChannelImage): ChannelImage {
-    const { width, height, data } = input;
-    const output = createChannelImage(width, height);
-    const size = width * height;
-
-    // Find histogram percentiles
-    const sorted = new Float32Array(data).sort();
-    const minVal = sorted[Math.floor(size * this.blackPoint)];
-    const maxVal = sorted[Math.floor(size * this.whitePoint)];
-    const range = maxVal - minVal;
-
-    if (range < 0.01) {
-      return { data: new Float32Array(data), width, height };
-    }
-
-    for (let i = 0; i < size; i++) {
-      output.data[i] = Math.max(0, Math.min(1, (data[i] - minVal) / range));
-    }
-
-    return output;
+    return this.instance.process(input);
   }
 }
 
 /**
- * Quantize to reduce color levels
- * 
- * Reduces the number of intensity levels, creating a posterized effect.
- * Can help reduce noise by grouping similar intensities together.
+ * Posterize/quantize intensity levels.
  */
 export class Quantizer implements Preprocessor {
-  private readonly levels: number;
+  private readonly instance: Preprocessor;
 
-  constructor(levels: number = 8) {
-    this.levels = levels;
+  constructor(levels: number = 8, options?: BackendOptions) {
+    this.instance = useWebGL(options)
+      ? new QuantizerWebGL(levels)
+      : new QuantizerCPU(levels);
   }
 
   process(input: ChannelImage): ChannelImage {
-    const { width, height, data } = input;
-    const output = createChannelImage(width, height);
-    const size = width * height;
-
-    const step = 1 / (this.levels - 1);
-
-    for (let i = 0; i < size; i++) {
-      output.data[i] = Math.round(data[i] / step) * step;
-    }
-
-    return output;
+    return this.instance.process(input);
   }
 }
 
-/**
- * Preset preprocessing pipelines for common use cases
- */
+// ============================================================================
+// Presets
+// ============================================================================
+// Built on top of the composed filters above, so each preset automatically
+// gets the GPU-when-available/CPU-otherwise behavior for free, with no
+// duplicated branching logic.
+
 export const PreprocessingPresets = {
   /**
    * Light preprocessing - minimal smoothing
@@ -372,79 +212,65 @@ export const PreprocessingPresets = {
    * Good for: Landscape, outdoor scenes
    */
   nature: (input: ChannelImage): ChannelImage => {
-    // First pass: aggressive bilateral to smooth texture
     let result = new BilateralFilter({ sigmaSpatial: 6, sigmaRange: 0.15 }).process(input);
-    // Second pass: lighter bilateral to clean up
     result = new BilateralFilter({ sigmaSpatial: 3, sigmaRange: 0.08 }).process(result);
     return result;
   },
 };
 
+// ============================================================================
+// Pipeline (Fluent API)
+// ============================================================================
+
 /**
- * Convenience class for chaining preprocessing operations
+ * Convenience class for chaining preprocessing operations. Each stage picks
+ * its backend (GPU vs CPU) independently at the time it's added, using
+ * whatever `isWebGLAvailable()` reports at that moment.
  */
 export class PreprocessingPipeline {
   private operations: Preprocessor[] = [];
 
-  /**
-   * Add bilateral filter to the pipeline
-   */
+  constructor(private readonly options?: BackendOptions) {}
+
   bilateral(config?: Partial<BilateralFilterConfig>): this {
-    this.operations.push(new BilateralFilter(config));
+    this.operations.push(new BilateralFilter(config, this.options));
     return this;
   }
 
-  /**
-   * Add median filter to the pipeline
-   */
   median(config?: Partial<MedianFilterConfig>): this {
-    this.operations.push(new MedianFilter(config));
+    this.operations.push(new MedianFilter(config, this.options));
     return this;
   }
 
-  /**
-   * Add Kuwahara filter to the pipeline
-   */
   kuwahara(config?: Partial<KuwaharaFilterConfig>): this {
-    this.operations.push(new KuwaharaFilter(config));
+    this.operations.push(new KuwaharaFilter(config, this.options));
     return this;
   }
 
-  /**
-   * Add Gaussian blur to the pipeline
-   */
   gaussian(sigma?: number): this {
-    this.operations.push(new GaussianBlur(sigma));
+    this.operations.push(new GaussianBlur(sigma, this.options));
     return this;
   }
 
-  /**
-   * Add contrast enhancement to the pipeline
-   */
   contrast(blackPoint?: number, whitePoint?: number): this {
-    this.operations.push(new ContrastEnhancer(blackPoint, whitePoint));
+    this.operations.push(new ContrastEnhancer(blackPoint, whitePoint, this.options));
     return this;
   }
 
-  /**
-   * Add quantization to the pipeline
-   */
   quantize(levels?: number): this {
-    this.operations.push(new Quantizer(levels));
+    this.operations.push(new Quantizer(levels, this.options));
     return this;
   }
 
   /**
-   * Add an arbitrary custom preprocessing strategy to the pipeline
+   * Add an arbitrary custom preprocessing strategy to the pipeline.
+   * Bring your own backend selection if needed.
    */
   use(preprocessor: Preprocessor): this {
     this.operations.push(preprocessor);
     return this;
   }
 
-  /**
-   * Apply all operations in sequence
-   */
   apply(input: ChannelImage): ChannelImage {
     let result = input;
     for (const op of this.operations) {
@@ -453,11 +279,14 @@ export class PreprocessingPipeline {
     return result;
   }
 
-  /**
-   * Clear all operations
-   */
   clear(): this {
     this.operations = [];
     return this;
   }
 }
+
+// ============================================================================
+// Re-exports
+// ============================================================================
+
+export { isWebGLAvailable, disposeWebGL };
