@@ -117,7 +117,7 @@ export { EdgeTangentFlow } from './etf/index.js';
 // Preprocessing
 
 export * as preprocess from './preprocess/index.js'
-export type { LocalVarianceConfig } from './preprocess/index.js'
+export type { LocalVarianceConfig, BackendOptions } from './preprocess/index.js'
 
 export type {
   ThresholdConfig,
