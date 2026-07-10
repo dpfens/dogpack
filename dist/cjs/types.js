@@ -7,7 +7,11 @@
  * and: "Gaussian Image Binarization" by Kang & Stamoulis (2021)
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DEFAULT_ETF_CONFIG = void 0;
+exports.DEFAULT_ETF_CONFIG = exports.DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG = void 0;
+exports.DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG = {
+    kernelSizeMultiplier: 6,
+    stepSize: 1.0,
+};
 /**
  * Default ETF configuration values
  */

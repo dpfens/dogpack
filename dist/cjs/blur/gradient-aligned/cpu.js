@@ -1,19 +1,23 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GradientAlignedBlur = exports.CPUGradientAlignedBlur = void 0;
-const index_js_1 = require("../utils/index.js");
-const base_js_1 = require("./base.js");
-const DEFAULT_FLOW_CONFIG = {
-    kernelSizeMultiplier: 6,
-    stepSize: 1.0,
-};
+/**
+ * Gradient-aligned blur for FDoG
+ *
+ * This applies blur perpendicular to the flow direction (across edges).
+ * Used for the DoG computation in FDoG, where we want to blur across
+ * edges but not along them.
+ */
+const types_js_1 = require("../../types.js");
+const index_js_1 = require("../../utils/index.js");
+const base_js_1 = require("../base.js");
 class CPUGradientAlignedBlur extends base_js_1.BaseCPUBlur {
     flowField;
     config;
     constructor(flowField, config = {}) {
         super();
         this.flowField = flowField;
-        this.config = { ...DEFAULT_FLOW_CONFIG, ...config };
+        this.config = { ...types_js_1.DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, ...config };
     }
     dispose() { }
     setFlowField(flowField) {
@@ -102,4 +106,4 @@ class GradientAlignedBlur {
     }
 }
 exports.GradientAlignedBlur = GradientAlignedBlur;
-//# sourceMappingURL=gradient-aligned.js.map
+//# sourceMappingURL=cpu.js.map

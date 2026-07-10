@@ -11,6 +11,6 @@ Object.defineProperty(exports, "CPUFlowGuidedBlur", { enumerable: true, get: fun
 Object.defineProperty(exports, "WebGLFlowGuidedBlur", { enumerable: true, get: function () { return flow_guided_js_1.WebGLFlowGuidedBlur; } });
 Object.defineProperty(exports, "WebGPUFlowGuidedBlur", { enumerable: true, get: function () { return flow_guided_js_1.WebGPUFlowGuidedBlur; } });
 Object.defineProperty(exports, "FlowGuidedBlur", { enumerable: true, get: function () { return flow_guided_js_1.FlowGuidedBlur; } });
-var gradient_aligned_js_1 = require("./gradient-aligned.js");
-Object.defineProperty(exports, "GradientAlignedBlur", { enumerable: true, get: function () { return gradient_aligned_js_1.GradientAlignedBlur; } });
+var index_js_1 = require("./gradient-aligned/index.js");
+Object.defineProperty(exports, "GradientAlignedBlur", { enumerable: true, get: function () { return index_js_1.GradientAlignedBlur; } });
 //# sourceMappingURL=index.js.map

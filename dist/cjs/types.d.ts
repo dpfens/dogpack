@@ -76,6 +76,21 @@ export interface Preprocessor {
     process(input: ChannelImage): ChannelImage;
 }
 /**
+ * Configuration for flow-guided blur
+ */
+export interface GradientAlignedBlurConfig {
+    /**
+     * Kernel size multiplier for flow-aligned LIC (default: 6)
+     */
+    kernelSizeMultiplier: number;
+    /**
+     * Step size for line integral convolution (default: 1.0)
+     * Smaller values give smoother integration but cost more
+     */
+    stepSize: number;
+}
+export declare const DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG: GradientAlignedBlurConfig;
+/**
  * Flow field representing edge tangent directions at each pixel
  */
 export interface FlowField {

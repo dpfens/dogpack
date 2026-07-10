@@ -138,7 +138,7 @@ function perpendicular(v) {
  * @param size Kernel size (should be odd)
  * @returns Normalized Gaussian kernel
  */
-function generateGaussianKernel$1(sigma, size) {
+function generateGaussianKernel$2(sigma, size) {
     const kernel = new Float32Array(size);
     const center = Math.floor(size / 2);
     const sigma2 = 2 * sigma * sigma;
@@ -289,7 +289,7 @@ var index$4 = /*#__PURE__*/Object.freeze({
     createChannelImage: createChannelImage,
     dotVec2: dotVec2,
     gaussianSample: gaussianSample,
-    generateGaussianKernel: generateGaussianKernel$1,
+    generateGaussianKernel: generateGaussianKernel$2,
     getIndex: getIndex,
     getPixel: getPixel,
     getPixelBilinear: getPixelBilinear,
@@ -635,6 +635,10 @@ const HDOG_STYLE_PRESETS = {
  * advanced image stylization" by Winnemöller et al. (2012)
  * and: "Gaussian Image Binarization" by Kang & Stamoulis (2021)
  */
+const DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG = {
+    kernelSizeMultiplier: 6,
+    stepSize: 1.0,
+};
 /**
  * Default ETF configuration values
  */
@@ -1086,7 +1090,7 @@ class CPUIsotropicBlur extends BaseCPUBlur {
         }
         // Compute kernel size (odd number)
         const kernelSize = computeKernelSize(sigma, this.config.kernelSizeMultiplier);
-        const kernel = generateGaussianKernel$1(sigma, kernelSize);
+        const kernel = generateGaussianKernel$2(sigma, kernelSize);
         const halfKernel = Math.floor(kernelSize / 2);
         // Separable convolution: horizontal pass
         const temp = createChannelImage(input.width, input.height);
@@ -1189,7 +1193,7 @@ const VERTICAL_BLUR_SHADER = `#version 300 es
 /**
  * Compile a WebGL2 shader
  */
-function compileShader$2(gl, source, type) {
+function compileShader$3(gl, source, type) {
     const shader = gl.createShader(type);
     if (!shader) {
         throw new Error('Failed to create shader');
@@ -1206,9 +1210,9 @@ function compileShader$2(gl, source, type) {
 /**
  * Create a WebGL2 program from vertex and fragment shaders
  */
-function createProgram$3(gl, vertexSource, fragmentSource) {
-    const vertexShader = compileShader$2(gl, vertexSource, gl.VERTEX_SHADER);
-    const fragmentShader = compileShader$2(gl, fragmentSource, gl.FRAGMENT_SHADER);
+function createProgram$4(gl, vertexSource, fragmentSource) {
+    const vertexShader = compileShader$3(gl, vertexSource, gl.VERTEX_SHADER);
+    const fragmentShader = compileShader$3(gl, fragmentSource, gl.FRAGMENT_SHADER);
     const program = gl.createProgram();
     if (!program) {
         throw new Error('Failed to create program');
@@ -1258,8 +1262,8 @@ class WebGLIsotropicBlur extends BaseWebGLBlur {
         const texCoordBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW);
-        const horizontalBlurProgram = createProgram$3(gl, VERTEX_SHADER$3, HORIZONTAL_BLUR_SHADER);
-        const verticalBlurProgram = createProgram$3(gl, VERTEX_SHADER$3, VERTICAL_BLUR_SHADER);
+        const horizontalBlurProgram = createProgram$4(gl, VERTEX_SHADER$3, HORIZONTAL_BLUR_SHADER);
+        const verticalBlurProgram = createProgram$4(gl, VERTEX_SHADER$3, VERTICAL_BLUR_SHADER);
         this.resources = {
             gl,
             canvas,
@@ -1283,7 +1287,7 @@ class WebGLIsotropicBlur extends BaseWebGLBlur {
         const { gl } = resources;
         const { width, height } = input;
         const kernelSize = Math.min(this.config.maxKernelSize, Math.max(3, Math.floor(sigma * this.config.kernelSizeMultiplier) | 1));
-        const kernel = generateGaussianKernel$1(sigma, kernelSize);
+        const kernel = generateGaussianKernel$2(sigma, kernelSize);
         // Create or reuse textures
         if (this.currentWidth !== width || this.currentHeight !== height) {
             this.textures.forEach(t => gl.deleteTexture(t));
@@ -1582,7 +1586,7 @@ class WebGPUIsotropicBlur extends BaseWebGPUBlur {
         const pixelCount = width * height;
         // Compute kernel
         const kernelSize = Math.min(this.config.maxKernelSize, Math.max(3, Math.floor(sigma * this.config.kernelSizeMultiplier) | 1));
-        const kernel = generateGaussianKernel$1(sigma, kernelSize);
+        const kernel = generateGaussianKernel$2(sigma, kernelSize);
         // Ensure buffers
         this.ensureBuffers(device, pixelCount, kernelSize);
         // Upload data
@@ -1790,6 +1794,711 @@ async function xdog(input, config = {}) {
     const result = processor.process(input);
     processor.dispose();
     return result;
+}
+
+/**
+ * WebGPU-accelerated Edge Tangent Flow computation
+ *
+ * Functional port of the WebGL2 implementation (webgl.ts) onto WebGPU
+ * compute shaders. Structurally this is much simpler than the WebGL version:
+ * there's no canvas, no framebuffers, and no fragment-shader ping-pong —
+ * every stage is a compute pass over flat storage buffers, addressed by
+ * (y * width + x) instead of texture coordinates. Edge-clamping is done
+ * manually via clampIdx() rather than relying on CLAMP_TO_EDGE sampler state.
+ *
+ * NOTE: like the WebGL version's fixed `u_kernel[33]` uniform array (which
+ * capped the Gaussian blur radius at 16), the WebGL implementation had to
+ * work around GLSL's lack of dynamically-sized arrays. Storage buffers have
+ * no such limit here, so the blur radius is only bounded by sanity/perf
+ * limits, not by shader syntax — see MAX_BLUR_RADIUS below.
+ */
+// NOTE: isWebGPUComputeSupported() isn't assumed to exist in utils/index.js
+// yet (only isWebGLComputeSupported is referenced in webgl.ts), so a local
+// equivalent is defined at the bottom of this file. Feel free to hoist it
+// into utils/index.js as a sibling of isWebGLComputeSupported.
+/** Sanity cap on Gaussian blur radius (pixels). Not a shader limitation —
+ *  just guards against pathological sigma values blowing up dispatch cost. */
+const MAX_BLUR_RADIUS = 64;
+const WORKGROUP_SIZE$1 = 8;
+// ============== WGSL Shader Sources ==============
+const COMMON_WGSL = `
+struct Params {
+  width: u32,
+  height: u32,
+  radius: u32,
+  kernelSize: u32,
+};
+
+fn clampIdx(x: i32, y: i32, w: i32, h: i32) -> u32 {
+  let cx = clamp(x, 0, w - 1);
+  let cy = clamp(y, 0, h - 1);
+  return u32(cy * w + cx);
+}
+`;
+const GRADIENT_SHADER$1 = COMMON_WGSL + `
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var<storage, read> inputBuf: array<f32>;
+@group(0) @binding(2) var<storage, read_write> outputBuf: array<vec4<f32>>;
+
+@compute @workgroup_size(${WORKGROUP_SIZE$1}, ${WORKGROUP_SIZE$1})
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let w = i32(params.width);
+  let h = i32(params.height);
+  let x = i32(gid.x);
+  let y = i32(gid.y);
+  if (x >= w || y >= h) { return; }
+
+  // Sobel operator
+  let p00 = inputBuf[clampIdx(x - 1, y - 1, w, h)];
+  let p10 = inputBuf[clampIdx(x,     y - 1, w, h)];
+  let p20 = inputBuf[clampIdx(x + 1, y - 1, w, h)];
+  let p01 = inputBuf[clampIdx(x - 1, y,     w, h)];
+  let p21 = inputBuf[clampIdx(x + 1, y,     w, h)];
+  let p02 = inputBuf[clampIdx(x - 1, y + 1, w, h)];
+  let p12 = inputBuf[clampIdx(x,     y + 1, w, h)];
+  let p22 = inputBuf[clampIdx(x + 1, y + 1, w, h)];
+
+  let gx = -p00 + p20 - 2.0 * p01 + 2.0 * p21 - p02 + p22;
+  let gy = -p00 - 2.0 * p10 - p20 + p02 + 2.0 * p12 + p22;
+  let mag = length(vec2<f32>(gx, gy));
+
+  // R=gx, G=gy, B=magnitude
+  outputBuf[u32(y * w + x)] = vec4<f32>(gx, gy, mag, 1.0);
+}
+`;
+const STRUCTURE_TENSOR_SHADER$1 = COMMON_WGSL + `
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var<storage, read> gradBuf: array<vec4<f32>>;
+@group(0) @binding(2) var<storage, read_write> outputBuf: array<vec4<f32>>;
+
+@compute @workgroup_size(${WORKGROUP_SIZE$1}, ${WORKGROUP_SIZE$1})
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let w = i32(params.width);
+  let h = i32(params.height);
+  let x = i32(gid.x);
+  let y = i32(gid.y);
+  if (x >= w || y >= h) { return; }
+
+  let idx = u32(y * w + x);
+  let grad = gradBuf[idx];
+  let gx = grad.x;
+  let gy = grad.y;
+
+  // Structure tensor: E=gx^2, F=gx*gy, G=gy^2
+  let e = gx * gx;
+  let f = gx * gy;
+  let g = gy * gy;
+
+  // R=E, G=F, B=G, A=magnitude (passed through)
+  outputBuf[idx] = vec4<f32>(e, f, g, grad.z);
+}
+`;
+// Both blur directions live in the same module — WGSL allows multiple
+// @compute entry points per shader module, so this replaces the WebGL
+// version's two separate H/V programs with one module and two pipelines.
+const GAUSSIAN_BLUR_SHADER = COMMON_WGSL + `
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var<storage, read> inputBuf: array<vec4<f32>>;
+@group(0) @binding(2) var<storage, read_write> outputBuf: array<vec4<f32>>;
+@group(0) @binding(3) var<storage, read> kernelBuf: array<f32>;
+
+@compute @workgroup_size(${WORKGROUP_SIZE$1}, ${WORKGROUP_SIZE$1})
+fn blurH(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let w = i32(params.width);
+  let h = i32(params.height);
+  let x = i32(gid.x);
+  let y = i32(gid.y);
+  if (x >= w || y >= h) { return; }
+
+  let radius = i32(params.radius);
+  let kernelSize = i32(params.kernelSize);
+  var sum = vec4<f32>(0.0);
+
+  for (var i = 0; i < kernelSize; i = i + 1) {
+    let sx = x + (i - radius);
+    sum = sum + inputBuf[clampIdx(sx, y, w, h)] * kernelBuf[i];
+  }
+
+  outputBuf[u32(y * w + x)] = sum;
+}
+
+@compute @workgroup_size(${WORKGROUP_SIZE$1}, ${WORKGROUP_SIZE$1})
+fn blurV(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let w = i32(params.width);
+  let h = i32(params.height);
+  let x = i32(gid.x);
+  let y = i32(gid.y);
+  if (x >= w || y >= h) { return; }
+
+  let radius = i32(params.radius);
+  let kernelSize = i32(params.kernelSize);
+  var sum = vec4<f32>(0.0);
+
+  for (var i = 0; i < kernelSize; i = i + 1) {
+    let sy = y + (i - radius);
+    sum = sum + inputBuf[clampIdx(x, sy, w, h)] * kernelBuf[i];
+  }
+
+  outputBuf[u32(y * w + x)] = sum;
+}
+`;
+const TANGENT_EXTRACT_SHADER$1 = COMMON_WGSL + `
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var<storage, read> tensorBuf: array<vec4<f32>>;
+@group(0) @binding(2) var<storage, read_write> outputBuf: array<vec4<f32>>;
+
+@compute @workgroup_size(${WORKGROUP_SIZE$1}, ${WORKGROUP_SIZE$1})
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let w = i32(params.width);
+  let h = i32(params.height);
+  let x = i32(gid.x);
+  let y = i32(gid.y);
+  if (x >= w || y >= h) { return; }
+
+  let idx = u32(y * w + x);
+  let tensor = tensorBuf[idx];
+  let e = tensor.x;
+  let f = tensor.y;
+  let g = tensor.z;
+  let mag = tensor.w;
+
+  // Eigenvector for smallest eigenvalue
+  let diff = e - g;
+  let disc = sqrt(diff * diff + 4.0 * f * f);
+
+  var tangent = vec2<f32>(0.0, 1.0);
+
+  if (abs(f) > 1e-10) {
+    let lambda1 = (e + g - disc) * 0.5;
+    tangent = vec2<f32>(lambda1 - g, f);
+  } else if (e < g) {
+    tangent = vec2<f32>(1.0, 0.0);
+  } else {
+    tangent = vec2<f32>(0.0, 1.0);
+  }
+
+  let len = length(tangent);
+  if (len > 1e-10) {
+    tangent = tangent / len;
+  }
+
+  // R=tx, G=ty, B=magnitude (for refinement weighting)
+  outputBuf[idx] = vec4<f32>(tangent, mag, 1.0);
+}
+`;
+const TANGENT_REFINE_SHADER$1 = COMMON_WGSL + `
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var<storage, read> inputBuf: array<vec4<f32>>;
+@group(0) @binding(2) var<storage, read_write> outputBuf: array<vec4<f32>>;
+
+@compute @workgroup_size(${WORKGROUP_SIZE$1}, ${WORKGROUP_SIZE$1})
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let w = i32(params.width);
+  let h = i32(params.height);
+  let x = i32(gid.x);
+  let y = i32(gid.y);
+  if (x >= w || y >= h) { return; }
+
+  let idx = u32(y * w + x);
+  let current = inputBuf[idx];
+  let currentT = current.xy;
+
+  var sum = vec2<f32>(0.0);
+  var weightSum: f32 = 0.0;
+
+  // 5x5 kernel (radius 2)
+  for (var ky = -2; ky <= 2; ky = ky + 1) {
+    for (var kx = -2; kx <= 2; kx = kx + 1) {
+      let neighbor = inputBuf[clampIdx(x + kx, y + ky, w, h)];
+      let neighborT = neighbor.xy;
+      let neighborMag = neighbor.z;
+
+      // Direction weight with sign handling
+      let dotVal = dot(currentT, neighborT);
+      let signVal = select(-1.0, 1.0, dotVal >= 0.0);
+      let dirWeight = abs(dotVal);
+      let weight = neighborMag * dirWeight;
+
+      sum = sum + signVal * neighborT * weight;
+      weightSum = weightSum + weight;
+    }
+  }
+
+  var refined = currentT;
+  if (weightSum > 1e-10) {
+    refined = sum / weightSum;
+    let len = length(refined);
+    if (len > 1e-10) {
+      refined = refined / len;
+    }
+  }
+
+  outputBuf[idx] = vec4<f32>(refined, current.z, 1.0);
+}
+`;
+/**
+ * WebGPU-accelerated ETF implementation
+ */
+class EdgeTangentFlowWebGPU {
+    // Flat, stride-2 (x,y) buffer — avoids allocating pixelCount JS objects.
+    tangents;
+    width;
+    height;
+    static resources = null;
+    static resourcesPromise = null;
+    constructor(tangents, width, height) {
+        this.tangents = tangents;
+        this.width = width;
+        this.height = height;
+    }
+    getTangent(x, y) {
+        const clampedX = Math.max(0, Math.min(this.width - 1, Math.round(x)));
+        const clampedY = Math.max(0, Math.min(this.height - 1, Math.round(y)));
+        const idx = (clampedY * this.width + clampedX) * 2;
+        return { x: this.tangents[idx], y: this.tangents[idx + 1] };
+    }
+    getTangentArray() {
+        // Already stored in exactly this layout — just hand back a copy so
+        // callers can't mutate internal state out from under us.
+        return this.tangents.slice();
+    }
+    /**
+     * Cheap synchronous check — mirrors the shape of isWebGLComputeSupported().
+     * This only confirms the API surface exists; it can't confirm an adapter
+     * is actually obtainable (that requires the async requestAdapter() call
+     * made lazily inside initResources/compute).
+     */
+    static isSupported() {
+        return typeof navigator !== 'undefined' && !!navigator.gpu;
+    }
+    /**
+     * Optional richer diagnostic, matching the BlurStrategyClass shape used
+     * elsewhere in this codebase (see types.ts).
+     */
+    static async getUnsupportedReason() {
+        if (typeof navigator === 'undefined' || !navigator.gpu) {
+            return 'navigator.gpu is unavailable in this environment';
+        }
+        try {
+            const adapter = await navigator.gpu.requestAdapter();
+            if (!adapter) {
+                return 'No WebGPU adapter could be obtained';
+            }
+            return undefined;
+        }
+        catch (err) {
+            return `WebGPU adapter request failed: ${err.message}`;
+        }
+    }
+    /**
+     * Initialize WebGPU device + pipelines (lazy, cached, size-independent).
+     */
+    static async initResources() {
+        if (this.resources) {
+            console.debug('[EdgeTangentFlowWebGPU] initResources: cache HIT (no GPU work)');
+            return this.resources;
+        }
+        if (this.resourcesPromise) {
+            console.debug('[EdgeTangentFlowWebGPU] initResources: awaiting in-flight init');
+            return this.resourcesPromise;
+        }
+        console.debug('[EdgeTangentFlowWebGPU] initResources: cache MISS — cold init starting');
+        this.resourcesPromise = (async () => {
+            const initTimings = {};
+            const tInitStart = performance.now();
+            if (!navigator.gpu) {
+                throw new Error('WebGPU not supported in this environment');
+            }
+            const tAdapter = performance.now();
+            const adapter = await navigator.gpu.requestAdapter();
+            initTimings.requestAdapter = performance.now() - tAdapter;
+            if (!adapter) {
+                throw new Error('Failed to obtain a WebGPU adapter');
+            }
+            const hasTimestampQuery = adapter.features.has('timestamp-query');
+            const tDevice = performance.now();
+            const device = await adapter.requestDevice({
+                requiredFeatures: hasTimestampQuery ? ['timestamp-query'] : [],
+            });
+            initTimings.requestDevice = performance.now() - tDevice;
+            device.lost.then((info) => {
+                // Invalidate the cache so the next compute() call re-initializes.
+                if (this.resources && this.resources.device === device) {
+                    this.resources = null;
+                    this.resourcesPromise = null;
+                }
+                console.warn(`WebGPU device lost: ${info.message}`);
+            });
+            const tPipelines = performance.now();
+            const makePipeline = (code, entryPoint = 'main') => device.createComputePipeline({
+                layout: 'auto',
+                compute: {
+                    module: device.createShaderModule({ code }),
+                    entryPoint,
+                },
+            });
+            const blurModule = device.createShaderModule({ code: GAUSSIAN_BLUR_SHADER });
+            const blurHPipeline = device.createComputePipeline({
+                layout: 'auto',
+                compute: { module: blurModule, entryPoint: 'blurH' },
+            });
+            const blurVPipeline = device.createComputePipeline({
+                layout: 'auto',
+                compute: { module: blurModule, entryPoint: 'blurV' },
+            });
+            const resources = {
+                device,
+                gradientPipeline: makePipeline(GRADIENT_SHADER$1),
+                structureTensorPipeline: makePipeline(STRUCTURE_TENSOR_SHADER$1),
+                blurHPipeline,
+                blurVPipeline,
+                tangentExtractPipeline: makePipeline(TANGENT_EXTRACT_SHADER$1),
+                tangentRefinePipeline: makePipeline(TANGENT_REFINE_SHADER$1),
+                hasTimestampQuery,
+            };
+            // NOTE: createComputePipeline() with layout:'auto' returns synchronously,
+            // but WGSL compilation/validation may be deferred by the driver until
+            // first dispatch — so this number can understate true compile cost.
+            // If submitAndGpuWait's first-call time is much higher than later
+            // calls, that deferred cost is showing up there, not here.
+            initTimings.pipelineCreateSync = performance.now() - tPipelines;
+            initTimings.total = performance.now() - tInitStart;
+            console.debug('[EdgeTangentFlowWebGPU] cold init timings (ms):', initTimings);
+            this.resources = resources;
+            return resources;
+        })();
+        return this.resourcesPromise;
+    }
+    /**
+     * Compute ETF using WebGPU compute shaders.
+     *
+     * Note this is async (unlike the WebGL version's synchronous compute()),
+     * since device acquisition and the final buffer readback (mapAsync) are
+     * both inherently asynchronous in WebGPU.
+     */
+    static async compute(input, config = {}, sigmaC) {
+        const cfg = { ...DEFAULT_ETF_CONFIG, ...config };
+        const { width, height } = input;
+        const pixelCount = width * height;
+        const timings = {};
+        const tStart = performance.now();
+        const res = await this.initResources();
+        const { device } = res;
+        timings.resourceInit = performance.now() - tStart;
+        // ---- Buffers ----
+        const tBuffers = performance.now();
+        const inputBuf = createBufferWithData(device, input.data, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
+        const gradientBuf = createEmptyVec4Buffer(device, pixelCount);
+        const tensorBuf = createEmptyVec4Buffer(device, pixelCount);
+        const blurTempBuf = createEmptyVec4Buffer(device, pixelCount);
+        const blurOutputBuf = createEmptyVec4Buffer(device, pixelCount);
+        const tangentBuf1 = createEmptyVec4Buffer(device, pixelCount);
+        const tangentBuf2 = createEmptyVec4Buffer(device, pixelCount);
+        const smoothSigma = sigmaC ?? cfg.kernelSize / 2.45;
+        const radius = Math.min(MAX_BLUR_RADIUS, Math.max(1, Math.ceil(smoothSigma * 2.45)));
+        const kernelSize = radius * 2 + 1;
+        const kernel = generateGaussianKernel$1(smoothSigma, kernelSize);
+        const kernelBuf = createBufferWithData(device, kernel, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
+        timings.bufferSetup = performance.now() - tBuffers;
+        const dispatchX = Math.ceil(width / WORKGROUP_SIZE$1);
+        const dispatchY = Math.ceil(height / WORKGROUP_SIZE$1);
+        // ---- Optional per-pass GPU timing (requires 'timestamp-query') ----
+        // 5 fixed passes (gradient, tensor, blurH, blurV, tangentExtract) plus
+        // one per refine iteration. Each pass writes a begin+end timestamp.
+        const passLabels = [];
+        const numPasses = 5 + cfg.iterations;
+        const querySet = res.hasTimestampQuery
+            ? device.createQuerySet({ type: 'timestamp', count: numPasses * 2 })
+            : null;
+        let passIdx = 0;
+        const nextTimestampWrites = (label) => {
+            if (!querySet)
+                return undefined;
+            const writes = {
+                querySet,
+                beginningOfPassWriteIndex: passIdx * 2,
+                endOfPassWriteIndex: passIdx * 2 + 1,
+            };
+            passLabels.push(label);
+            passIdx++;
+            return writes;
+        };
+        const tEncode = performance.now();
+        const encoder = device.createCommandEncoder();
+        // Step 1: Compute gradients
+        {
+            const params = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
+            const bindGroup = device.createBindGroup({
+                layout: res.gradientPipeline.getBindGroupLayout(0),
+                entries: [
+                    { binding: 0, resource: { buffer: params } },
+                    { binding: 1, resource: { buffer: inputBuf } },
+                    { binding: 2, resource: { buffer: gradientBuf } },
+                ],
+            });
+            const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites('gradient') });
+            pass.setPipeline(res.gradientPipeline);
+            pass.setBindGroup(0, bindGroup);
+            pass.dispatchWorkgroups(dispatchX, dispatchY);
+            pass.end();
+        }
+        // Step 2: Build structure tensor
+        {
+            const params = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
+            const bindGroup = device.createBindGroup({
+                layout: res.structureTensorPipeline.getBindGroupLayout(0),
+                entries: [
+                    { binding: 0, resource: { buffer: params } },
+                    { binding: 1, resource: { buffer: gradientBuf } },
+                    { binding: 2, resource: { buffer: tensorBuf } },
+                ],
+            });
+            const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites('structureTensor') });
+            pass.setPipeline(res.structureTensorPipeline);
+            pass.setBindGroup(0, bindGroup);
+            pass.dispatchWorkgroups(dispatchX, dispatchY);
+            pass.end();
+        }
+        // Step 3: Gaussian blur the structure tensor (horizontal then vertical)
+        {
+            const params = createParamsBuffer(device, { width, height, radius, kernelSize });
+            const bindGroupH = device.createBindGroup({
+                layout: res.blurHPipeline.getBindGroupLayout(0),
+                entries: [
+                    { binding: 0, resource: { buffer: params } },
+                    { binding: 1, resource: { buffer: tensorBuf } },
+                    { binding: 2, resource: { buffer: blurTempBuf } },
+                    { binding: 3, resource: { buffer: kernelBuf } },
+                ],
+            });
+            const passH = encoder.beginComputePass({ timestampWrites: nextTimestampWrites('blurH') });
+            passH.setPipeline(res.blurHPipeline);
+            passH.setBindGroup(0, bindGroupH);
+            passH.dispatchWorkgroups(dispatchX, dispatchY);
+            passH.end();
+            const bindGroupV = device.createBindGroup({
+                layout: res.blurVPipeline.getBindGroupLayout(0),
+                entries: [
+                    { binding: 0, resource: { buffer: params } },
+                    { binding: 1, resource: { buffer: blurTempBuf } },
+                    { binding: 2, resource: { buffer: blurOutputBuf } },
+                    { binding: 3, resource: { buffer: kernelBuf } },
+                ],
+            });
+            const passV = encoder.beginComputePass({ timestampWrites: nextTimestampWrites('blurV') });
+            passV.setPipeline(res.blurVPipeline);
+            passV.setBindGroup(0, bindGroupV);
+            passV.dispatchWorkgroups(dispatchX, dispatchY);
+            passV.end();
+        }
+        // Step 4: Extract initial tangent field
+        {
+            const params = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
+            const bindGroup = device.createBindGroup({
+                layout: res.tangentExtractPipeline.getBindGroupLayout(0),
+                entries: [
+                    { binding: 0, resource: { buffer: params } },
+                    { binding: 1, resource: { buffer: blurOutputBuf } },
+                    { binding: 2, resource: { buffer: tangentBuf1 } },
+                ],
+            });
+            const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites('tangentExtract') });
+            pass.setPipeline(res.tangentExtractPipeline);
+            pass.setBindGroup(0, bindGroup);
+            pass.dispatchWorkgroups(dispatchX, dispatchY);
+            pass.end();
+        }
+        // Step 5: Refine tangent field iteratively (ping-pong between buffers)
+        let readBuf = tangentBuf1;
+        let writeBuf = tangentBuf2;
+        const params = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
+        for (let i = 0; i < cfg.iterations; i++) {
+            const bindGroup = device.createBindGroup({
+                layout: res.tangentRefinePipeline.getBindGroupLayout(0),
+                entries: [
+                    { binding: 0, resource: { buffer: params } },
+                    { binding: 1, resource: { buffer: readBuf } },
+                    { binding: 2, resource: { buffer: writeBuf } },
+                ],
+            });
+            const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites(`refine[${i}]`) });
+            pass.setPipeline(res.tangentRefinePipeline);
+            pass.setBindGroup(0, bindGroup);
+            pass.dispatchWorkgroups(dispatchX, dispatchY);
+            pass.end();
+            [readBuf, writeBuf] = [writeBuf, readBuf];
+        }
+        timings.encode = performance.now() - tEncode;
+        // ---- Phase A: submit compute passes only, wait for GPU completion ----
+        // (No buffer copies here yet — resolveQuerySet writes GPU-side only,
+        // it doesn't require a CPU-readable buffer.)
+        let queryResolveBuf = null;
+        if (querySet) {
+            queryResolveBuf = device.createBuffer({
+                size: numPasses * 2 * 8, // one u64 timestamp per write index
+                usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC,
+            });
+            encoder.resolveQuerySet(querySet, 0, numPasses * 2, queryResolveBuf, 0);
+        }
+        const tFinishSubmit = performance.now();
+        device.queue.submit([encoder.finish()]);
+        timings.encoderFinishAndSubmitCall = performance.now() - tFinishSubmit;
+        // onSubmittedWorkDone() resolves once the GPU has finished executing
+        // everything in this submit — pure compute-pass execution time,
+        // including any first-use pipeline compile/link stall the driver
+        // deferred from createComputePipeline(). No copy or map involved yet.
+        const tComputeWait = performance.now();
+        await device.queue.onSubmittedWorkDone();
+        timings.computeGpuWait = performance.now() - tComputeWait;
+        // ---- Phase B: copy results into mappable buffers, then map+read ----
+        const tCopyEncode = performance.now();
+        const byteSize = pixelCount * 4 * 4; // vec4<f32>
+        const stagingBuf = device.createBuffer({
+            size: byteSize,
+            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+        });
+        let queryReadBuf = null;
+        const copyEncoder = device.createCommandEncoder();
+        copyEncoder.copyBufferToBuffer(readBuf, 0, stagingBuf, 0, byteSize);
+        if (querySet && queryResolveBuf) {
+            queryReadBuf = device.createBuffer({
+                size: queryResolveBuf.size,
+                usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+            });
+            copyEncoder.copyBufferToBuffer(queryResolveBuf, 0, queryReadBuf, 0, queryResolveBuf.size);
+        }
+        device.queue.submit([copyEncoder.finish()]);
+        timings.copyEncodeAndSubmit = performance.now() - tCopyEncode;
+        const tMapWait = performance.now();
+        const mapPromises = [stagingBuf.mapAsync(GPUMapMode.READ)];
+        if (queryReadBuf)
+            mapPromises.push(queryReadBuf.mapAsync(GPUMapMode.READ));
+        await Promise.all(mapPromises);
+        timings.mapAsyncWait = performance.now() - tMapWait;
+        // Everything from "done encoding compute passes" to "results mapped":
+        timings.submitAndGpuWait =
+            timings.encoderFinishAndSubmitCall + timings.computeGpuWait + timings.copyEncodeAndSubmit + timings.mapAsyncWait;
+        if (queryReadBuf) {
+            const raw = new BigUint64Array(queryReadBuf.getMappedRange().slice(0));
+            queryReadBuf.unmap();
+            queryReadBuf.destroy();
+            queryResolveBuf.destroy();
+            querySet.destroy();
+            const gpuPassTimings = {};
+            for (let i = 0; i < passLabels.length; i++) {
+                const beginNs = raw[i * 2];
+                const endNs = raw[i * 2 + 1];
+                // Aggregate refine[i] entries under one key so a large `iterations`
+                // count doesn't spam the log with per-iteration lines.
+                const label = passLabels[i].startsWith('refine[') ? 'refine (sum)' : passLabels[i];
+                const ms = Number(endNs - beginNs) / 1e6;
+                gpuPassTimings[label] = (gpuPassTimings[label] ?? 0) + ms;
+            }
+            console.debug('[EdgeTangentFlowWebGPU] per-pass GPU timings (ms):', gpuPassTimings);
+        }
+        else if (res.hasTimestampQuery === false) {
+            // Only warn once per session-ish; cheap enough to just always note it.
+            console.debug('[EdgeTangentFlowWebGPU] timestamp-query unsupported on this device — ' +
+                'submitAndGpuWait is a single coarse number, not broken down by pass.');
+        }
+        const tUnpack = performance.now();
+        const mapped = new Float32Array(stagingBuf.getMappedRange().slice(0));
+        stagingBuf.unmap();
+        // Flat stride-2 copy — no per-pixel object allocation. `mapped` is
+        // stride-4 (x,y,mag,1); we only keep (x,y) per pixel.
+        const tangents = new Float32Array(pixelCount * 2);
+        for (let i = 0; i < pixelCount; i++) {
+            tangents[i * 2] = mapped[i * 4];
+            tangents[i * 2 + 1] = mapped[i * 4 + 1];
+        }
+        timings.cpuUnpack = performance.now() - tUnpack;
+        // Cleanup temporary (per-call) resources — pipelines/device are cached.
+        const tCleanup = performance.now();
+        inputBuf.destroy();
+        gradientBuf.destroy();
+        tensorBuf.destroy();
+        blurTempBuf.destroy();
+        blurOutputBuf.destroy();
+        tangentBuf1.destroy();
+        tangentBuf2.destroy();
+        kernelBuf.destroy();
+        stagingBuf.destroy();
+        timings.cleanup = performance.now() - tCleanup;
+        timings.total = performance.now() - tStart;
+        console.debug('[EdgeTangentFlowWebGPU] timings (ms):', timings);
+        return new EdgeTangentFlowWebGPU(tangents, width, height);
+    }
+    /**
+     * Visualize the flow field as a grayscale image
+     */
+    visualize() {
+        const output = createChannelImage(this.width, this.height);
+        for (let y = 0; y < this.height; y++) {
+            for (let x = 0; x < this.width; x++) {
+                const idx = y * this.width + x;
+                const tx = this.tangents[idx * 2];
+                const ty = this.tangents[idx * 2 + 1];
+                const angle = Math.atan2(ty, tx);
+                output.data[idx] = (angle + Math.PI) / (2 * Math.PI);
+            }
+        }
+        return output;
+    }
+    /**
+     * Cleanup WebGPU resources (call when done with all ETF computations)
+     */
+    static dispose() {
+        const t0 = performance.now();
+        if (this.resources) {
+            this.resources.device.destroy();
+            this.resources = null;
+            this.resourcesPromise = null;
+            console.debug(`[EdgeTangentFlowWebGPU] dispose(): device destroyed in ${(performance.now() - t0).toFixed(2)}ms — ` +
+                'cache is now EMPTY; next compute() call will pay full cold-init cost.');
+        }
+        else {
+            console.debug(`[EdgeTangentFlowWebGPU] dispose(): no-op, resources already empty (${(performance.now() - t0).toFixed(2)}ms)`);
+        }
+    }
+}
+// ============== Helper Functions ==============
+function alignTo4(bytes) {
+    return Math.ceil(bytes / 4) * 4;
+}
+function createBufferWithData(device, data, usage) {
+    const size = alignTo4(data.byteLength);
+    const buffer = device.createBuffer({ size, usage, mappedAtCreation: true });
+    new Float32Array(buffer.getMappedRange()).set(data);
+    buffer.unmap();
+    return buffer;
+}
+function createEmptyVec4Buffer(device, pixelCount) {
+    return device.createBuffer({
+        size: pixelCount * 4 * 4, // vec4<f32>
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+    });
+}
+function createParamsBuffer(device, params) {
+    const buffer = device.createBuffer({
+        size: 16, // 4 x u32, already 16-byte aligned
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+    device.queue.writeBuffer(buffer, 0, new Uint32Array([params.width, params.height, params.radius, params.kernelSize]));
+    return buffer;
+}
+function generateGaussianKernel$1(sigma, size) {
+    const kernel = new Float32Array(size);
+    const center = Math.floor(size / 2);
+    let sum = 0;
+    for (let i = 0; i < size; i++) {
+        const x = i - center;
+        kernel[i] = Math.exp(-(x * x) / (2 * sigma * sigma));
+        sum += kernel[i];
+    }
+    for (let i = 0; i < size; i++) {
+        kernel[i] /= sum;
+    }
+    return kernel;
 }
 
 /**
@@ -2072,12 +2781,12 @@ class EdgeTangentFlowWebGL {
         gl.getExtension('EXT_color_buffer_float');
         gl.getExtension('OES_texture_float_linear');
         // Create shader programs
-        const gradientProgram = createProgram$2(gl, VERTEX_SHADER$2, GRADIENT_SHADER);
-        const structureTensorProgram = createProgram$2(gl, VERTEX_SHADER$2, STRUCTURE_TENSOR_SHADER);
-        const gaussianBlurHProgram = createProgram$2(gl, VERTEX_SHADER$2, GAUSSIAN_BLUR_H_SHADER);
-        const gaussianBlurVProgram = createProgram$2(gl, VERTEX_SHADER$2, GAUSSIAN_BLUR_V_SHADER);
-        const tangentExtractProgram = createProgram$2(gl, VERTEX_SHADER$2, TANGENT_EXTRACT_SHADER);
-        const tangentRefineProgram = createProgram$2(gl, VERTEX_SHADER$2, TANGENT_REFINE_SHADER);
+        const gradientProgram = createProgram$3(gl, VERTEX_SHADER$2, GRADIENT_SHADER);
+        const structureTensorProgram = createProgram$3(gl, VERTEX_SHADER$2, STRUCTURE_TENSOR_SHADER);
+        const gaussianBlurHProgram = createProgram$3(gl, VERTEX_SHADER$2, GAUSSIAN_BLUR_H_SHADER);
+        const gaussianBlurVProgram = createProgram$3(gl, VERTEX_SHADER$2, GAUSSIAN_BLUR_V_SHADER);
+        const tangentExtractProgram = createProgram$3(gl, VERTEX_SHADER$2, TANGENT_EXTRACT_SHADER);
+        const tangentRefineProgram = createProgram$3(gl, VERTEX_SHADER$2, TANGENT_REFINE_SHADER);
         // Create fullscreen quad
         const quadVAO = gl.createVertexArray();
         const quadVBO = gl.createBuffer();
@@ -2252,7 +2961,7 @@ function createShader(gl, type, source) {
     }
     return shader;
 }
-function createProgram$2(gl, vertSrc, fragSrc) {
+function createProgram$3(gl, vertSrc, fragSrc) {
     const vert = createShader(gl, gl.VERTEX_SHADER, vertSrc);
     const frag = createShader(gl, gl.FRAGMENT_SHADER, fragSrc);
     const program = gl.createProgram();
@@ -2539,7 +3248,7 @@ function smoothStructureTensorGaussian(tensor, width, height, sigma) {
     // Kernel size based on paper's 2.45σ sampling rule
     const radius = Math.ceil(sigma * 2.45);
     const kernelSize = radius * 2 + 1;
-    const kernel = generateGaussianKernel$1(sigma, kernelSize);
+    const kernel = generateGaussianKernel$2(sigma, kernelSize);
     // Separable Gaussian blur for each component
     const smoothE = gaussianBlur2D(tensor.e, width, height, kernel, radius);
     const smoothF = gaussianBlur2D(tensor.f, width, height, kernel, radius);
@@ -2669,6 +3378,12 @@ function refineTangentField(tangents, magnitude, width, height) {
 
 /**
  * Unified Edge Tangent Flow that automatically selects the best implementation
+ *
+ * Preference order in 'auto' mode: WebGPU > WebGL > CPU. WebGPU compute is
+ * inherently async (device acquisition + buffer readback both require
+ * awaiting), so compute() is now async across the board — the WebGL and
+ * CPU paths are still synchronous under the hood, but are wrapped so the
+ * public API is consistent regardless of which implementation gets picked.
  */
 class EdgeTangentFlow {
     impl;
@@ -2689,6 +3404,17 @@ class EdgeTangentFlow {
         return this.impl.visualize();
     }
     /**
+     * Check if WebGPU acceleration is available
+     *
+     * Note: this is the same cheap synchronous check EdgeTangentFlowWebGPU
+     * itself uses (navigator.gpu presence) — it doesn't guarantee an adapter
+     * can actually be obtained. Use EdgeTangentFlowWebGPU.getUnsupportedReason()
+     * for a more thorough (async) check if needed.
+     */
+    static isWebGPUSupported() {
+        return EdgeTangentFlowWebGPU.isSupported();
+    }
+    /**
      * Check if WebGL acceleration is available
      */
     static isWebGLSupported() {
@@ -2700,51 +3426,81 @@ class EdgeTangentFlow {
      * @param input Grayscale image
      * @param config ETF configuration
      * @param sigmaC Structure tensor smoothing sigma
-     * @param forceImpl Force a specific implementation ('cpu' | 'webgl' | 'auto')
+     * @param forceImpl Force a specific implementation ('cpu' | 'webgl' | 'webgpu' | 'auto')
      */
-    static compute(input, config = {}, sigmaC, forceImpl = 'auto') {
-        let useWebGL = false;
+    static async compute(input, config = {}, sigmaC, forceImpl = 'auto') {
+        if (forceImpl === 'webgpu') {
+            if (!EdgeTangentFlowWebGPU.isSupported()) {
+                throw new Error('WebGPU not supported but webgpu implementation was forced');
+            }
+            console.log('[ETF] Using WebGPU implementation (forced)');
+            const impl = await EdgeTangentFlowWebGPU.compute(input, config, sigmaC);
+            return new EdgeTangentFlow(impl);
+        }
         if (forceImpl === 'webgl') {
             if (!EdgeTangentFlowWebGL.isSupported()) {
                 throw new Error('WebGL not supported but webgl implementation was forced');
             }
-            useWebGL = true;
-        }
-        else if (forceImpl === 'auto') {
-            useWebGL = EdgeTangentFlowWebGL.isSupported();
-        }
-        // forceImpl === 'cpu' leaves useWebGL as false
-        if (useWebGL) {
-            console.log('[ETF] Using WebGL implementation');
+            console.log('[ETF] Using WebGL implementation (forced)');
             const impl = EdgeTangentFlowWebGL.compute(input, config, sigmaC);
             return new EdgeTangentFlow(impl);
         }
-        else {
-            console.log('[ETF] Using CPU implementation');
-            // Import dynamically to avoid circular deps if needed
+        if (forceImpl === 'cpu') {
+            console.log('[ETF] Using CPU implementation (forced)');
             const impl = EdgeTangentFlow$1.compute(input, config, sigmaC);
             return new EdgeTangentFlow(impl);
         }
+        // 'auto': prefer WebGPU, then WebGL, then CPU. Each tier falls through
+        // to the next on failure — WebGPU in particular can pass the cheap
+        // isSupported() check but still fail at adapter/device acquisition
+        // time, so that's guarded with a try/catch rather than trusted blindly.
+        if (EdgeTangentFlowWebGPU.isSupported()) {
+            try {
+                console.log('[ETF] Using WebGPU implementation');
+                const impl = await EdgeTangentFlowWebGPU.compute(input, config, sigmaC);
+                return new EdgeTangentFlow(impl);
+            }
+            catch (err) {
+                console.warn('[ETF] WebGPU implementation failed, falling back:', err);
+            }
+        }
+        if (EdgeTangentFlowWebGL.isSupported()) {
+            try {
+                console.log('[ETF] Using WebGL implementation');
+                const impl = EdgeTangentFlowWebGL.compute(input, config, sigmaC);
+                return new EdgeTangentFlow(impl);
+            }
+            catch (err) {
+                console.warn('[ETF] WebGL implementation failed, falling back:', err);
+            }
+        }
+        console.log('[ETF] Using CPU implementation');
+        const impl = EdgeTangentFlow$1.compute(input, config, sigmaC);
+        return new EdgeTangentFlow(impl);
     }
     /**
-     * Cleanup WebGL resources
+     * Cleanup WebGPU and WebGL resources
      */
     static dispose() {
+        EdgeTangentFlowWebGPU.dispose();
         EdgeTangentFlowWebGL.dispose();
     }
 }
 
-const DEFAULT_FLOW_CONFIG$1 = {
-    kernelSizeMultiplier: 6,
-    stepSize: 1.0,
-};
+/**
+ * Gradient-aligned blur for FDoG
+ *
+ * This applies blur perpendicular to the flow direction (across edges).
+ * Used for the DoG computation in FDoG, where we want to blur across
+ * edges but not along them.
+ */
 class CPUGradientAlignedBlur extends BaseCPUBlur {
     flowField;
     config;
     constructor(flowField, config = {}) {
         super();
         this.flowField = flowField;
-        this.config = { ...DEFAULT_FLOW_CONFIG$1, ...config };
+        this.config = { ...DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, ...config };
     }
     dispose() { }
     setFlowField(flowField) {
@@ -2762,7 +3518,7 @@ class CPUGradientAlignedBlur extends BaseCPUBlur {
         // Number of samples perpendicular to flow
         const halfSamples = Math.ceil(sigma * 2 / this.config.stepSize);
         const numSamples = halfSamples * 2 + 1;
-        const weights = generateGaussianKernel$1(sigma, numSamples);
+        const weights = generateGaussianKernel$2(sigma, numSamples);
         for (let y = 0; y < input.height; y++) {
             for (let x = 0; x < input.width; x++) {
                 const value = this.sampleAcrossFlow(input, x, y, halfSamples, weights);
@@ -2812,23 +3568,817 @@ class CPUGradientAlignedBlur extends BaseCPUBlur {
         return weightSum > 0 ? sum / weightSum : 0;
     }
 }
-class GradientAlignedBlur {
-    instance;
+
+/**
+ * WebGL2-accelerated gradient-aligned blur for FDoG
+ *
+ * Runs the exact same perpendicular-to-flow sampling as
+ * CPUGradientAlignedBlur, but as a single fullscreen-quad fragment shader
+ * pass on the GPU instead of a per-pixel JS loop.
+ *
+ * ASSUMPTIONS (double check against your real types.ts):
+ * - `FlowField` only exposes `getTangent(x, y): Vec2` — there's no bulk
+ *   accessor. So we "bake" the perpendicular direction into an RG32F
+ *   texture once per FlowField (cached; only rebaked when setFlowField()
+ *   is called or the image dimensions change). If FlowField ever grows a
+ *   bulk method (e.g. a Float32Array of tangents), swap bakeFlowTexture()
+ *   to use it directly and skip the per-pixel getTangent() calls.
+ * - `ChannelImage.data` is a single-channel Float32Array, row-major.
+ * - `BlurStrategy` is `{ blur(input, sigma): Promise<ChannelImage> }`.
+ *
+ * NOTE ON THE TIMING NUMBERS:
+ * WebGL submission (drawArrays) is async on the GPU timeline. The
+ * "Draw call" log below only measures how long it took the JS thread to
+ * *submit* the work — the driver doesn't actually block until something
+ * forces a sync, which here is `readPixels`. So in practice most of the
+ * real GPU time will show up under "Readback", not "Draw call". If you
+ * need true GPU-side timing, add the EXT_disjoint_timer_query_webgl2
+ * extension — happy to wire that in if these numbers don't add up.
+ */
+// Must match the unrolled loop bound in FRAGMENT_SRC below.
+const MAX_SAMPLES$1 = 256;
+const VERTEX_SRC = `#version 300 es
+layout(location = 0) in vec2 a_pos;
+void main() {
+  gl_Position = vec4(a_pos, 0.0, 1.0);
+}`;
+const FRAGMENT_SRC = `#version 300 es
+precision highp float;
+
+#define MAX_SAMPLES ${MAX_SAMPLES$1}
+
+uniform sampler2D u_input;
+uniform sampler2D u_flowDir;
+uniform vec2 u_resolution;
+uniform int u_halfSamples;
+uniform float u_stepSize;
+uniform float u_weights[MAX_SAMPLES];
+
+out vec4 outColor;
+
+// Manual bilinear + clamp-to-edge, matching utils/getPixelBilinear exactly.
+// We do this ourselves (via texelFetch) rather than relying on hardware
+// LINEAR filtering, because WebGL2 doesn't guarantee linear filtering for
+// 32-bit float textures without the OES_texture_float_linear extension.
+float fetchClamped(sampler2D tex, int x, int y, int w, int h) {
+  int cx = clamp(x, 0, w - 1);
+  int cy = clamp(y, 0, h - 1);
+  return texelFetch(tex, ivec2(cx, cy), 0).r;
+}
+
+float sampleBilinear(sampler2D tex, float x, float y, int w, int h) {
+  int x0 = int(floor(x));
+  int y0 = int(floor(y));
+  int x1 = x0 + 1;
+  int y1 = y0 + 1;
+  float fx = x - float(x0);
+  float fy = y - float(y0);
+  float v00 = fetchClamped(tex, x0, y0, w, h);
+  float v10 = fetchClamped(tex, x1, y0, w, h);
+  float v01 = fetchClamped(tex, x0, y1, w, h);
+  float v11 = fetchClamped(tex, x1, y1, w, h);
+  return v00 * (1.0 - fx) * (1.0 - fy) + v10 * fx * (1.0 - fy)
+       + v01 * (1.0 - fx) * fy + v11 * fx * fy;
+}
+
+void main() {
+  ivec2 px = ivec2(gl_FragCoord.xy);
+  int w = int(u_resolution.x);
+  int h = int(u_resolution.y);
+  float px0 = float(px.x);
+  float py0 = float(px.y);
+
+  // Flow direction is only ever sampled at integer pixel centers on the
+  // CPU path (no bilinear there), so texelFetch (nearest) is correct here.
+  vec2 dir = texelFetch(u_flowDir, px, 0).rg;
+
+  int center = u_halfSamples;
+  float sum = sampleBilinear(u_input, px0, py0, w, h) * u_weights[center];
+  float weightSum = u_weights[center];
+
+  // Positive gradient direction
+  for (int i = 1; i <= MAX_SAMPLES; i++) {
+    if (i > u_halfSamples) break;
+    float fx = px0 + dir.x * u_stepSize * float(i);
+    float fy = py0 + dir.y * u_stepSize * float(i);
+    if (fx < -0.5 || fx > u_resolution.x - 0.5 || fy < -0.5 || fy > u_resolution.y - 0.5) {
+      break;
+    }
+    float wgt = u_weights[center + i];
+    sum += sampleBilinear(u_input, fx, fy, w, h) * wgt;
+    weightSum += wgt;
+  }
+
+  // Negative gradient direction
+  for (int i = 1; i <= MAX_SAMPLES; i++) {
+    if (i > u_halfSamples) break;
+    float fx = px0 - dir.x * u_stepSize * float(i);
+    float fy = py0 - dir.y * u_stepSize * float(i);
+    if (fx < -0.5 || fx > u_resolution.x - 0.5 || fy < -0.5 || fy > u_resolution.y - 0.5) {
+      break;
+    }
+    float wgt = u_weights[center - i];
+    sum += sampleBilinear(u_input, fx, fy, w, h) * wgt;
+    weightSum += wgt;
+  }
+
+  float result = weightSum > 0.0 ? sum / weightSum : 0.0;
+  outColor = vec4(result, 0.0, 0.0, 1.0);
+}`;
+function compileShader$2(gl, type, source) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        const info = gl.getShaderInfoLog(shader);
+        gl.deleteShader(shader);
+        throw new Error(`[GradientAlignedBlur/WebGL] Shader compile error: ${info}`);
+    }
+    return shader;
+}
+function createProgram$2(gl, vsSrc, fsSrc) {
+    const vs = compileShader$2(gl, gl.VERTEX_SHADER, vsSrc);
+    const fs = compileShader$2(gl, gl.FRAGMENT_SHADER, fsSrc);
+    const program = gl.createProgram();
+    gl.attachShader(program, vs);
+    gl.attachShader(program, fs);
+    gl.linkProgram(program);
+    gl.deleteShader(vs);
+    gl.deleteShader(fs);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        const info = gl.getProgramInfoLog(program);
+        gl.deleteProgram(program);
+        throw new Error(`[GradientAlignedBlur/WebGL] Program link error: ${info}`);
+    }
+    return program;
+}
+class WebGLGradientAlignedBlur {
+    flowField;
+    config;
+    gl;
+    canvas;
+    program;
+    vao;
+    inputTexture;
+    flowTexture = null;
+    flowFieldWidth = 0;
+    flowFieldHeight = 0;
+    flowDirty = true;
+    fbo;
+    outputTexture;
+    fboWidth = 0;
+    fboHeight = 0;
+    uniforms = {};
     constructor(flowField, config = {}) {
-        this.instance = new CPUGradientAlignedBlur(flowField, config);
+        this.flowField = flowField;
+        this.config = { ...DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, ...config };
+        const canvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(1, 1) : document.createElement('canvas');
+        const gl = canvas.getContext('webgl2', { antialias: false, preserveDrawingBuffer: false });
+        if (!gl) {
+            throw new Error('[GradientAlignedBlur/WebGL] WebGL2 not available');
+        }
+        if (!gl.getExtension('EXT_color_buffer_float')) {
+            throw new Error('[GradientAlignedBlur/WebGL] EXT_color_buffer_float not supported (required for R32F render targets)');
+        }
+        this.canvas = canvas;
+        this.gl = gl;
+        this.program = createProgram$2(gl, VERTEX_SRC, FRAGMENT_SRC);
+        this.vao = gl.createVertexArray();
+        gl.bindVertexArray(this.vao);
+        const quadBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
+        // Two triangles covering clip space [-1, 1]
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW);
+        gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+        gl.bindVertexArray(null);
+        this.inputTexture = gl.createTexture();
+        this.setupTextureParams(this.inputTexture);
+        this.outputTexture = gl.createTexture();
+        this.fbo = gl.createFramebuffer();
+        gl.useProgram(this.program);
+        ['u_input', 'u_flowDir', 'u_resolution', 'u_halfSamples', 'u_stepSize', 'u_weights'].forEach((name) => {
+            this.uniforms[name] = gl.getUniformLocation(this.program, name);
+        });
+        gl.uniform1i(this.uniforms['u_input'], 0);
+        gl.uniform1i(this.uniforms['u_flowDir'], 1);
+    }
+    setupTextureParams(tex) {
+        const gl = this.gl;
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        // NEAREST everywhere — we do bilinear manually in-shader via texelFetch,
+        // so hardware filtering support for float textures is irrelevant here.
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    }
+    setFlowField(flowField) {
+        this.flowField = flowField;
+        this.flowDirty = true;
+    }
+    dispose() {
+        const gl = this.gl;
+        gl.deleteTexture(this.inputTexture);
+        gl.deleteTexture(this.outputTexture);
+        if (this.flowTexture)
+            gl.deleteTexture(this.flowTexture);
+        gl.deleteFramebuffer(this.fbo);
+        gl.deleteProgram(this.program);
+        gl.deleteVertexArray(this.vao);
+        gl.getExtension('WEBGL_lose_context')?.loseContext();
+    }
+    ensureFbo(width, height) {
+        if (this.fboWidth === width && this.fboHeight === height)
+            return;
+        const gl = this.gl;
+        gl.bindTexture(gl.TEXTURE_2D, this.outputTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, width, height, 0, gl.RED, gl.FLOAT, null);
+        this.setupTextureParams(this.outputTexture);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.outputTexture, 0);
+        const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+        if (status !== gl.FRAMEBUFFER_COMPLETE) {
+            throw new Error(`[GradientAlignedBlur/WebGL] Framebuffer incomplete: 0x${status.toString(16)}`);
+        }
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        this.fboWidth = width;
+        this.fboHeight = height;
+    }
+    bakeFlowTexture(width, height) {
+        const t0 = performance.now();
+        const gl = this.gl;
+        const data = new Float32Array(width * height * 2);
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const tangent = this.flowField.getTangent(x, y);
+                const idx = (y * width + x) * 2;
+                data[idx] = -tangent.y; // perpendicular.x
+                data[idx + 1] = tangent.x; // perpendicular.y
+            }
+        }
+        if (!this.flowTexture)
+            this.flowTexture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.flowTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG32F, width, height, 0, gl.RG, gl.FLOAT, data);
+        this.setupTextureParams(this.flowTexture);
+        this.flowFieldWidth = width;
+        this.flowFieldHeight = height;
+        this.flowDirty = false;
+        console.log(`[GradientAlignedBlur/WebGL] Baked flow field texture (${width}x${height}): ${(performance.now() - t0).toFixed(2)}ms`);
     }
     async blur(input, sigma) {
+        const tTotal = performance.now();
+        if (sigma < 0.1) {
+            return { data: new Float32Array(input.data), width: input.width, height: input.height };
+        }
+        const gl = this.gl;
+        const { width, height } = input;
+        if (this.canvas.width !== width || this.canvas.height !== height) {
+            this.canvas.width = width;
+            this.canvas.height = height;
+        }
+        gl.viewport(0, 0, width, height);
+        if (this.flowDirty || this.flowFieldWidth !== width || this.flowFieldHeight !== height) {
+            this.bakeFlowTexture(width, height);
+        }
+        this.ensureFbo(width, height);
+        const halfSamples = Math.min(MAX_SAMPLES$1 - 1, Math.ceil((sigma * 2) / this.config.stepSize));
+        if (Math.ceil((sigma * 2) / this.config.stepSize) > MAX_SAMPLES$1 - 1) {
+            console.warn(`[GradientAlignedBlur/WebGL] halfSamples clamped to ${MAX_SAMPLES$1 - 1} (sigma=${sigma} wanted more); kernel truncated. Raise MAX_SAMPLES if this matters.`);
+        }
+        const numSamples = halfSamples * 2 + 1;
+        const weights = generateGaussianKernel$2(sigma, numSamples);
+        const paddedWeights = new Float32Array(MAX_SAMPLES$1);
+        paddedWeights.set(weights);
+        const tUpload = performance.now();
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.inputTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, width, height, 0, gl.RED, gl.FLOAT, input.data);
+        console.log(`[GradientAlignedBlur/WebGL] Upload input texture: ${(performance.now() - tUpload).toFixed(2)}ms`);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, this.flowTexture);
+        gl.useProgram(this.program);
+        gl.uniform2f(this.uniforms['u_resolution'], width, height);
+        gl.uniform1i(this.uniforms['u_halfSamples'], halfSamples);
+        gl.uniform1f(this.uniforms['u_stepSize'], this.config.stepSize);
+        gl.uniform1fv(this.uniforms['u_weights'], paddedWeights);
+        const tDraw = performance.now();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
+        gl.bindVertexArray(this.vao);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        console.log(`[GradientAlignedBlur/WebGL] Draw call submit (JS-side only, GPU work is async — see note at top of file): ${(performance.now() - tDraw).toFixed(2)}ms`);
+        const tReadback = performance.now();
+        const output = createChannelImage(width, height);
+        gl.readPixels(0, 0, width, height, gl.RED, gl.FLOAT, output.data);
+        console.log(`[GradientAlignedBlur/WebGL] Readback (this is where the GPU wait actually happens): ${(performance.now() - tReadback).toFixed(2)}ms`);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        console.log(`[GradientAlignedBlur/WebGL] blur() total (sigma=${sigma.toFixed(2)}, halfSamples=${halfSamples}): ${(performance.now() - tTotal).toFixed(2)}ms`);
+        return output;
+    }
+}
+
+/**
+ * WebGPU-accelerated gradient-aligned blur for FDoG
+ *
+ * Compute-shader version of the same perpendicular-to-flow sampling as
+ * CPUGradientAlignedBlur / WebGLGradientAlignedBlur. Prefer this backend
+ * when available — no readback-forced sync via drawing, explicit control
+ * over the copy timeline, and generally faster on the same hardware.
+ *
+ * ASSUMPTIONS — same as the WebGL file:
+ * - `FlowField` only exposes `getTangent(x, y): Vec2`; we bake perpendicular
+ *   direction into an rg32float texture once per FlowField instance.
+ * - `ChannelImage.data` is a single-channel Float32Array, row-major.
+ *
+ * TYPES: this file assumes `@webgpu/types` is installed (or `lib.dom` in a
+ * recent TS/tsconfig that includes WebGPU types). If GPUDevice/GPUBuffer
+ * etc. aren't recognized, add `@webgpu/types` as a devDependency and either
+ * add it to tsconfig `types`, or drop a `/// <reference types="@webgpu/types" />`
+ * at the top of this file.
+ *
+ * NOTE ON TIMING:
+ * Like the WebGL version, `queue.submit()` doesn't block — the actual GPU
+ * wait happens at `mapAsync()`. So "Dispatch" below measures submission
+ * only; "Readback" is where the real cost will show up. For true GPU-side
+ * timing, add a `GPUQuerySet` with 'timestamp' queries around the compute
+ * pass (needs the 'timestamp-query' feature) — can wire that in if you
+ * want harder numbers than JS-side wall time.
+ */
+const MAX_SAMPLES = 256;
+const WORKGROUP_SIZE = 8;
+const SHADER_SRC = `
+struct Params {
+  width: u32,
+  height: u32,
+  halfSamples: u32,
+  stepSize: f32,
+  rowOffset: u32,   // first global row this dispatch is responsible for
+  tileHeight: u32,  // number of rows in this tile's output buffer
+  _pad0: u32,
+  _pad1: u32,
+};
+
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var<storage, read> weights: array<f32, ${MAX_SAMPLES}>;
+@group(0) @binding(2) var inputTex: texture_2d<f32>;
+@group(0) @binding(3) var flowTex: texture_2d<f32>;
+@group(0) @binding(4) var<storage, read_write> output: array<f32>;
+
+fn fetchClamped(tex: texture_2d<f32>, x: i32, y: i32, w: i32, h: i32) -> f32 {
+  let cx = clamp(x, 0, w - 1);
+  let cy = clamp(y, 0, h - 1);
+  return textureLoad(tex, vec2<i32>(cx, cy), 0).r;
+}
+
+fn sampleBilinear(tex: texture_2d<f32>, x: f32, y: f32, w: i32, h: i32) -> f32 {
+  let x0 = i32(floor(x));
+  let y0 = i32(floor(y));
+  let x1 = x0 + 1;
+  let y1 = y0 + 1;
+  let fx = x - f32(x0);
+  let fy = y - f32(y0);
+  let v00 = fetchClamped(tex, x0, y0, w, h);
+  let v10 = fetchClamped(tex, x1, y0, w, h);
+  let v01 = fetchClamped(tex, x0, y1, w, h);
+  let v11 = fetchClamped(tex, x1, y1, w, h);
+  return v00 * (1.0 - fx) * (1.0 - fy) + v10 * fx * (1.0 - fy)
+       + v01 * (1.0 - fx) * fy + v11 * fx * fy;
+}
+
+@compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let w = i32(params.width);
+  let h = i32(params.height);
+  let localY = i32(gid.y);
+  // Bounds-check against this tile's height (buffer is sized per-tile,
+  // not per-image) before doing anything else.
+  if (i32(gid.x) >= w || localY >= i32(params.tileHeight)) {
+    return;
+  }
+  let globalY = localY + i32(params.rowOffset);
+  if (globalY >= h) {
+    return;
+  }
+
+  let px0 = f32(gid.x);
+  let py0 = f32(globalY);
+  // Flow direction only ever sampled at integer pixel centers on the CPU
+  // path, so nearest-load (no interpolation) is correct here.
+  let dir = textureLoad(flowTex, vec2<i32>(i32(gid.x), globalY), 0).rg;
+
+  let center = i32(params.halfSamples);
+  var sum = sampleBilinear(inputTex, px0, py0, w, h) * weights[center];
+  var weightSum = weights[center];
+
+  var i: i32 = 1;
+  loop {
+    if (i > i32(params.halfSamples)) { break; }
+    let fx = px0 + dir.x * params.stepSize * f32(i);
+    let fy = py0 + dir.y * params.stepSize * f32(i);
+    if (fx < -0.5 || fx > f32(w) - 0.5 || fy < -0.5 || fy > f32(h) - 0.5) { break; }
+    let wgt = weights[center + i];
+    sum = sum + sampleBilinear(inputTex, fx, fy, w, h) * wgt;
+    weightSum = weightSum + wgt;
+    i = i + 1;
+  }
+
+  i = 1;
+  loop {
+    if (i > i32(params.halfSamples)) { break; }
+    let fx = px0 - dir.x * params.stepSize * f32(i);
+    let fy = py0 - dir.y * params.stepSize * f32(i);
+    if (fx < -0.5 || fx > f32(w) - 0.5 || fy < -0.5 || fy > f32(h) - 0.5) { break; }
+    let wgt = weights[center - i];
+    sum = sum + sampleBilinear(inputTex, fx, fy, w, h) * wgt;
+    weightSum = weightSum + wgt;
+    i = i + 1;
+  }
+
+  let result = select(0.0, sum / weightSum, weightSum > 0.0);
+  output[u32(localY) * params.width + gid.x] = result;
+}
+`;
+class WebGPUGradientAlignedBlur {
+    flowField;
+    config;
+    device;
+    pipeline;
+    // NOTE ON CONCURRENCY:
+    // `blur()` is safe to call concurrently on the same instance (e.g. two
+    // different sigmas via Promise.all). To make that safe, every resource
+    // that is written-to-then-read-back per call (input texture, output
+    // buffer, readback buffer, params buffer, weights buffer, bind group) is
+    // now allocated fresh *inside* blur() and destroyed when that call is
+    // done — no shared mutable GPU state between concurrent invocations.
+    // Only the compute pipeline (immutable after creation) and the flow
+    // texture (read-only, cached by dimensions) remain instance-level, and
+    // the flow texture bake is guarded by `flowBakePromise` so concurrent
+    // calls with the same dimensions share one bake instead of racing.
+    flowTexture = null;
+    flowFieldWidth = 0;
+    flowFieldHeight = 0;
+    flowDirty = true;
+    flowBakePromise = null;
+    // Bytes we're willing to put in a single GPU buffer for one tile, well
+    // under whatever the device actually supports (see `create()`). Large
+    // images are processed in row-band tiles bounded by this so memory use
+    // stays flat regardless of image size — this is what prevents the
+    // crash on big images/concurrent calls.
+    maxTileBytes = 0;
+    // CPU-side cap on how many rows of flow-field data we build into a
+    // Float32Array at once, so baking the flow texture for a huge image
+    // doesn't itself blow up JS heap before anything even reaches the GPU.
+    static CPU_BAKE_ROWS_PER_CHUNK = 512;
+    static TILE_MEMORY_SAFETY_FACTOR = 0.5;
+    constructor(flowField, device, config) {
+        this.flowField = flowField;
+        this.device = device;
+        this.config = { ...DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, ...config };
+        this.initPipeline();
+        // maxBufferSize / maxStorageBufferBindingSize are usually the binding
+        // constraint that bites first on large images (commonly 256MB / 128MB
+        // by default, even when the adapter can do far more). Cap tile size to
+        // half of whichever is smaller as a safety margin — driver-reported
+        // limits are the ceiling, not a size it's safe to actually hit.
+        const limits = this.device.limits;
+        this.maxTileBytes = Math.max(WORKGROUP_SIZE * 4, // never go below one row's worth of data
+        Math.floor(Math.min(limits.maxStorageBufferBindingSize, limits.maxBufferSize) *
+            WebGPUGradientAlignedBlur.TILE_MEMORY_SAFETY_FACTOR));
+        // Surface GPU-side failures (e.g. a validation error from a size that
+        // slipped past our checks) as visible console errors instead of a
+        // silent hang or an opaque tab crash.
+        this.device.addEventListener('uncapturederror', (event) => {
+            console.error('[GradientAlignedBlur/WebGPU] uncaptured GPU error:', event.error?.message ?? event.error);
+        });
+    }
+    /** WebGPU device creation is async, so use this instead of `new`. */
+    static async create(flowField, config = {}) {
+        if (typeof navigator === 'undefined' || !('gpu' in navigator)) {
+            throw new Error('[GradientAlignedBlur/WebGPU] navigator.gpu unavailable');
+        }
+        const adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) {
+            throw new Error('[GradientAlignedBlur/WebGPU] No adapter available');
+        }
+        // Explicitly request the adapter's actual max limits rather than
+        // accepting the (often much lower) spec-minimum defaults — e.g. the
+        // default maxBufferSize/maxStorageBufferBindingSize are commonly
+        // 256MB/128MB, but many adapters support several times that. Getting
+        // this headroom up front means fewer images need tiling at all.
+        const device = await adapter.requestDevice({
+            requiredLimits: {
+                maxTextureDimension2D: adapter.limits.maxTextureDimension2D,
+            },
+        });
+        return new WebGPUGradientAlignedBlur(flowField, device, config);
+    }
+    initPipeline() {
+        const module = this.device.createShaderModule({ code: SHADER_SRC });
+        this.pipeline = this.device.createComputePipeline({
+            layout: 'auto',
+            compute: { module, entryPoint: 'main' },
+        });
+    }
+    setFlowField(flowField) {
+        this.flowField = flowField;
+        this.flowDirty = true;
+    }
+    assertWithinTextureLimits(width, height) {
+        const maxDim = this.device.limits.maxTextureDimension2D;
+        if (width > maxDim || height > maxDim) {
+            throw new Error(`[GradientAlignedBlur/WebGPU] Image ${width}x${height} exceeds this device's ` +
+                `maxTextureDimension2D (${maxDim}) on at least one axis. The input/flow textures ` +
+                `are each a single full-image texture, so this can't be worked around by row-band ` +
+                `tiling alone (that only bounds the output/readback buffers). Downscale the image, ` +
+                `or split it into overlapping regions upstream and blur each region separately.`);
+        }
+    }
+    /**
+     * NOTE: only safe to call once no `blur()` calls are in flight — it
+     * destroys the device itself, which would invalidate any in-progress
+     * GPU work. Per-call buffers/textures created inside blur() are already
+     * cleaned up in their own try/finally, so there's nothing else to
+     * release here besides the flow texture and the device.
+     */
+    dispose() {
+        this.flowTexture?.destroy();
+        this.device.destroy();
+    }
+    bakeFlowTexture(width, height) {
+        this.assertWithinTextureLimits(width, height);
+        const t0 = performance.now();
+        const newTexture = this.device.createTexture({
+            size: [width, height],
+            format: 'rg32float',
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+        });
+        // Build+upload in row-chunks rather than one Float32Array(width*height*2)
+        // for the whole image — for a large image that single array can itself
+        // be gigabytes of JS heap before any GPU work happens.
+        const rowsPerChunk = Math.max(1, WebGPUGradientAlignedBlur.CPU_BAKE_ROWS_PER_CHUNK);
+        for (let y0 = 0; y0 < height; y0 += rowsPerChunk) {
+            const rows = Math.min(rowsPerChunk, height - y0);
+            const chunk = new Float32Array(width * rows * 2);
+            for (let ry = 0; ry < rows; ry++) {
+                const y = y0 + ry;
+                for (let x = 0; x < width; x++) {
+                    const tangent = this.flowField.getTangent(x, y);
+                    const idx = (ry * width + x) * 2;
+                    chunk[idx] = -tangent.y; // perpendicular.x
+                    chunk[idx + 1] = tangent.x; // perpendicular.y
+                }
+            }
+            this.device.queue.writeTexture({ texture: newTexture, origin: { x: 0, y: y0 } }, chunk, { bytesPerRow: width * 2 * 4, rowsPerImage: rows }, { width, height: rows });
+        }
+        const oldTexture = this.flowTexture;
+        // Swap in the new texture only after it's fully written, and only
+        // destroy the old one after the swap so a concurrent blur() call that
+        // already grabbed a reference to `oldTexture` for an in-flight dispatch
+        // isn't left pointing at a destroyed resource. (There's still a narrow
+        // window if a call reads `this.flowTexture` between the old texture's
+        // last use and here — acceptable for a texture that only changes when
+        // setFlowField() is called, which is rare relative to blur() calls
+        // with a stable flow field.)
+        this.flowTexture = newTexture;
+        oldTexture?.destroy();
+        this.flowFieldWidth = width;
+        this.flowFieldHeight = height;
+        this.flowDirty = false;
+        console.log(`[GradientAlignedBlur/WebGPU] Baked flow field texture (${width}x${height}): ${(performance.now() - t0).toFixed(2)}ms`);
+        return newTexture;
+    }
+    /**
+     * Returns the current flow texture for (width, height), baking it if
+     * necessary. Guarded so that concurrent blur() calls with matching
+     * dimensions await a single in-flight bake instead of each triggering
+     * their own (which would otherwise race on `this.flowTexture`).
+     */
+    async getFlowTexture(width, height) {
+        if (this.flowTexture &&
+            !this.flowDirty &&
+            this.flowFieldWidth === width &&
+            this.flowFieldHeight === height) {
+            return this.flowTexture;
+        }
+        if (this.flowBakePromise) {
+            await this.flowBakePromise;
+            return this.getFlowTexture(width, height);
+        }
+        this.flowBakePromise = (async () => this.bakeFlowTexture(width, height))();
+        try {
+            return await this.flowBakePromise;
+        }
+        finally {
+            this.flowBakePromise = null;
+        }
+    }
+    /**
+     * Safe to call concurrently on the same instance (e.g.
+     * `Promise.all([blur.blur(input, s1), blur.blur(input, s2)])`).
+     * All GPU resources that are written-then-read per invocation are
+     * allocated fresh here and destroyed before returning, so overlapping
+     * calls never share mutable state. The only cross-call state is the
+     * (read-only, cached) flow texture, obtained via `getFlowTexture`,
+     * which is itself lock-guarded against concurrent re-baking.
+     *
+     * MEMORY: the output/readback path is processed in row-band tiles
+     * bounded by `maxTileBytes`, not one whole-image buffer. This is what
+     * keeps memory flat for large images (and for concurrent calls on the
+     * same image) instead of scaling linearly with width*height — see the
+     * note above `maxTileBytes` for why. The input/flow textures are still
+     * one full-image texture each; if width or height exceeds the device's
+     * maxTextureDimension2D, `getFlowTexture`/this method throw a clear
+     * error rather than silently corrupting or crashing (see
+     * `assertWithinTextureLimits`).
+     */
+    async blur(input, sigma) {
+        const tTotal = performance.now();
+        if (sigma < 0.1) {
+            return { data: new Float32Array(input.data), width: input.width, height: input.height };
+        }
+        const { width, height } = input;
+        this.assertWithinTextureLimits(width, height);
+        const flowTexture = await this.getFlowTexture(width, height);
+        const wantedHalfSamples = Math.ceil((sigma * 2) / this.config.stepSize);
+        const halfSamples = Math.min(MAX_SAMPLES - 1, wantedHalfSamples);
+        if (wantedHalfSamples > MAX_SAMPLES - 1) {
+            console.warn(`[GradientAlignedBlur/WebGPU] halfSamples clamped to ${MAX_SAMPLES - 1} (sigma=${sigma} wanted ${wantedHalfSamples}); kernel truncated. Raise MAX_SAMPLES if this matters.`);
+        }
+        const numSamples = halfSamples * 2 + 1;
+        const weights = generateGaussianKernel$2(sigma, numSamples);
+        const paddedWeights = new Float32Array(MAX_SAMPLES);
+        paddedWeights.set(weights);
+        // Row-band tile plan. Only the output/readback buffers scale with
+        // tile size — the input/flow textures below are still whole-image.
+        const bytesPerRow = width * 4;
+        const rowsPerTile = Math.max(1, Math.min(height, Math.floor(this.maxTileBytes / bytesPerRow)));
+        const tileCount = Math.ceil(height / rowsPerTile);
+        if (tileCount > 1) {
+            console.log(`[GradientAlignedBlur/WebGPU] Image ${width}x${height} exceeds safe single-buffer size; ` +
+                `processing in ${tileCount} row-band tiles of ~${rowsPerTile} rows each.`);
+        }
+        // Per-call GPU resources — never shared across concurrent blur() calls.
+        // Input/flow textures are whole-image (bounded by maxTextureDimension2D,
+        // checked above); output/readback buffers are sized to one tile only
+        // and reused sequentially across tiles, so peak memory here is
+        // O(tileRows * width) rather than O(height * width).
+        const inputTexture = this.device.createTexture({
+            size: [width, height],
+            format: 'r32float',
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+        });
+        const tileBufferSize = rowsPerTile * bytesPerRow;
+        const outputBuffer = this.device.createBuffer({
+            size: tileBufferSize,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+        });
+        const readBuffer = this.device.createBuffer({
+            size: tileBufferSize,
+            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+        });
+        const paramsBuffer = this.device.createBuffer({
+            size: 32,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
+        const weightsBuffer = this.device.createBuffer({
+            size: MAX_SAMPLES * 4,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        });
+        try {
+            const tUpload = performance.now();
+            this.device.queue.writeTexture({ texture: inputTexture }, input.data, { bytesPerRow, rowsPerImage: height }, { width, height });
+            this.device.queue.writeBuffer(weightsBuffer, 0, paddedWeights);
+            console.log(`[GradientAlignedBlur/WebGPU] Upload (texture + weights, submit only): ${(performance.now() - tUpload).toFixed(2)}ms`);
+            const bindGroup = this.device.createBindGroup({
+                layout: this.pipeline.getBindGroupLayout(0),
+                entries: [
+                    { binding: 0, resource: { buffer: paramsBuffer } },
+                    { binding: 1, resource: { buffer: weightsBuffer } },
+                    { binding: 2, resource: inputTexture.createView() },
+                    { binding: 3, resource: flowTexture.createView() },
+                    { binding: 4, resource: { buffer: outputBuffer } },
+                ],
+            });
+            const output = createChannelImage(width, height);
+            const tTiles = performance.now();
+            // Tiles are processed sequentially (dispatch -> readback -> next)
+            // rather than pipelined, since outputBuffer/readBuffer are reused
+            // across iterations — that reuse is exactly what keeps memory
+            // bounded, at the cost of some overlap opportunity between tiles.
+            for (let rowOffset = 0; rowOffset < height; rowOffset += rowsPerTile) {
+                const tileHeight = Math.min(rowsPerTile, height - rowOffset);
+                const paramsData = new ArrayBuffer(32);
+                const paramsView = new DataView(paramsData);
+                paramsView.setUint32(0, width, true);
+                paramsView.setUint32(4, height, true);
+                paramsView.setUint32(8, halfSamples, true);
+                paramsView.setFloat32(12, this.config.stepSize, true);
+                paramsView.setUint32(16, rowOffset, true);
+                paramsView.setUint32(20, tileHeight, true);
+                this.device.queue.writeBuffer(paramsBuffer, 0, paramsData);
+                const encoder = this.device.createCommandEncoder();
+                const pass = encoder.beginComputePass();
+                pass.setPipeline(this.pipeline);
+                pass.setBindGroup(0, bindGroup);
+                pass.dispatchWorkgroups(Math.ceil(width / WORKGROUP_SIZE), Math.ceil(tileHeight / WORKGROUP_SIZE));
+                pass.end();
+                encoder.copyBufferToBuffer(outputBuffer, 0, readBuffer, 0, tileHeight * bytesPerRow);
+                this.device.queue.submit([encoder.finish()]);
+                await readBuffer.mapAsync(GPUMapMode.READ, 0, tileHeight * bytesPerRow);
+                const mapped = readBuffer.getMappedRange(0, tileHeight * bytesPerRow);
+                output.data.set(new Float32Array(mapped), rowOffset * width);
+                readBuffer.unmap();
+            }
+            console.log(`[GradientAlignedBlur/WebGPU] Dispatch + readback across ${tileCount} tile(s): ${(performance.now() - tTiles).toFixed(2)}ms`);
+            console.log(`[GradientAlignedBlur/WebGPU] blur() total (sigma=${sigma.toFixed(2)}, halfSamples=${halfSamples}): ${(performance.now() - tTotal).toFixed(2)}ms`);
+            return output;
+        }
+        finally {
+            // Always release per-call resources, even if a pass or readback
+            // throws, so concurrent/repeated calls don't leak GPU memory.
+            inputTexture.destroy();
+            outputBuffer.destroy();
+            readBuffer.destroy();
+            paramsBuffer.destroy();
+            weightsBuffer.destroy();
+        }
+    }
+}
+
+class GradientAlignedBlur {
+    flowField;
+    config;
+    instance;
+    backend = 'cpu';
+    initPromise;
+    constructor(flowField, config = {}) {
+        this.flowField = flowField;
+        this.config = config;
+        // Always start with a working CPU instance so the object is valid the
+        // instant it's constructed. blur() awaits initPromise before running,
+        // so no work actually happens on this instance unless backend upgrade
+        // fails entirely — it's a fallback, not a "first frame is slow" thing.
+        this.instance = new CPUGradientAlignedBlur(flowField, config);
+        this.backend = 'cpu';
+        this.initPromise = this.upgradeBackend();
+    }
+    /**
+     * Preferred construction path — resolves only once backend detection has
+     * finished, so `getBackend()` is meaningful immediately.
+     */
+    static async create(flowField, config = {}) {
+        const instance = new GradientAlignedBlur(flowField, config);
+        await instance.ready();
+        return instance;
+    }
+    /** Resolves once GPU backend detection/initialization has settled (including CPU fallback). */
+    ready() {
+        return this.initPromise;
+    }
+    getBackend() {
+        return this.backend;
+    }
+    async upgradeBackend() {
+        const t0 = performance.now();
+        if (await isWebGPUSupported()) {
+            try {
+                const gpuInstance = await WebGPUGradientAlignedBlur.create(this.flowField, this.config);
+                this.instance.dispose?.();
+                this.instance = gpuInstance;
+                this.backend = 'webgpu';
+                console.log(`[GradientAlignedBlur] Using WebGPU backend (init: ${(performance.now() - t0).toFixed(2)}ms)`);
+                return;
+            }
+            catch (err) {
+                console.warn('[GradientAlignedBlur] WebGPU init failed, falling back:', err);
+            }
+        }
+        if (isWebGLComputeSupported()) {
+            try {
+                const glInstance = new WebGLGradientAlignedBlur(this.flowField, this.config);
+                this.instance.dispose?.();
+                this.instance = glInstance;
+                this.backend = 'webgl';
+                console.log(`[GradientAlignedBlur] Using WebGL2 backend (init: ${(performance.now() - t0).toFixed(2)}ms)`);
+                return;
+            }
+            catch (err) {
+                console.warn('[GradientAlignedBlur] WebGL2 init failed, falling back to CPU:', err);
+            }
+        }
+        console.log(`[GradientAlignedBlur] Using CPU backend (fallback) (detection: ${(performance.now() - t0).toFixed(2)}ms)`);
+    }
+    async blur(input, sigma) {
+        await this.initPromise;
         return this.instance.blur(input, sigma);
     }
     setFlowField(flowField) {
-        if (this.instance.setFlowField) {
-            this.instance.setFlowField(flowField);
-        }
+        this.flowField = flowField;
+        this.instance.setFlowField?.(flowField);
     }
     dispose() {
-        if (this.instance.dispose) {
-            this.instance.dispose();
-        }
+        this.instance.dispose?.();
     }
 }
 
@@ -2864,7 +4414,7 @@ class CPUFlowGuidedBlur extends BaseCPUBlur {
         const halfSamples = Math.ceil(sigma * 2 / this.config.stepSize);
         const numSamples = halfSamples * 2 + 1;
         // Generate 1D Gaussian weights
-        const weights = generateGaussianKernel$1(sigma, numSamples);
+        const weights = generateGaussianKernel$2(sigma, numSamples);
         for (let y = 0; y < input.height; y++) {
             for (let x = 0; x < input.width; x++) {
                 const value = this.sampleAlongFlow(input, x, y, halfSamples, weights);
@@ -3148,7 +4698,7 @@ class WebGLFlowGuidedBlur extends BaseWebGLBlur {
         const { width, height } = input;
         this.ensureTextureSize(gl, width, height);
         const kernelSize = Math.min(this.config.maxKernelSize, Math.max(3, Math.floor(sigma * this.config.kernelSizeMultiplier) | 1));
-        const kernel = generateGaussianKernel$1(sigma, kernelSize);
+        const kernel = generateGaussianKernel$2(sigma, kernelSize);
         const paddedKernel = new Float32Array(64);
         paddedKernel.set(kernel);
         const inputRGBA = new Uint8Array(width * height * 4);
@@ -3433,7 +4983,7 @@ class WebGPUFlowGuidedBlur extends BaseWebGPUBlur {
         const { width, height } = input;
         const pixelCount = width * height;
         const kernelSize = Math.min(this.config.maxKernelSize, Math.max(3, Math.floor(sigma * this.config.kernelSizeMultiplier) | 1));
-        const kernel = generateGaussianKernel$1(sigma, kernelSize);
+        const kernel = generateGaussianKernel$2(sigma, kernelSize);
         this.ensureBuffers(device, width, height, kernelSize);
         device.queue.writeBuffer(this.paramsBuffer, 0, new Uint32Array([width, height, kernelSize, 0]));
         device.queue.writeBuffer(this.kernelBuffer, 0, new Float32Array(kernel));
@@ -3564,27 +5114,41 @@ class FDoG {
      */
     async process(input, overrides = {}) {
         const params = { ...this.config, ...overrides };
+        const timings = {};
+        const t0 = performance.now();
         // Step 1: Compute Edge Tangent Flow
-        const etf = EdgeTangentFlow.compute(input, {
+        const etfStart = performance.now();
+        const etf = await EdgeTangentFlow.compute(input, {
             iterations: DEFAULT_ETF_CONFIG.iterations,
             kernelSize: Math.ceil(params.sigmaC * 2.45) * 2 + 1,
         }, params.sigmaC);
+        timings.etf = performance.now() - etfStart;
         const gradientBlur = new GradientAlignedBlur(etf);
         const processor = new DoGProcessor(gradientBlur, params);
         // Step 4: Process image (DoG + threshold)
+        const dogStart = performance.now();
         let result = await processor.process(input);
+        timings.dogProcess = performance.now() - dogStart;
         processor.dispose();
         const flowBlur = new FlowGuidedBlur(etf);
         // Step 5: Flow-aligned smoothing
         if (params.sigmaM > 0) {
+            const smoothStart = performance.now();
             result = await flowBlur.blur(result, params.sigmaM);
+            timings.flowSmooth = performance.now() - smoothStart;
         }
         // Step 6: Anti-aliasing
         if (params.sigmaA > 0) {
+            const aaStart = performance.now();
             result = await flowBlur.blur(result, params.sigmaA);
+            timings.antiAlias = performance.now() - aaStart;
         }
         flowBlur.dispose();
+        const etfDisposeStart = performance.now();
         EdgeTangentFlow.dispose();
+        timings.etfDispose = performance.now() - etfDisposeStart;
+        timings.total = performance.now() - t0;
+        console.debug('[FDoG] timings (ms):', timings);
         return result;
     }
     /**
@@ -3593,7 +5157,7 @@ class FDoG {
     async processDetailed(input, overrides = {}) {
         const params = { ...this.config, ...overrides };
         // Compute ETF
-        const etf = EdgeTangentFlow.compute(input, {
+        const etf = await EdgeTangentFlow.compute(input, {
             iterations: DEFAULT_ETF_CONFIG.iterations,
             kernelSize: Math.ceil(params.sigmaC * 2.45) * 2 + 1,
         }, params.sigmaC);
@@ -5361,7 +6925,7 @@ let GaussianBlur$1 = class GaussianBlur {
         }
         const radius = Math.ceil(sigma * 3);
         const kernelSize = radius * 2 + 1;
-        const kernel = generateGaussianKernel$1(sigma, kernelSize);
+        const kernel = generateGaussianKernel$2(sigma, kernelSize);
         // Horizontal pass
         const temp = createChannelImage(width, height);
         for (let y = 0; y < height; y++) {

@@ -5,6 +5,10 @@
  * advanced image stylization" by Winnemöller et al. (2012)
  * and: "Gaussian Image Binarization" by Kang & Stamoulis (2021)
  */
+export const DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG = {
+    kernelSizeMultiplier: 6,
+    stepSize: 1.0,
+};
 /**
  * Default ETF configuration values
  */

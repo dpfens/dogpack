@@ -76,6 +76,20 @@ interface Preprocessor {
     process(input: ChannelImage): ChannelImage;
 }
 /**
+ * Configuration for flow-guided blur
+ */
+interface GradientAlignedBlurConfig {
+    /**
+     * Kernel size multiplier for flow-aligned LIC (default: 6)
+     */
+    kernelSizeMultiplier: number;
+    /**
+     * Step size for line integral convolution (default: 1.0)
+     * Smaller values give smoother integration but cost more
+     */
+    stepSize: number;
+}
+/**
  * Flow field representing edge tangent directions at each pixel
  */
 interface FlowField {
@@ -552,8 +566,15 @@ declare class XDoG implements DoGImplementation {
  */
 declare function xdog(input: ChannelImage, config?: Partial<XDoGConfig>): Promise<ChannelImage>;
 
+type ETFImpl = 'cpu' | 'webgl' | 'webgpu' | 'auto';
 /**
  * Unified Edge Tangent Flow that automatically selects the best implementation
+ *
+ * Preference order in 'auto' mode: WebGPU > WebGL > CPU. WebGPU compute is
+ * inherently async (device acquisition + buffer readback both require
+ * awaiting), so compute() is now async across the board — the WebGL and
+ * CPU paths are still synchronous under the hood, but are wrapped so the
+ * public API is consistent regardless of which implementation gets picked.
  */
 declare class EdgeTangentFlow implements FlowField {
     private impl;
@@ -564,6 +585,15 @@ declare class EdgeTangentFlow implements FlowField {
     getTangentArray(): Float32Array;
     visualize(): ChannelImage;
     /**
+     * Check if WebGPU acceleration is available
+     *
+     * Note: this is the same cheap synchronous check EdgeTangentFlowWebGPU
+     * itself uses (navigator.gpu presence) — it doesn't guarantee an adapter
+     * can actually be obtained. Use EdgeTangentFlowWebGPU.getUnsupportedReason()
+     * for a more thorough (async) check if needed.
+     */
+    static isWebGPUSupported(): boolean;
+    /**
      * Check if WebGL acceleration is available
      */
     static isWebGLSupported(): boolean;
@@ -573,11 +603,11 @@ declare class EdgeTangentFlow implements FlowField {
      * @param input Grayscale image
      * @param config ETF configuration
      * @param sigmaC Structure tensor smoothing sigma
-     * @param forceImpl Force a specific implementation ('cpu' | 'webgl' | 'auto')
+     * @param forceImpl Force a specific implementation ('cpu' | 'webgl' | 'webgpu' | 'auto')
      */
-    static compute(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number, forceImpl?: 'cpu' | 'webgl' | 'auto'): EdgeTangentFlow;
+    static compute(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number, forceImpl?: ETFImpl): Promise<EdgeTangentFlow>;
     /**
-     * Cleanup WebGL resources
+     * Cleanup WebGPU and WebGL resources
      */
     static dispose(): void;
 }
@@ -1237,31 +1267,23 @@ declare class FlowGuidedBlur implements BlurStrategy {
     setFlowField(flowField: FlowField): void;
 }
 
-/**
- * Gradient-aligned blur for FDoG
- *
- * This applies blur perpendicular to the flow direction (across edges).
- * Used for the DoG computation in FDoG, where we want to blur across
- * edges but not along them.
- */
-
-/**
- * Configuration for flow-guided blur
- */
-interface GradientAlignedBlurConfig {
-    /**
-     * Kernel size multiplier for flow-aligned LIC (default: 6)
-     */
-    kernelSizeMultiplier: number;
-    /**
-     * Step size for line integral convolution (default: 1.0)
-     * Smaller values give smoother integration but cost more
-     */
-    stepSize: number;
-}
+type GradientAlignedBackend = 'webgpu' | 'webgl' | 'cpu';
 declare class GradientAlignedBlur implements BlurStrategy {
+    private flowField;
+    private config;
     private instance;
+    private backend;
+    private initPromise;
     constructor(flowField: FlowField, config?: Partial<GradientAlignedBlurConfig>);
+    /**
+     * Preferred construction path — resolves only once backend detection has
+     * finished, so `getBackend()` is meaningful immediately.
+     */
+    static create(flowField: FlowField, config?: Partial<GradientAlignedBlurConfig>): Promise<GradientAlignedBlur>;
+    /** Resolves once GPU backend detection/initialization has settled (including CPU fallback). */
+    ready(): Promise<void>;
+    getBackend(): GradientAlignedBackend;
+    private upgradeBackend;
     blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
     setFlowField(flowField: FlowField): void;
     dispose(): void;
@@ -1276,7 +1298,6 @@ declare const index$3_FlowGuidedBlur: typeof FlowGuidedBlur;
 type index$3_FlowGuidedBlurConfig = FlowGuidedBlurConfig;
 type index$3_GradientAlignedBlur = GradientAlignedBlur;
 declare const index$3_GradientAlignedBlur: typeof GradientAlignedBlur;
-type index$3_GradientAlignedBlurConfig = GradientAlignedBlurConfig;
 type index$3_IsotropicBlur = IsotropicBlur;
 declare const index$3_IsotropicBlur: typeof IsotropicBlur;
 type index$3_IsotropicBlurConfig = IsotropicBlurConfig;
@@ -1290,7 +1311,7 @@ type index$3_WebGPUIsotropicBlur = WebGPUIsotropicBlur;
 declare const index$3_WebGPUIsotropicBlur: typeof WebGPUIsotropicBlur;
 declare namespace index$3 {
   export { index$3_CPUFlowGuidedBlur as CPUFlowGuidedBlur, index$3_CPUIsotropicBlur as CPUIsotropicBlur, index$3_FlowGuidedBlur as FlowGuidedBlur, index$3_GradientAlignedBlur as GradientAlignedBlur, index$3_IsotropicBlur as IsotropicBlur, index$3_WebGLFlowGuidedBlur as WebGLFlowGuidedBlur, index$3_WebGLIsotropicBlur as WebGLIsotropicBlur, index$3_WebGPUFlowGuidedBlur as WebGPUFlowGuidedBlur, index$3_WebGPUIsotropicBlur as WebGPUIsotropicBlur };
-  export type { index$3_FlowGuidedBlurConfig as FlowGuidedBlurConfig, index$3_GradientAlignedBlurConfig as GradientAlignedBlurConfig, index$3_IsotropicBlurConfig as IsotropicBlurConfig };
+  export type { index$3_FlowGuidedBlurConfig as FlowGuidedBlurConfig, index$3_IsotropicBlurConfig as IsotropicBlurConfig };
 }
 
 /**

@@ -1,16 +1,20 @@
-import { createChannelImage, getPixelBilinear, generateGaussianKernel } from '../utils/index.js';
-import { BaseCPUBlur } from './base.js';
-const DEFAULT_FLOW_CONFIG = {
-    kernelSizeMultiplier: 6,
-    stepSize: 1.0,
-};
+/**
+ * Gradient-aligned blur for FDoG
+ *
+ * This applies blur perpendicular to the flow direction (across edges).
+ * Used for the DoG computation in FDoG, where we want to blur across
+ * edges but not along them.
+ */
+import { DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG } from '../../types.js';
+import { createChannelImage, getPixelBilinear, generateGaussianKernel } from '../../utils/index.js';
+import { BaseCPUBlur } from '../base.js';
 export class CPUGradientAlignedBlur extends BaseCPUBlur {
     flowField;
     config;
     constructor(flowField, config = {}) {
         super();
         this.flowField = flowField;
-        this.config = { ...DEFAULT_FLOW_CONFIG, ...config };
+        this.config = { ...DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, ...config };
     }
     dispose() { }
     setFlowField(flowField) {
@@ -97,4 +101,4 @@ export class GradientAlignedBlur {
         }
     }
 }
-//# sourceMappingURL=gradient-aligned.js.map
+//# sourceMappingURL=cpu.js.map
