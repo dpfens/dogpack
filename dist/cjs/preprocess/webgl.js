@@ -12,12 +12,13 @@
  * - Gaussian Blur (separable, very fast)
  * - Contrast Enhancement
  * - Quantization
+ *
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PreprocessingPipeline = exports.PreprocessingPresets = exports.Quantizer = exports.ContrastEnhancer = exports.GaussianBlur = exports.KuwaharaFilter = exports.MedianFilter = exports.BilateralFilter = exports.PreprocessingPipelineWebGL = exports.PreprocessingPresetsWebGL = exports.QuantizerWebGL = exports.ContrastEnhancerWebGL = exports.KuwaharaFilterWebGL = exports.MedianFilterWebGL = exports.GaussianBlurWebGL = exports.BilateralFilterWebGL = void 0;
+exports.Quantizer = exports.ContrastEnhancer = exports.GaussianBlur = exports.KuwaharaFilter = exports.MedianFilter = exports.BilateralFilter = exports.QuantizerWebGL = exports.ContrastEnhancerWebGL = exports.KuwaharaFilterWebGL = exports.MedianFilterWebGL = exports.GaussianBlurWebGL = exports.BilateralFilterWebGL = void 0;
 exports.isWebGLAvailable = isWebGLAvailable;
 exports.disposeWebGL = disposeWebGL;
-// Default config values (mirrors the CPU implementation in preprocess.ts)
+// Default config values (mirrors the CPU implementation in cpu.ts)
 const DEFAULT_BILATERAL_CONFIG = {
     sigmaSpatial: 3,
     sigmaRange: 0.1,
@@ -323,8 +324,7 @@ class BilateralFilterWebGL {
         const config = this.config;
         const gl = getGL();
         if (!gl) {
-            console.warn('WebGL not available, using CPU fallback');
-            return bilateralFilterCPU(input, config);
+            throw new Error('BilateralFilterWebGL: WebGL 2.0 is not available in this environment.');
         }
         const { width, height, data } = input;
         const sigmaSpatial = config.sigmaSpatial;
@@ -337,14 +337,15 @@ class BilateralFilterWebGL {
             canvas.height = height;
         }
         const program = createProgram(BILATERAL_FRAG, 'bilateral');
-        if (!program)
-            return bilateralFilterCPU(input, config);
+        if (!program) {
+            throw new Error('BilateralFilterWebGL: failed to compile/link shader program.');
+        }
         const inputTex = createInputTexture(data, width, height);
         const output = createFramebuffer(width, height);
         if (!inputTex || !output) {
             if (inputTex)
                 gl.deleteTexture(inputTex);
-            return bilateralFilterCPU(input, config);
+            throw new Error('BilateralFilterWebGL: failed to create input texture or framebuffer.');
         }
         renderPass(program, inputTex, output.fb, width, height, {
             u_texelSize: [1.0 / width, 1.0 / height],
@@ -433,8 +434,7 @@ class GaussianBlurWebGL {
         }
         const gl = getGL();
         if (!gl) {
-            console.warn('WebGL not available, using CPU fallback');
-            return gaussianBlurCPU(input, sigma);
+            throw new Error('GaussianBlurWebGL: WebGL 2.0 is not available in this environment.');
         }
         const { width, height, data } = input;
         const radius = Math.ceil(sigma * 3);
@@ -445,8 +445,9 @@ class GaussianBlurWebGL {
         }
         const hProgram = createProgram(GAUSSIAN_H_FRAG, 'gaussianH');
         const vProgram = createProgram(GAUSSIAN_V_FRAG, 'gaussianV');
-        if (!hProgram || !vProgram)
-            return gaussianBlurCPU(input, sigma);
+        if (!hProgram || !vProgram) {
+            throw new Error('GaussianBlurWebGL: failed to compile/link shader program.');
+        }
         const inputTex = createInputTexture(data, width, height);
         const tempFb = createFramebuffer(width, height);
         const outputFb = createFramebuffer(width, height);
@@ -457,7 +458,7 @@ class GaussianBlurWebGL {
                 gl.deleteFramebuffer(tempFb.fb);
                 gl.deleteTexture(tempFb.tex);
             }
-            return gaussianBlurCPU(input, sigma);
+            throw new Error('GaussianBlurWebGL: failed to create input texture or framebuffer.');
         }
         // Horizontal pass
         renderPass(hProgram, inputTex, tempFb.fb, width, height, {
@@ -594,8 +595,7 @@ class MedianFilterWebGL {
         const config = this.config;
         const gl = getGL();
         if (!gl) {
-            console.warn('WebGL not available, using CPU fallback');
-            return medianFilterCPU(input, config);
+            throw new Error('MedianFilterWebGL: WebGL 2.0 is not available in this environment.');
         }
         const { width, height, data } = input;
         const radius = config.radius;
@@ -607,14 +607,15 @@ class MedianFilterWebGL {
         const shaderSource = radius <= 2 ? MEDIAN_SMALL_FRAG : MEDIAN_FRAG;
         const cacheKey = radius <= 2 ? 'medianSmall' : 'medianLarge';
         const program = createProgram(shaderSource, cacheKey);
-        if (!program)
-            return medianFilterCPU(input, config);
+        if (!program) {
+            throw new Error('MedianFilterWebGL: failed to compile/link shader program.');
+        }
         const inputTex = createInputTexture(data, width, height);
         const output = createFramebuffer(width, height);
         if (!inputTex || !output) {
             if (inputTex)
                 gl.deleteTexture(inputTex);
-            return medianFilterCPU(input, config);
+            throw new Error('MedianFilterWebGL: failed to create input texture or framebuffer.');
         }
         renderPass(program, inputTex, output.fb, width, height, {
             u_texelSize: [1.0 / width, 1.0 / height],
@@ -695,8 +696,7 @@ class KuwaharaFilterWebGL {
         const config = this.config;
         const gl = getGL();
         if (!gl) {
-            console.warn('WebGL not available, using CPU fallback');
-            return kuwaharaFilterCPU(input, config);
+            throw new Error('KuwaharaFilterWebGL: WebGL 2.0 is not available in this environment.');
         }
         const { width, height, data } = input;
         const radius = config.radius;
@@ -705,14 +705,15 @@ class KuwaharaFilterWebGL {
             canvas.height = height;
         }
         const program = createProgram(KUWAHARA_FRAG, 'kuwahara');
-        if (!program)
-            return kuwaharaFilterCPU(input, config);
+        if (!program) {
+            throw new Error('KuwaharaFilterWebGL: failed to compile/link shader program.');
+        }
         const inputTex = createInputTexture(data, width, height);
         const output = createFramebuffer(width, height);
         if (!inputTex || !output) {
             if (inputTex)
                 gl.deleteTexture(inputTex);
-            return kuwaharaFilterCPU(input, config);
+            throw new Error('KuwaharaFilterWebGL: failed to create input texture or framebuffer.');
         }
         renderPass(program, inputTex, output.fb, width, height, {
             u_texelSize: [1.0 / width, 1.0 / height],
@@ -763,50 +764,29 @@ class ContrastEnhancerWebGL {
     process(input) {
         const { blackPoint, whitePoint } = this;
         const gl = getGL();
+        if (!gl) {
+            throw new Error('ContrastEnhancerWebGL: WebGL 2.0 is not available in this environment.');
+        }
         const { width, height, data } = input;
-        // Calculate percentiles on CPU (fast enough, O(n log n))
+        // Calculate percentiles on CPU (fast enough, O(n log n)) - this is
+        // inherent to the algorithm, not a fallback path.
         const sorted = new Float32Array(data).sort((a, b) => a - b);
         const minVal = sorted[Math.floor(data.length * blackPoint)];
         const maxVal = sorted[Math.floor(data.length * whitePoint)];
-        if (!gl) {
-            // CPU fallback
-            const result = new Float32Array(data.length);
-            const range = maxVal - minVal;
-            if (range < 0.01) {
-                result.set(data);
-            }
-            else {
-                for (let i = 0; i < data.length; i++) {
-                    result[i] = Math.max(0, Math.min(1, (data[i] - minVal) / range));
-                }
-            }
-            return { data: result, width, height };
-        }
         if (canvas.width !== width || canvas.height !== height) {
             canvas.width = width;
             canvas.height = height;
         }
         const program = createProgram(CONTRAST_FRAG, 'contrast');
         if (!program) {
-            // CPU fallback inline
-            const result = new Float32Array(data.length);
-            const range = maxVal - minVal;
-            for (let i = 0; i < data.length; i++) {
-                result[i] = Math.max(0, Math.min(1, (data[i] - minVal) / range));
-            }
-            return { data: result, width, height };
+            throw new Error('ContrastEnhancerWebGL: failed to compile/link shader program.');
         }
         const inputTex = createInputTexture(data, width, height);
         const output = createFramebuffer(width, height);
         if (!inputTex || !output) {
             if (inputTex)
                 gl.deleteTexture(inputTex);
-            const result = new Float32Array(data.length);
-            const range = maxVal - minVal;
-            for (let i = 0; i < data.length; i++) {
-                result[i] = Math.max(0, Math.min(1, (data[i] - minVal) / range));
-            }
-            return { data: result, width, height };
+            throw new Error('ContrastEnhancerWebGL: failed to create input texture or framebuffer.');
         }
         renderPass(program, inputTex, output.fb, width, height, {
             u_minVal: minVal,
@@ -851,14 +831,7 @@ class QuantizerWebGL {
         const levels = this.levels;
         const gl = getGL();
         if (!gl) {
-            // CPU fallback
-            const { width, height, data } = input;
-            const result = new Float32Array(data.length);
-            const step = 1 / (levels - 1);
-            for (let i = 0; i < data.length; i++) {
-                result[i] = Math.round(data[i] / step) * step;
-            }
-            return { data: result, width, height };
+            throw new Error('QuantizerWebGL: WebGL 2.0 is not available in this environment.');
         }
         const { width, height, data } = input;
         if (canvas.width !== width || canvas.height !== height) {
@@ -867,24 +840,14 @@ class QuantizerWebGL {
         }
         const program = createProgram(QUANTIZE_FRAG, 'quantize');
         if (!program) {
-            const result = new Float32Array(data.length);
-            const step = 1 / (levels - 1);
-            for (let i = 0; i < data.length; i++) {
-                result[i] = Math.round(data[i] / step) * step;
-            }
-            return { data: result, width, height };
+            throw new Error('QuantizerWebGL: failed to compile/link shader program.');
         }
         const inputTex = createInputTexture(data, width, height);
         const output = createFramebuffer(width, height);
         if (!inputTex || !output) {
             if (inputTex)
                 gl.deleteTexture(inputTex);
-            const result = new Float32Array(data.length);
-            const step = 1 / (levels - 1);
-            for (let i = 0; i < data.length; i++) {
-                result[i] = Math.round(data[i] / step) * step;
-            }
-            return { data: result, width, height };
+            throw new Error('QuantizerWebGL: failed to create input texture or framebuffer.');
         }
         renderPass(program, inputTex, output.fb, width, height, {
             u_levels: levels,
@@ -899,238 +862,6 @@ class QuantizerWebGL {
 }
 exports.QuantizerWebGL = QuantizerWebGL;
 exports.Quantizer = QuantizerWebGL;
-// ============================================================================
-// CPU FALLBACKS (for when WebGL is unavailable)
-// ============================================================================
-function getPixelClamped(img, x, y) {
-    x = Math.max(0, Math.min(img.width - 1, x));
-    y = Math.max(0, Math.min(img.height - 1, y));
-    return img.data[y * img.width + x];
-}
-function bilateralFilterCPU(input, config) {
-    const { width, height, data } = input;
-    const result = new Float32Array(width * height);
-    const sigmaSpatial = config.sigmaSpatial;
-    const sigmaRange = config.sigmaRange;
-    const radiusMultiplier = config.radiusMultiplier ?? 2;
-    const radius = Math.ceil(sigmaSpatial * radiusMultiplier);
-    const sigmaSpatial2 = 2 * sigmaSpatial * sigmaSpatial;
-    const sigmaRange2 = 2 * sigmaRange * sigmaRange;
-    // Precompute spatial weights
-    const spatialWeights = [];
-    for (let dy = -radius; dy <= radius; dy++) {
-        for (let dx = -radius; dx <= radius; dx++) {
-            const dist2 = dx * dx + dy * dy;
-            spatialWeights.push(Math.exp(-dist2 / sigmaSpatial2));
-        }
-    }
-    for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-            const centerValue = data[y * width + x];
-            let sum = 0;
-            let weightSum = 0;
-            let idx = 0;
-            for (let dy = -radius; dy <= radius; dy++) {
-                for (let dx = -radius; dx <= radius; dx++) {
-                    const neighborValue = getPixelClamped(input, x + dx, y + dy);
-                    const intensityDiff = neighborValue - centerValue;
-                    const rangeWeight = Math.exp(-(intensityDiff * intensityDiff) / sigmaRange2);
-                    const weight = spatialWeights[idx] * rangeWeight;
-                    sum += neighborValue * weight;
-                    weightSum += weight;
-                    idx++;
-                }
-            }
-            result[y * width + x] = weightSum > 0 ? sum / weightSum : centerValue;
-        }
-    }
-    return { data: result, width, height };
-}
-function gaussianBlurCPU(input, sigma) {
-    if (sigma < 0.1) {
-        return { data: new Float32Array(input.data), width: input.width, height: input.height };
-    }
-    const { width, height } = input;
-    const radius = Math.ceil(sigma * 3);
-    const sigma2 = 2 * sigma * sigma;
-    // Generate 1D kernel
-    const kernel = [];
-    let kernelSum = 0;
-    for (let i = -radius; i <= radius; i++) {
-        const w = Math.exp(-(i * i) / sigma2);
-        kernel.push(w);
-        kernelSum += w;
-    }
-    for (let i = 0; i < kernel.length; i++)
-        kernel[i] /= kernelSum;
-    // Horizontal pass
-    const temp = new Float32Array(width * height);
-    for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-            let sum = 0;
-            for (let k = 0; k < kernel.length; k++) {
-                sum += getPixelClamped(input, x + k - radius, y) * kernel[k];
-            }
-            temp[y * width + x] = sum;
-        }
-    }
-    // Vertical pass
-    const tempImg = { data: temp, width, height };
-    const result = new Float32Array(width * height);
-    for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-            let sum = 0;
-            for (let k = 0; k < kernel.length; k++) {
-                sum += getPixelClamped(tempImg, x, y + k - radius) * kernel[k];
-            }
-            result[y * width + x] = sum;
-        }
-    }
-    return { data: result, width, height };
-}
-function medianFilterCPU(input, config) {
-    const { width, height } = input;
-    const result = new Float32Array(width * height);
-    const radius = config.radius;
-    const kernelSize = (2 * radius + 1) * (2 * radius + 1);
-    const values = new Array(kernelSize);
-    for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-            let idx = 0;
-            for (let dy = -radius; dy <= radius; dy++) {
-                for (let dx = -radius; dx <= radius; dx++) {
-                    values[idx++] = getPixelClamped(input, x + dx, y + dy);
-                }
-            }
-            values.sort((a, b) => a - b);
-            result[y * width + x] = values[Math.floor(kernelSize / 2)];
-        }
-    }
-    return { data: result, width, height };
-}
-function kuwaharaFilterCPU(input, config) {
-    const { width, height } = input;
-    const result = new Float32Array(width * height);
-    const r = config.radius;
-    for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-            const quadrants = [
-                { startX: -r, endX: 0, startY: -r, endY: 0 },
-                { startX: 0, endX: r, startY: -r, endY: 0 },
-                { startX: -r, endX: 0, startY: 0, endY: r },
-                { startX: 0, endX: r, startY: 0, endY: r },
-            ];
-            let minVariance = Infinity;
-            let bestMean = getPixelClamped(input, x, y);
-            for (const q of quadrants) {
-                let sum = 0;
-                let sumSq = 0;
-                let count = 0;
-                for (let dy = q.startY; dy <= q.endY; dy++) {
-                    for (let dx = q.startX; dx <= q.endX; dx++) {
-                        const val = getPixelClamped(input, x + dx, y + dy);
-                        sum += val;
-                        sumSq += val * val;
-                        count++;
-                    }
-                }
-                const mean = sum / count;
-                const variance = (sumSq / count) - (mean * mean);
-                if (variance < minVariance) {
-                    minVariance = variance;
-                    bestMean = mean;
-                }
-            }
-            result[y * width + x] = bestMean;
-        }
-    }
-    return { data: result, width, height };
-}
-// ============================================================================
-// PREPROCESSING PRESETS (using WebGL implementations)
-// ============================================================================
-exports.PreprocessingPresetsWebGL = {
-    light: (input) => {
-        return new BilateralFilterWebGL({ sigmaSpatial: 2, sigmaRange: 0.08 }).process(input);
-    },
-    standard: (input) => {
-        return new BilateralFilterWebGL({ sigmaSpatial: 4, sigmaRange: 0.1 }).process(input);
-    },
-    heavy: (input) => {
-        let result = new BilateralFilterWebGL({ sigmaSpatial: 5, sigmaRange: 0.12 }).process(input);
-        result = new BilateralFilterWebGL({ sigmaSpatial: 3, sigmaRange: 0.1 }).process(result);
-        return result;
-    },
-    artistic: (input) => {
-        let result = new KuwaharaFilterWebGL({ radius: 4 }).process(input);
-        result = new BilateralFilterWebGL({ sigmaSpatial: 2, sigmaRange: 0.08 }).process(result);
-        return result;
-    },
-    nature: (input) => {
-        let result = new BilateralFilterWebGL({ sigmaSpatial: 6, sigmaRange: 0.15 }).process(input);
-        result = new BilateralFilterWebGL({ sigmaSpatial: 3, sigmaRange: 0.08 }).process(result);
-        return result;
-    },
-};
-exports.PreprocessingPresets = exports.PreprocessingPresetsWebGL;
-// ============================================================================
-// PREPROCESSOR CLASS (Fluent API)
-// ============================================================================
-/**
- * Convenience class for chaining WebGL-accelerated preprocessing operations
- *
- * Note: renamed from `PreprocessorWebGL` to `PreprocessingPipelineWebGL`
- * since `Preprocessor` is now the shared strategy interface implemented by
- * BilateralFilterWebGL, MedianFilterWebGL, KuwaharaFilterWebGL,
- * GaussianBlurWebGL, ContrastEnhancerWebGL, and QuantizerWebGL above.
- */
-class PreprocessingPipelineWebGL {
-    operations = [];
-    bilateral(config) {
-        this.operations.push(new BilateralFilterWebGL(config));
-        return this;
-    }
-    median(config) {
-        this.operations.push(new MedianFilterWebGL(config));
-        return this;
-    }
-    kuwahara(config) {
-        this.operations.push(new KuwaharaFilterWebGL(config));
-        return this;
-    }
-    gaussian(sigma = 1.0) {
-        this.operations.push(new GaussianBlurWebGL(sigma));
-        return this;
-    }
-    contrast(blackPoint = 0.01, whitePoint = 0.99) {
-        this.operations.push(new ContrastEnhancerWebGL(blackPoint, whitePoint));
-        return this;
-    }
-    quantize(levels = 8) {
-        this.operations.push(new QuantizerWebGL(levels));
-        return this;
-    }
-    /**
-     * Add an arbitrary custom preprocessing strategy to the pipeline
-     */
-    use(preprocessor) {
-        this.operations.push(preprocessor);
-        return this;
-    }
-    apply(input) {
-        let result = input;
-        for (const op of this.operations) {
-            result = op.process(result);
-        }
-        return result;
-    }
-    clear() {
-        this.operations = [];
-        return this;
-    }
-}
-exports.PreprocessingPipelineWebGL = PreprocessingPipelineWebGL;
-exports.PreprocessingPipeline = PreprocessingPipelineWebGL;
 // ============================================================================
 // UTILITY EXPORTS
 // ============================================================================

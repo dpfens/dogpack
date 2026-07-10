@@ -1,93 +1,85 @@
 /**
- * Preprocessing module for XDoG/FDoG
+ * Composed Preprocessing Module for XDoG/FDoG
  *
- * Provides filters to prepare images before line detection.
- * These help reduce noise and texture while preserving important edges.
+ * This module is the single entry point the rest of the codebase should
+ * import from. Each exported class picks its backend ONCE, at
+ * construction time:
  *
- * Section 3.2 of the paper discusses the importance of bilateral
- * preprocessing for "indication" - attenuating weak edges while
- * preserving strong edges.
+ *   - WebGL 2.0 available  -> delegates to the GPU implementation (webgl.ts)
+ *   - WebGL 2.0 unavailable -> delegates to the CPU implementation (cpu.ts)
+ *
+ * Why this exists:
+ * `webgl.ts` already contains an internal CPU fallback inside every
+ * `process()` call, but that's a *runtime* safety net for when a shader
+ * fails to compile/link or a framebuffer can't be created mid-session —
+ * it still probes/initializes a WebGL context on every call. Here we
+ * decide the backend up front and never touch WebGL at all on a machine
+ * that doesn't support it, and never re-run capability detection per call.
+ *
+ * The per-call fallback inside webgl.ts is left intact and still protects
+ * against WebGL "supported but broken" edge cases after we've committed
+ * to the GPU path.
  */
 import type { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig, Preprocessor } from '../types.js';
+import { isWebGLAvailable, disposeWebGL } from './webgl.js';
 /**
- * Bilateral Filter
- *
- * Edge-preserving smoothing filter that averages pixels based on both
- * spatial proximity AND intensity similarity. This smooths out texture
- * (like grass) while keeping strong edges (like the car outline) sharp.
- *
- * This is the recommended preprocessing for most images.
- *
- * As mentioned in Section 3.2, bilateral filtering can serve as a
- * "prioritization mechanism" for indication - attenuating weak edges
- * while supporting strong edges.
+ * Optional override for backend selection. Useful for tests (deterministic
+ * CPU output, or running in a Node environment with no WebGL at all) or for
+ * explicitly forcing a backend regardless of what the environment supports.
+ */
+export interface BackendOptions {
+    /** Force CPU even if WebGL is available. Default: false. */
+    forceCPU?: boolean;
+}
+/**
+ * Edge-preserving smoothing filter. Uses the GPU implementation when
+ * available, otherwise falls back to the CPU implementation.
  */
 export declare class BilateralFilter implements Preprocessor {
-    private readonly config;
-    constructor(config?: Partial<BilateralFilterConfig>);
+    private readonly instance;
+    constructor(config?: Partial<BilateralFilterConfig>, options?: BackendOptions);
     process(input: ChannelImage): ChannelImage;
 }
 /**
- * Median Filter
- *
- * Replaces each pixel with the median of its neighborhood.
- * Excellent for removing salt-and-pepper noise and small texture details.
+ * Median filter for salt-and-pepper noise removal.
  */
 export declare class MedianFilter implements Preprocessor {
-    private readonly config;
-    constructor(config?: Partial<MedianFilterConfig>);
+    private readonly instance;
+    constructor(config?: Partial<MedianFilterConfig>, options?: BackendOptions);
     process(input: ChannelImage): ChannelImage;
 }
 /**
- * Kuwahara Filter
- *
- * Artistic smoothing filter that creates a painterly effect.
- * Divides the neighborhood into 4 quadrants, finds the one with
- * lowest variance, and uses its mean. Creates flat regions with
- * preserved edges - great for a more stylized look.
+ * Kuwahara filter for a painterly, stylized effect.
  */
 export declare class KuwaharaFilter implements Preprocessor {
-    private readonly config;
-    constructor(config?: Partial<KuwaharaFilterConfig>);
+    private readonly instance;
+    constructor(config?: Partial<KuwaharaFilterConfig>, options?: BackendOptions);
     process(input: ChannelImage): ChannelImage;
 }
 /**
- * Gaussian Blur
- *
- * Simple Gaussian smoothing. Less edge-preserving than bilateral,
- * but faster. Good for very noisy images or when used with small sigma.
+ * Separable Gaussian blur.
  */
 export declare class GaussianBlur implements Preprocessor {
-    private readonly sigma;
-    constructor(sigma?: number);
+    private readonly instance;
+    constructor(sigma?: number, options?: BackendOptions);
     process(input: ChannelImage): ChannelImage;
 }
 /**
- * Contrast Enhancement
- *
- * Stretches the histogram to use the full 0-1 range.
- * Can help make edges more distinct before processing.
+ * Histogram-percentile contrast stretch.
  */
 export declare class ContrastEnhancer implements Preprocessor {
-    private readonly blackPoint;
-    private readonly whitePoint;
-    constructor(blackPoint?: number, whitePoint?: number);
+    private readonly instance;
+    constructor(blackPoint?: number, whitePoint?: number, options?: BackendOptions);
     process(input: ChannelImage): ChannelImage;
 }
 /**
- * Quantize to reduce color levels
- *
- * Reduces the number of intensity levels, creating a posterized effect.
- * Can help reduce noise by grouping similar intensities together.
+ * Posterize/quantize intensity levels.
  */
 export declare class Quantizer implements Preprocessor {
-    private readonly levels;
-    constructor(levels?: number);
+    private readonly instance;
+    constructor(levels?: number, options?: BackendOptions);
     process(input: ChannelImage): ChannelImage;
 }
-/**
- * Preset preprocessing pipelines for common use cases
- */
 export declare const PreprocessingPresets: {
     /**
      * Light preprocessing - minimal smoothing
@@ -116,45 +108,27 @@ export declare const PreprocessingPresets: {
     nature: (input: ChannelImage) => ChannelImage;
 };
 /**
- * Convenience class for chaining preprocessing operations
+ * Convenience class for chaining preprocessing operations. Each stage picks
+ * its backend (GPU vs CPU) independently at the time it's added, using
+ * whatever `isWebGLAvailable()` reports at that moment.
  */
 export declare class PreprocessingPipeline {
+    private readonly options?;
     private operations;
-    /**
-     * Add bilateral filter to the pipeline
-     */
+    constructor(options?: BackendOptions | undefined);
     bilateral(config?: Partial<BilateralFilterConfig>): this;
-    /**
-     * Add median filter to the pipeline
-     */
     median(config?: Partial<MedianFilterConfig>): this;
-    /**
-     * Add Kuwahara filter to the pipeline
-     */
     kuwahara(config?: Partial<KuwaharaFilterConfig>): this;
-    /**
-     * Add Gaussian blur to the pipeline
-     */
     gaussian(sigma?: number): this;
-    /**
-     * Add contrast enhancement to the pipeline
-     */
     contrast(blackPoint?: number, whitePoint?: number): this;
-    /**
-     * Add quantization to the pipeline
-     */
     quantize(levels?: number): this;
     /**
-     * Add an arbitrary custom preprocessing strategy to the pipeline
+     * Add an arbitrary custom preprocessing strategy to the pipeline.
+     * Bring your own backend selection if needed.
      */
     use(preprocessor: Preprocessor): this;
-    /**
-     * Apply all operations in sequence
-     */
     apply(input: ChannelImage): ChannelImage;
-    /**
-     * Clear all operations
-     */
     clear(): this;
 }
+export { isWebGLAvailable, disposeWebGL };
 //# sourceMappingURL=preprocess.d.ts.map

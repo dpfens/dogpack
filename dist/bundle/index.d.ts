@@ -1489,166 +1489,6 @@ declare class LocalVariancePreprocessorOptimized implements Preprocessor {
 }
 
 /**
- * Preprocessing module for XDoG/FDoG
- *
- * Provides filters to prepare images before line detection.
- * These help reduce noise and texture while preserving important edges.
- *
- * Section 3.2 of the paper discusses the importance of bilateral
- * preprocessing for "indication" - attenuating weak edges while
- * preserving strong edges.
- */
-
-/**
- * Bilateral Filter
- *
- * Edge-preserving smoothing filter that averages pixels based on both
- * spatial proximity AND intensity similarity. This smooths out texture
- * (like grass) while keeping strong edges (like the car outline) sharp.
- *
- * This is the recommended preprocessing for most images.
- *
- * As mentioned in Section 3.2, bilateral filtering can serve as a
- * "prioritization mechanism" for indication - attenuating weak edges
- * while supporting strong edges.
- */
-declare class BilateralFilter implements Preprocessor {
-    private readonly config;
-    constructor(config?: Partial<BilateralFilterConfig>);
-    process(input: ChannelImage): ChannelImage;
-}
-/**
- * Median Filter
- *
- * Replaces each pixel with the median of its neighborhood.
- * Excellent for removing salt-and-pepper noise and small texture details.
- */
-declare class MedianFilter implements Preprocessor {
-    private readonly config;
-    constructor(config?: Partial<MedianFilterConfig>);
-    process(input: ChannelImage): ChannelImage;
-}
-/**
- * Kuwahara Filter
- *
- * Artistic smoothing filter that creates a painterly effect.
- * Divides the neighborhood into 4 quadrants, finds the one with
- * lowest variance, and uses its mean. Creates flat regions with
- * preserved edges - great for a more stylized look.
- */
-declare class KuwaharaFilter implements Preprocessor {
-    private readonly config;
-    constructor(config?: Partial<KuwaharaFilterConfig>);
-    process(input: ChannelImage): ChannelImage;
-}
-/**
- * Gaussian Blur
- *
- * Simple Gaussian smoothing. Less edge-preserving than bilateral,
- * but faster. Good for very noisy images or when used with small sigma.
- */
-declare class GaussianBlur implements Preprocessor {
-    private readonly sigma;
-    constructor(sigma?: number);
-    process(input: ChannelImage): ChannelImage;
-}
-/**
- * Contrast Enhancement
- *
- * Stretches the histogram to use the full 0-1 range.
- * Can help make edges more distinct before processing.
- */
-declare class ContrastEnhancer implements Preprocessor {
-    private readonly blackPoint;
-    private readonly whitePoint;
-    constructor(blackPoint?: number, whitePoint?: number);
-    process(input: ChannelImage): ChannelImage;
-}
-/**
- * Quantize to reduce color levels
- *
- * Reduces the number of intensity levels, creating a posterized effect.
- * Can help reduce noise by grouping similar intensities together.
- */
-declare class Quantizer implements Preprocessor {
-    private readonly levels;
-    constructor(levels?: number);
-    process(input: ChannelImage): ChannelImage;
-}
-/**
- * Preset preprocessing pipelines for common use cases
- */
-declare const PreprocessingPresets: {
-    /**
-     * Light preprocessing - minimal smoothing
-     * Good for: Clean studio photos, illustrations
-     */
-    light: (input: ChannelImage) => ChannelImage;
-    /**
-     * Standard preprocessing - balanced smoothing
-     * Good for: Most outdoor photos, portraits
-     */
-    standard: (input: ChannelImage) => ChannelImage;
-    /**
-     * Heavy preprocessing - aggressive noise removal
-     * Good for: Very textured images (grass, foliage, fabric)
-     */
-    heavy: (input: ChannelImage) => ChannelImage;
-    /**
-     * Artistic preprocessing - painterly smoothing
-     * Good for: Stylized/artistic output
-     */
-    artistic: (input: ChannelImage) => ChannelImage;
-    /**
-     * Photo preprocessing - for photos with grass/nature
-     * Good for: Landscape, outdoor scenes
-     */
-    nature: (input: ChannelImage) => ChannelImage;
-};
-/**
- * Convenience class for chaining preprocessing operations
- */
-declare class PreprocessingPipeline {
-    private operations;
-    /**
-     * Add bilateral filter to the pipeline
-     */
-    bilateral(config?: Partial<BilateralFilterConfig>): this;
-    /**
-     * Add median filter to the pipeline
-     */
-    median(config?: Partial<MedianFilterConfig>): this;
-    /**
-     * Add Kuwahara filter to the pipeline
-     */
-    kuwahara(config?: Partial<KuwaharaFilterConfig>): this;
-    /**
-     * Add Gaussian blur to the pipeline
-     */
-    gaussian(sigma?: number): this;
-    /**
-     * Add contrast enhancement to the pipeline
-     */
-    contrast(blackPoint?: number, whitePoint?: number): this;
-    /**
-     * Add quantization to the pipeline
-     */
-    quantize(levels?: number): this;
-    /**
-     * Add an arbitrary custom preprocessing strategy to the pipeline
-     */
-    use(preprocessor: Preprocessor): this;
-    /**
-     * Apply all operations in sequence
-     */
-    apply(input: ChannelImage): ChannelImage;
-    /**
-     * Clear all operations
-     */
-    clear(): this;
-}
-
-/**
  * WebGL-Accelerated Preprocessing Module for XDoG/FDoG
  *
  * High-performance GPU implementations of image preprocessing filters.
@@ -1661,6 +1501,7 @@ declare class PreprocessingPipeline {
  * - Gaussian Blur (separable, very fast)
  * - Contrast Enhancement
  * - Quantization
+ *
  */
 
 declare class BilateralFilterWebGL implements Preprocessor {
@@ -1694,36 +1535,6 @@ declare class QuantizerWebGL implements Preprocessor {
     constructor(levels?: number);
     process(input: ChannelImage): ChannelImage;
 }
-declare const PreprocessingPresetsWebGL: {
-    light: (input: ChannelImage) => ChannelImage;
-    standard: (input: ChannelImage) => ChannelImage;
-    heavy: (input: ChannelImage) => ChannelImage;
-    artistic: (input: ChannelImage) => ChannelImage;
-    nature: (input: ChannelImage) => ChannelImage;
-};
-/**
- * Convenience class for chaining WebGL-accelerated preprocessing operations
- *
- * Note: renamed from `PreprocessorWebGL` to `PreprocessingPipelineWebGL`
- * since `Preprocessor` is now the shared strategy interface implemented by
- * BilateralFilterWebGL, MedianFilterWebGL, KuwaharaFilterWebGL,
- * GaussianBlurWebGL, ContrastEnhancerWebGL, and QuantizerWebGL above.
- */
-declare class PreprocessingPipelineWebGL {
-    private operations;
-    bilateral(config?: Partial<BilateralFilterConfig>): this;
-    median(config?: Partial<MedianFilterConfig>): this;
-    kuwahara(config?: Partial<KuwaharaFilterConfig>): this;
-    gaussian(sigma?: number): this;
-    contrast(blackPoint?: number, whitePoint?: number): this;
-    quantize(levels?: number): this;
-    /**
-     * Add an arbitrary custom preprocessing strategy to the pipeline
-     */
-    use(preprocessor: Preprocessor): this;
-    apply(input: ChannelImage): ChannelImage;
-    clear(): this;
-}
 /**
  * Check if WebGL 2.0 is available
  */
@@ -1743,9 +1554,6 @@ type webgl_KuwaharaFilterWebGL = KuwaharaFilterWebGL;
 declare const webgl_KuwaharaFilterWebGL: typeof KuwaharaFilterWebGL;
 type webgl_MedianFilterWebGL = MedianFilterWebGL;
 declare const webgl_MedianFilterWebGL: typeof MedianFilterWebGL;
-type webgl_PreprocessingPipelineWebGL = PreprocessingPipelineWebGL;
-declare const webgl_PreprocessingPipelineWebGL: typeof PreprocessingPipelineWebGL;
-declare const webgl_PreprocessingPresetsWebGL: typeof PreprocessingPresetsWebGL;
 type webgl_QuantizerWebGL = QuantizerWebGL;
 declare const webgl_QuantizerWebGL: typeof QuantizerWebGL;
 declare const webgl_disposeWebGL: typeof disposeWebGL;
@@ -1762,10 +1570,6 @@ declare namespace webgl {
     webgl_KuwaharaFilterWebGL as KuwaharaFilterWebGL,
     MedianFilterWebGL as MedianFilter,
     webgl_MedianFilterWebGL as MedianFilterWebGL,
-    PreprocessingPipelineWebGL as PreprocessingPipeline,
-    webgl_PreprocessingPipelineWebGL as PreprocessingPipelineWebGL,
-    PreprocessingPresetsWebGL as PreprocessingPresets,
-    webgl_PreprocessingPresetsWebGL as PreprocessingPresetsWebGL,
     QuantizerWebGL as Quantizer,
     webgl_QuantizerWebGL as QuantizerWebGL,
     webgl_disposeWebGL as disposeWebGL,
@@ -1773,6 +1577,139 @@ declare namespace webgl {
   };
 }
 
+/**
+ * Composed Preprocessing Module for XDoG/FDoG
+ *
+ * This module is the single entry point the rest of the codebase should
+ * import from. Each exported class picks its backend ONCE, at
+ * construction time:
+ *
+ *   - WebGL 2.0 available  -> delegates to the GPU implementation (webgl.ts)
+ *   - WebGL 2.0 unavailable -> delegates to the CPU implementation (cpu.ts)
+ *
+ * Why this exists:
+ * `webgl.ts` already contains an internal CPU fallback inside every
+ * `process()` call, but that's a *runtime* safety net for when a shader
+ * fails to compile/link or a framebuffer can't be created mid-session —
+ * it still probes/initializes a WebGL context on every call. Here we
+ * decide the backend up front and never touch WebGL at all on a machine
+ * that doesn't support it, and never re-run capability detection per call.
+ *
+ * The per-call fallback inside webgl.ts is left intact and still protects
+ * against WebGL "supported but broken" edge cases after we've committed
+ * to the GPU path.
+ */
+
+/**
+ * Optional override for backend selection. Useful for tests (deterministic
+ * CPU output, or running in a Node environment with no WebGL at all) or for
+ * explicitly forcing a backend regardless of what the environment supports.
+ */
+interface BackendOptions {
+    /** Force CPU even if WebGL is available. Default: false. */
+    forceCPU?: boolean;
+}
+/**
+ * Edge-preserving smoothing filter. Uses the GPU implementation when
+ * available, otherwise falls back to the CPU implementation.
+ */
+declare class BilateralFilter implements Preprocessor {
+    private readonly instance;
+    constructor(config?: Partial<BilateralFilterConfig>, options?: BackendOptions);
+    process(input: ChannelImage): ChannelImage;
+}
+/**
+ * Median filter for salt-and-pepper noise removal.
+ */
+declare class MedianFilter implements Preprocessor {
+    private readonly instance;
+    constructor(config?: Partial<MedianFilterConfig>, options?: BackendOptions);
+    process(input: ChannelImage): ChannelImage;
+}
+/**
+ * Kuwahara filter for a painterly, stylized effect.
+ */
+declare class KuwaharaFilter implements Preprocessor {
+    private readonly instance;
+    constructor(config?: Partial<KuwaharaFilterConfig>, options?: BackendOptions);
+    process(input: ChannelImage): ChannelImage;
+}
+/**
+ * Separable Gaussian blur.
+ */
+declare class GaussianBlur implements Preprocessor {
+    private readonly instance;
+    constructor(sigma?: number, options?: BackendOptions);
+    process(input: ChannelImage): ChannelImage;
+}
+/**
+ * Histogram-percentile contrast stretch.
+ */
+declare class ContrastEnhancer implements Preprocessor {
+    private readonly instance;
+    constructor(blackPoint?: number, whitePoint?: number, options?: BackendOptions);
+    process(input: ChannelImage): ChannelImage;
+}
+/**
+ * Posterize/quantize intensity levels.
+ */
+declare class Quantizer implements Preprocessor {
+    private readonly instance;
+    constructor(levels?: number, options?: BackendOptions);
+    process(input: ChannelImage): ChannelImage;
+}
+declare const PreprocessingPresets: {
+    /**
+     * Light preprocessing - minimal smoothing
+     * Good for: Clean studio photos, illustrations
+     */
+    light: (input: ChannelImage) => ChannelImage;
+    /**
+     * Standard preprocessing - balanced smoothing
+     * Good for: Most outdoor photos, portraits
+     */
+    standard: (input: ChannelImage) => ChannelImage;
+    /**
+     * Heavy preprocessing - aggressive noise removal
+     * Good for: Very textured images (grass, foliage, fabric)
+     */
+    heavy: (input: ChannelImage) => ChannelImage;
+    /**
+     * Artistic preprocessing - painterly smoothing
+     * Good for: Stylized/artistic output
+     */
+    artistic: (input: ChannelImage) => ChannelImage;
+    /**
+     * Photo preprocessing - for photos with grass/nature
+     * Good for: Landscape, outdoor scenes
+     */
+    nature: (input: ChannelImage) => ChannelImage;
+};
+/**
+ * Convenience class for chaining preprocessing operations. Each stage picks
+ * its backend (GPU vs CPU) independently at the time it's added, using
+ * whatever `isWebGLAvailable()` reports at that moment.
+ */
+declare class PreprocessingPipeline {
+    private readonly options?;
+    private operations;
+    constructor(options?: BackendOptions | undefined);
+    bilateral(config?: Partial<BilateralFilterConfig>): this;
+    median(config?: Partial<MedianFilterConfig>): this;
+    kuwahara(config?: Partial<KuwaharaFilterConfig>): this;
+    gaussian(sigma?: number): this;
+    contrast(blackPoint?: number, whitePoint?: number): this;
+    quantize(levels?: number): this;
+    /**
+     * Add an arbitrary custom preprocessing strategy to the pipeline.
+     * Bring your own backend selection if needed.
+     */
+    use(preprocessor: Preprocessor): this;
+    apply(input: ChannelImage): ChannelImage;
+    clear(): this;
+}
+
+type index$2_BackendOptions = BackendOptions;
 type index$2_BilateralFilter = BilateralFilter;
 declare const index$2_BilateralFilter: typeof BilateralFilter;
 type index$2_ContrastEnhancer = ContrastEnhancer;
@@ -1793,10 +1730,12 @@ declare const index$2_PreprocessingPipeline: typeof PreprocessingPipeline;
 declare const index$2_PreprocessingPresets: typeof PreprocessingPresets;
 type index$2_Quantizer = Quantizer;
 declare const index$2_Quantizer: typeof Quantizer;
+declare const index$2_disposeWebGL: typeof disposeWebGL;
+declare const index$2_isWebGLAvailable: typeof isWebGLAvailable;
 declare const index$2_webgl: typeof webgl;
 declare namespace index$2 {
-  export { index$2_BilateralFilter as BilateralFilter, index$2_ContrastEnhancer as ContrastEnhancer, index$2_GaussianBlur as GaussianBlur, index$2_KuwaharaFilter as KuwaharaFilter, index$2_LocalVariancePreprocessor as LocalVariancePreprocessor, index$2_LocalVariancePreprocessorOptimized as LocalVariancePreprocessorOptimized, index$2_MedianFilter as MedianFilter, index$2_PreprocessingPipeline as PreprocessingPipeline, index$2_PreprocessingPresets as PreprocessingPresets, index$2_Quantizer as Quantizer, index$2_webgl as webgl };
-  export type { index$2_LocalVarianceConfig as LocalVarianceConfig };
+  export { index$2_BilateralFilter as BilateralFilter, index$2_ContrastEnhancer as ContrastEnhancer, index$2_GaussianBlur as GaussianBlur, index$2_KuwaharaFilter as KuwaharaFilter, index$2_LocalVariancePreprocessor as LocalVariancePreprocessor, index$2_LocalVariancePreprocessorOptimized as LocalVariancePreprocessorOptimized, index$2_MedianFilter as MedianFilter, index$2_PreprocessingPipeline as PreprocessingPipeline, index$2_PreprocessingPresets as PreprocessingPresets, index$2_Quantizer as Quantizer, index$2_disposeWebGL as disposeWebGL, index$2_isWebGLAvailable as isWebGLAvailable, index$2_webgl as webgl };
+  export type { index$2_BackendOptions as BackendOptions, index$2_LocalVarianceConfig as LocalVarianceConfig };
 }
 
 /**
