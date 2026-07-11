@@ -61,41 +61,27 @@ class FDoG {
      */
     async process(input, overrides = {}) {
         const params = { ...this.config, ...overrides };
-        const timings = {};
-        const t0 = performance.now();
         // Step 1: Compute Edge Tangent Flow
-        const etfStart = performance.now();
         const etf = await index_js_1.EdgeTangentFlow.compute(input, {
             iterations: types_js_1.DEFAULT_ETF_CONFIG.iterations,
             kernelSize: Math.ceil(params.sigmaC * 2.45) * 2 + 1,
         }, params.sigmaC);
-        timings.etf = performance.now() - etfStart;
         const gradientBlur = new index_js_3.GradientAlignedBlur(etf);
         const processor = new processor_js_1.DoGProcessor(gradientBlur, params);
         // Step 4: Process image (DoG + threshold)
-        const dogStart = performance.now();
         let result = await processor.process(input);
-        timings.dogProcess = performance.now() - dogStart;
         processor.dispose();
         const flowBlur = new flow_guided_js_1.FlowGuidedBlur(etf);
         // Step 5: Flow-aligned smoothing
         if (params.sigmaM > 0) {
-            const smoothStart = performance.now();
             result = await flowBlur.blur(result, params.sigmaM);
-            timings.flowSmooth = performance.now() - smoothStart;
         }
         // Step 6: Anti-aliasing
         if (params.sigmaA > 0) {
-            const aaStart = performance.now();
             result = await flowBlur.blur(result, params.sigmaA);
-            timings.antiAlias = performance.now() - aaStart;
         }
         flowBlur.dispose();
-        const etfDisposeStart = performance.now();
         index_js_1.EdgeTangentFlow.dispose();
-        timings.etfDispose = performance.now() - etfDisposeStart;
-        timings.total = performance.now() - t0;
-        console.debug('[FDoG] timings (ms):', timings);
         return result;
     }
     /**

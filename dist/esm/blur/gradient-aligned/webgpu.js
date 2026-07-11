@@ -229,7 +229,6 @@ export class WebGPUGradientAlignedBlur {
     }
     bakeFlowTexture(width, height) {
         this.assertWithinTextureLimits(width, height);
-        const t0 = performance.now();
         const newTexture = this.device.createTexture({
             size: [width, height],
             format: 'rg32float',
@@ -267,7 +266,6 @@ export class WebGPUGradientAlignedBlur {
         this.flowFieldWidth = width;
         this.flowFieldHeight = height;
         this.flowDirty = false;
-        console.log(`[GradientAlignedBlur/WebGPU] Baked flow field texture (${width}x${height}): ${(performance.now() - t0).toFixed(2)}ms`);
         return newTexture;
     }
     /**
@@ -315,7 +313,6 @@ export class WebGPUGradientAlignedBlur {
      * `assertWithinTextureLimits`).
      */
     async blur(input, sigma) {
-        const tTotal = performance.now();
         if (sigma < 0.1) {
             return { data: new Float32Array(input.data), width: input.width, height: input.height };
         }
@@ -335,11 +332,6 @@ export class WebGPUGradientAlignedBlur {
         // tile size — the input/flow textures below are still whole-image.
         const bytesPerRow = width * 4;
         const rowsPerTile = Math.max(1, Math.min(height, Math.floor(this.maxTileBytes / bytesPerRow)));
-        const tileCount = Math.ceil(height / rowsPerTile);
-        if (tileCount > 1) {
-            console.log(`[GradientAlignedBlur/WebGPU] Image ${width}x${height} exceeds safe single-buffer size; ` +
-                `processing in ${tileCount} row-band tiles of ~${rowsPerTile} rows each.`);
-        }
         // Per-call GPU resources — never shared across concurrent blur() calls.
         // Input/flow textures are whole-image (bounded by maxTextureDimension2D,
         // checked above); output/readback buffers are sized to one tile only
@@ -368,10 +360,8 @@ export class WebGPUGradientAlignedBlur {
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
         });
         try {
-            const tUpload = performance.now();
             this.device.queue.writeTexture({ texture: inputTexture }, input.data, { bytesPerRow, rowsPerImage: height }, { width, height });
             this.device.queue.writeBuffer(weightsBuffer, 0, paddedWeights);
-            console.log(`[GradientAlignedBlur/WebGPU] Upload (texture + weights, submit only): ${(performance.now() - tUpload).toFixed(2)}ms`);
             const bindGroup = this.device.createBindGroup({
                 layout: this.pipeline.getBindGroupLayout(0),
                 entries: [
@@ -383,7 +373,6 @@ export class WebGPUGradientAlignedBlur {
                 ],
             });
             const output = createChannelImage(width, height);
-            const tTiles = performance.now();
             // Tiles are processed sequentially (dispatch -> readback -> next)
             // rather than pipelined, since outputBuffer/readBuffer are reused
             // across iterations — that reuse is exactly what keeps memory
@@ -412,8 +401,6 @@ export class WebGPUGradientAlignedBlur {
                 output.data.set(new Float32Array(mapped), rowOffset * width);
                 readBuffer.unmap();
             }
-            console.log(`[GradientAlignedBlur/WebGPU] Dispatch + readback across ${tileCount} tile(s): ${(performance.now() - tTiles).toFixed(2)}ms`);
-            console.log(`[GradientAlignedBlur/WebGPU] blur() total (sigma=${sigma.toFixed(2)}, halfSamples=${halfSamples}): ${(performance.now() - tTotal).toFixed(2)}ms`);
             return output;
         }
         finally {
