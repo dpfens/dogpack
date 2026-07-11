@@ -1818,6 +1818,27 @@ async function xdog(input, config = {}) {
  *  just guards against pathological sigma values blowing up dispatch cost. */
 const MAX_BLUR_RADIUS = 64;
 const WORKGROUP_SIZE$1 = 8;
+/**
+ * Blur radii up to this value use the shared-memory-tiled blurH/blurV
+ * pipelines; anything above it falls back to the original untiled
+ * pipelines. This exists purely because `var<workgroup>` arrays must be
+ * fixed-size at shader-compile time, so the tile has to be sized for a
+ * worst-case radius rather than the actual (data-dependent) one.
+ *
+ * 32 was chosen to keep per-workgroup storage comfortably under the
+ * WebGPU-guaranteed minimum of 16384 bytes (`maxComputeWorkgroupStorageSize`)
+ * even though real hardware often allows more:
+ *   tile:   (WORKGROUP_SIZE + 2*32) * WORKGROUP_SIZE * 16B (vec4<f32>) = 9216B
+ *   kernel: (2*32 + 1) * 4B                                            =  260B
+ *   total                                                              = 9476B
+ * That leaves ~7KB of headroom for driver overhead/alignment. Radii above
+ * this (i.e. large-sigma blurs) are rare in practice and still correct —
+ * they just don't get the shared-memory win.
+ */
+const TILE_RADIUS_CAP = 32;
+const TILE_WIDTH = WORKGROUP_SIZE$1 + 2 * TILE_RADIUS_CAP; // 72
+const KERNEL_SHARED_SIZE = 2 * TILE_RADIUS_CAP + 1; // 65
+const REFINE_TILE_DIM = WORKGROUP_SIZE$1 + 4; // fixed 5x5 (radius-2) footprint
 // ============== WGSL Shader Sources ==============
 const COMMON_WGSL = `
 struct Params {
@@ -1940,6 +1961,126 @@ fn blurV(@builtin(global_invocation_id) gid: vec3<u32>) {
   outputBuf[u32(y * w + x)] = sum;
 }
 `;
+// Tiled counterpart to GAUSSIAN_BLUR_SHADER, used when radius <=
+// TILE_RADIUS_CAP (see that constant's comment for the sizing rationale).
+// Each workgroup loads its input footprint into workgroup-shared memory
+// once, then every thread reads its taps from shared memory instead of
+// re-issuing up to `kernelSize` independent global storage-buffer reads —
+// the redundant-read pattern the untiled version has, since neighboring
+// threads' kernel windows overlap almost entirely.
+const GAUSSIAN_BLUR_TILED_SHADER = COMMON_WGSL + `
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var<storage, read> inputBuf: array<vec4<f32>>;
+@group(0) @binding(2) var<storage, read_write> outputBuf: array<vec4<f32>>;
+@group(0) @binding(3) var<storage, read> kernelBuf: array<f32>;
+
+// Sized for the worst-case radius this tiled path supports
+// (TILE_RADIUS_CAP, defined JS-side); actual radius at dispatch time is
+// always <= that, so only a prefix of these arrays is used per call.
+var<workgroup> tileRow: array<vec4<f32>, ${TILE_WIDTH * WORKGROUP_SIZE$1}>;
+var<workgroup> kernelShared: array<f32, ${KERNEL_SHARED_SIZE}>;
+
+@compute @workgroup_size(${WORKGROUP_SIZE$1}, ${WORKGROUP_SIZE$1})
+fn blurHTiled(
+  @builtin(local_invocation_id) lid: vec3<u32>,
+  @builtin(workgroup_id) wgid: vec3<u32>
+) {
+  let w = i32(params.width);
+  let h = i32(params.height);
+  let radius = i32(params.radius);
+  let kernelSize = i32(params.kernelSize);
+
+  let localX = i32(lid.x);
+  let localY = i32(lid.y);
+  let flatLocal = localY * ${WORKGROUP_SIZE$1} + localX;
+  let wgOriginX = i32(wgid.x) * ${WORKGROUP_SIZE$1};
+  let wgOriginY = i32(wgid.y) * ${WORKGROUP_SIZE$1};
+  let tileWidth = ${WORKGROUP_SIZE$1} + 2 * radius;
+
+  // Kernel weights are identical for every thread in the workgroup — load
+  // once into shared memory rather than every thread hitting kernelBuf.
+  var loadIdx = flatLocal;
+  loop {
+    if (loadIdx >= kernelSize) { break; }
+    kernelShared[loadIdx] = kernelBuf[loadIdx];
+    loadIdx = loadIdx + ${WORKGROUP_SIZE$1 * WORKGROUP_SIZE$1};
+  }
+
+  // Grid-stride load of the input tile (WORKGROUP_SIZE rows x tileWidth
+  // cols) so all columns get covered regardless of how tileWidth compares
+  // to WORKGROUP_SIZE.
+  let y = wgOriginY + localY;
+  var col = localX;
+  loop {
+    if (col >= tileWidth) { break; }
+    let sx = wgOriginX + col - radius;
+    tileRow[localY * ${TILE_WIDTH} + col] = inputBuf[clampIdx(sx, y, w, h)];
+    col = col + ${WORKGROUP_SIZE$1};
+  }
+
+  workgroupBarrier();
+
+  let x = wgOriginX + localX;
+  if (x >= w || y >= h) { return; }
+
+  var sum = vec4<f32>(0.0);
+  for (var i = 0; i < kernelSize; i = i + 1) {
+    sum = sum + tileRow[localY * ${TILE_WIDTH} + localX + i] * kernelShared[i];
+  }
+
+  outputBuf[u32(y * w + x)] = sum;
+}
+
+@compute @workgroup_size(${WORKGROUP_SIZE$1}, ${WORKGROUP_SIZE$1})
+fn blurVTiled(
+  @builtin(local_invocation_id) lid: vec3<u32>,
+  @builtin(workgroup_id) wgid: vec3<u32>
+) {
+  let w = i32(params.width);
+  let h = i32(params.height);
+  let radius = i32(params.radius);
+  let kernelSize = i32(params.kernelSize);
+
+  let localX = i32(lid.x);
+  let localY = i32(lid.y);
+  let flatLocal = localY * ${WORKGROUP_SIZE$1} + localX;
+  let wgOriginX = i32(wgid.x) * ${WORKGROUP_SIZE$1};
+  let wgOriginY = i32(wgid.y) * ${WORKGROUP_SIZE$1};
+  let tileHeight = ${WORKGROUP_SIZE$1} + 2 * radius;
+
+  var loadIdx = flatLocal;
+  loop {
+    if (loadIdx >= kernelSize) { break; }
+    kernelShared[loadIdx] = kernelBuf[loadIdx];
+    loadIdx = loadIdx + ${WORKGROUP_SIZE$1 * WORKGROUP_SIZE$1};
+  }
+
+  // Reuses tileRow's backing storage, addressed as WORKGROUP_SIZE columns
+  // x tileHeight rows instead of blurHTiled's tileWidth cols x
+  // WORKGROUP_SIZE rows — same element count (WORKGROUP_SIZE * TILE_WIDTH)
+  // either way, just laid out for vertical taps instead of horizontal ones.
+  let x = wgOriginX + localX;
+  var row = localY;
+  loop {
+    if (row >= tileHeight) { break; }
+    let sy = wgOriginY + row - radius;
+    tileRow[row * ${WORKGROUP_SIZE$1} + localX] = inputBuf[clampIdx(x, sy, w, h)];
+    row = row + ${WORKGROUP_SIZE$1};
+  }
+
+  workgroupBarrier();
+
+  let y = wgOriginY + localY;
+  if (x >= w || y >= h) { return; }
+
+  var sum = vec4<f32>(0.0);
+  for (var i = 0; i < kernelSize; i = i + 1) {
+    sum = sum + tileRow[(localY + i) * ${WORKGROUP_SIZE$1} + localX] * kernelShared[i];
+  }
+
+  outputBuf[u32(y * w + x)] = sum;
+}
+`;
 const TANGENT_EXTRACT_SHADER$1 = COMMON_WGSL + `
 @group(0) @binding(0) var<uniform> params: Params;
 @group(0) @binding(1) var<storage, read> tensorBuf: array<vec4<f32>>;
@@ -1984,21 +2125,57 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   outputBuf[idx] = vec4<f32>(tangent, mag, 1.0);
 }
 `;
+// Unlike the blur radius, the refine neighborhood is a fixed 5x5 (radius
+// 2) — so the tile size is a compile-time constant with no data-dependent
+// cap/fallback needed, unlike GAUSSIAN_BLUR_TILED_SHADER above. Every
+// invocation in the untiled version re-read the same 5x5=25 neighbors its
+// neighbors were also reading independently from global storage; here
+// each workgroup loads its (WORKGROUP_SIZE+4)^2 footprint once instead.
 const TANGENT_REFINE_SHADER$1 = COMMON_WGSL + `
 @group(0) @binding(0) var<uniform> params: Params;
 @group(0) @binding(1) var<storage, read> inputBuf: array<vec4<f32>>;
 @group(0) @binding(2) var<storage, read_write> outputBuf: array<vec4<f32>>;
 
+var<workgroup> tile: array<vec4<f32>, ${REFINE_TILE_DIM * REFINE_TILE_DIM}>;
+
 @compute @workgroup_size(${WORKGROUP_SIZE$1}, ${WORKGROUP_SIZE$1})
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+fn main(
+  @builtin(local_invocation_id) lid: vec3<u32>,
+  @builtin(workgroup_id) wgid: vec3<u32>
+) {
   let w = i32(params.width);
   let h = i32(params.height);
-  let x = i32(gid.x);
-  let y = i32(gid.y);
+
+  let localX = i32(lid.x);
+  let localY = i32(lid.y);
+  let wgOriginX = i32(wgid.x) * ${WORKGROUP_SIZE$1};
+  let wgOriginY = i32(wgid.y) * ${WORKGROUP_SIZE$1};
+  let tileDim = ${REFINE_TILE_DIM};
+  let tileCells = tileDim * tileDim;
+
+  // Grid-stride load over the full tileDim x tileDim footprint — flatten
+  // to 1D so WORKGROUP_SIZE*WORKGROUP_SIZE threads can cover a slightly
+  // larger (WORKGROUP_SIZE+4)^2 tile evenly regardless of its shape.
+  let flatLocal = localY * ${WORKGROUP_SIZE$1} + localX;
+  var loadIdx = flatLocal;
+  loop {
+    if (loadIdx >= tileCells) { break; }
+    let ty = loadIdx / tileDim;
+    let tx = loadIdx % tileDim;
+    let sx = wgOriginX + tx - 2;
+    let sy = wgOriginY + ty - 2;
+    tile[loadIdx] = inputBuf[clampIdx(sx, sy, w, h)];
+    loadIdx = loadIdx + ${WORKGROUP_SIZE$1 * WORKGROUP_SIZE$1};
+  }
+
+  workgroupBarrier();
+
+  let x = wgOriginX + localX;
+  let y = wgOriginY + localY;
   if (x >= w || y >= h) { return; }
 
   let idx = u32(y * w + x);
-  let current = inputBuf[idx];
+  let current = tile[(localY + 2) * tileDim + (localX + 2)];
   let currentT = current.xy;
 
   var sum = vec2<f32>(0.0);
@@ -2007,7 +2184,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   // 5x5 kernel (radius 2)
   for (var ky = -2; ky <= 2; ky = ky + 1) {
     for (var kx = -2; kx <= 2; kx = kx + 1) {
-      let neighbor = inputBuf[clampIdx(x + kx, y + ky, w, h)];
+      let neighbor = tile[(localY + 2 + ky) * tileDim + (localX + 2 + kx)];
       let neighborT = neighbor.xy;
       let neighborMag = neighbor.z;
 
@@ -2093,32 +2270,23 @@ class EdgeTangentFlowWebGPU {
      */
     static async initResources() {
         if (this.resources) {
-            console.debug('[EdgeTangentFlowWebGPU] initResources: cache HIT (no GPU work)');
             return this.resources;
         }
         if (this.resourcesPromise) {
-            console.debug('[EdgeTangentFlowWebGPU] initResources: awaiting in-flight init');
             return this.resourcesPromise;
         }
-        console.debug('[EdgeTangentFlowWebGPU] initResources: cache MISS — cold init starting');
         this.resourcesPromise = (async () => {
-            const initTimings = {};
-            const tInitStart = performance.now();
             if (!navigator.gpu) {
                 throw new Error('WebGPU not supported in this environment');
             }
-            const tAdapter = performance.now();
             const adapter = await navigator.gpu.requestAdapter();
-            initTimings.requestAdapter = performance.now() - tAdapter;
             if (!adapter) {
                 throw new Error('Failed to obtain a WebGPU adapter');
             }
             const hasTimestampQuery = adapter.features.has('timestamp-query');
-            const tDevice = performance.now();
             const device = await adapter.requestDevice({
                 requiredFeatures: hasTimestampQuery ? ['timestamp-query'] : [],
             });
-            initTimings.requestDevice = performance.now() - tDevice;
             device.lost.then((info) => {
                 // Invalidate the cache so the next compute() call re-initializes.
                 if (this.resources && this.resources.device === device) {
@@ -2127,7 +2295,6 @@ class EdgeTangentFlowWebGPU {
                 }
                 console.warn(`WebGPU device lost: ${info.message}`);
             });
-            const tPipelines = performance.now();
             const makePipeline = (code, entryPoint = 'main') => device.createComputePipeline({
                 layout: 'auto',
                 compute: {
@@ -2144,24 +2311,27 @@ class EdgeTangentFlowWebGPU {
                 layout: 'auto',
                 compute: { module: blurModule, entryPoint: 'blurV' },
             });
+            const blurTiledModule = device.createShaderModule({ code: GAUSSIAN_BLUR_TILED_SHADER });
+            const blurHTiledPipeline = device.createComputePipeline({
+                layout: 'auto',
+                compute: { module: blurTiledModule, entryPoint: 'blurHTiled' },
+            });
+            const blurVTiledPipeline = device.createComputePipeline({
+                layout: 'auto',
+                compute: { module: blurTiledModule, entryPoint: 'blurVTiled' },
+            });
             const resources = {
                 device,
                 gradientPipeline: makePipeline(GRADIENT_SHADER$1),
                 structureTensorPipeline: makePipeline(STRUCTURE_TENSOR_SHADER$1),
                 blurHPipeline,
                 blurVPipeline,
+                blurHTiledPipeline,
+                blurVTiledPipeline,
                 tangentExtractPipeline: makePipeline(TANGENT_EXTRACT_SHADER$1),
                 tangentRefinePipeline: makePipeline(TANGENT_REFINE_SHADER$1),
                 hasTimestampQuery,
             };
-            // NOTE: createComputePipeline() with layout:'auto' returns synchronously,
-            // but WGSL compilation/validation may be deferred by the driver until
-            // first dispatch — so this number can understate true compile cost.
-            // If submitAndGpuWait's first-call time is much higher than later
-            // calls, that deferred cost is showing up there, not here.
-            initTimings.pipelineCreateSync = performance.now() - tPipelines;
-            initTimings.total = performance.now() - tInitStart;
-            console.debug('[EdgeTangentFlowWebGPU] cold init timings (ms):', initTimings);
             this.resources = resources;
             return resources;
         })();
@@ -2178,13 +2348,9 @@ class EdgeTangentFlowWebGPU {
         const cfg = { ...DEFAULT_ETF_CONFIG, ...config };
         const { width, height } = input;
         const pixelCount = width * height;
-        const timings = {};
-        const tStart = performance.now();
         const res = await this.initResources();
         const { device } = res;
-        timings.resourceInit = performance.now() - tStart;
         // ---- Buffers ----
-        const tBuffers = performance.now();
         const inputBuf = createBufferWithData(device, input.data, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
         const gradientBuf = createEmptyVec4Buffer(device, pixelCount);
         const tensorBuf = createEmptyVec4Buffer(device, pixelCount);
@@ -2197,7 +2363,6 @@ class EdgeTangentFlowWebGPU {
         const kernelSize = radius * 2 + 1;
         const kernel = generateGaussianKernel$1(smoothSigma, kernelSize);
         const kernelBuf = createBufferWithData(device, kernel, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-        timings.bufferSetup = performance.now() - tBuffers;
         const dispatchX = Math.ceil(width / WORKGROUP_SIZE$1);
         const dispatchY = Math.ceil(height / WORKGROUP_SIZE$1);
         // ---- Optional per-pass GPU timing (requires 'timestamp-query') ----
@@ -2221,7 +2386,6 @@ class EdgeTangentFlowWebGPU {
             passIdx++;
             return writes;
         };
-        const tEncode = performance.now();
         const encoder = device.createCommandEncoder();
         // Step 1: Compute gradients
         {
@@ -2260,8 +2424,16 @@ class EdgeTangentFlowWebGPU {
         // Step 3: Gaussian blur the structure tensor (horizontal then vertical)
         {
             const params = createParamsBuffer(device, { width, height, radius, kernelSize });
+            // The tiled pipelines' workgroup-shared arrays are sized for
+            // TILE_RADIUS_CAP; above that we fall back to the original untiled
+            // pipelines rather than growing shared-memory usage further (see
+            // TILE_RADIUS_CAP's comment for the byte-budget math).
+            const useTiledBlur = radius <= TILE_RADIUS_CAP;
+            const blurHPipe = useTiledBlur ? res.blurHTiledPipeline : res.blurHPipeline;
+            const blurVPipe = useTiledBlur ? res.blurVTiledPipeline : res.blurVPipeline;
+            const tiledSuffix = useTiledBlur ? ' (tiled)' : ' (untiled, radius > cap)';
             const bindGroupH = device.createBindGroup({
-                layout: res.blurHPipeline.getBindGroupLayout(0),
+                layout: blurHPipe.getBindGroupLayout(0),
                 entries: [
                     { binding: 0, resource: { buffer: params } },
                     { binding: 1, resource: { buffer: tensorBuf } },
@@ -2269,13 +2441,13 @@ class EdgeTangentFlowWebGPU {
                     { binding: 3, resource: { buffer: kernelBuf } },
                 ],
             });
-            const passH = encoder.beginComputePass({ timestampWrites: nextTimestampWrites('blurH') });
-            passH.setPipeline(res.blurHPipeline);
+            const passH = encoder.beginComputePass({ timestampWrites: nextTimestampWrites(`blurH${tiledSuffix}`) });
+            passH.setPipeline(blurHPipe);
             passH.setBindGroup(0, bindGroupH);
             passH.dispatchWorkgroups(dispatchX, dispatchY);
             passH.end();
             const bindGroupV = device.createBindGroup({
-                layout: res.blurVPipeline.getBindGroupLayout(0),
+                layout: blurVPipe.getBindGroupLayout(0),
                 entries: [
                     { binding: 0, resource: { buffer: params } },
                     { binding: 1, resource: { buffer: blurTempBuf } },
@@ -2283,8 +2455,8 @@ class EdgeTangentFlowWebGPU {
                     { binding: 3, resource: { buffer: kernelBuf } },
                 ],
             });
-            const passV = encoder.beginComputePass({ timestampWrites: nextTimestampWrites('blurV') });
-            passV.setPipeline(res.blurVPipeline);
+            const passV = encoder.beginComputePass({ timestampWrites: nextTimestampWrites(`blurV${tiledSuffix}`) });
+            passV.setPipeline(blurVPipe);
             passV.setBindGroup(0, bindGroupV);
             passV.dispatchWorkgroups(dispatchX, dispatchY);
             passV.end();
@@ -2326,7 +2498,6 @@ class EdgeTangentFlowWebGPU {
             pass.end();
             [readBuf, writeBuf] = [writeBuf, readBuf];
         }
-        timings.encode = performance.now() - tEncode;
         // ---- Phase A: submit compute passes only, wait for GPU completion ----
         // (No buffer copies here yet — resolveQuerySet writes GPU-side only,
         // it doesn't require a CPU-readable buffer.)
@@ -2338,18 +2509,9 @@ class EdgeTangentFlowWebGPU {
             });
             encoder.resolveQuerySet(querySet, 0, numPasses * 2, queryResolveBuf, 0);
         }
-        const tFinishSubmit = performance.now();
         device.queue.submit([encoder.finish()]);
-        timings.encoderFinishAndSubmitCall = performance.now() - tFinishSubmit;
-        // onSubmittedWorkDone() resolves once the GPU has finished executing
-        // everything in this submit — pure compute-pass execution time,
-        // including any first-use pipeline compile/link stall the driver
-        // deferred from createComputePipeline(). No copy or map involved yet.
-        const tComputeWait = performance.now();
         await device.queue.onSubmittedWorkDone();
-        timings.computeGpuWait = performance.now() - tComputeWait;
         // ---- Phase B: copy results into mappable buffers, then map+read ----
-        const tCopyEncode = performance.now();
         const byteSize = pixelCount * 4 * 4; // vec4<f32>
         const stagingBuf = device.createBuffer({
             size: byteSize,
@@ -2366,40 +2528,29 @@ class EdgeTangentFlowWebGPU {
             copyEncoder.copyBufferToBuffer(queryResolveBuf, 0, queryReadBuf, 0, queryResolveBuf.size);
         }
         device.queue.submit([copyEncoder.finish()]);
-        timings.copyEncodeAndSubmit = performance.now() - tCopyEncode;
-        const tMapWait = performance.now();
         const mapPromises = [stagingBuf.mapAsync(GPUMapMode.READ)];
         if (queryReadBuf)
             mapPromises.push(queryReadBuf.mapAsync(GPUMapMode.READ));
         await Promise.all(mapPromises);
-        timings.mapAsyncWait = performance.now() - tMapWait;
-        // Everything from "done encoding compute passes" to "results mapped":
-        timings.submitAndGpuWait =
-            timings.encoderFinishAndSubmitCall + timings.computeGpuWait + timings.copyEncodeAndSubmit + timings.mapAsyncWait;
         if (queryReadBuf) {
             const raw = new BigUint64Array(queryReadBuf.getMappedRange().slice(0));
             queryReadBuf.unmap();
             queryReadBuf.destroy();
             queryResolveBuf.destroy();
             querySet.destroy();
-            const gpuPassTimings = {};
             for (let i = 0; i < passLabels.length; i++) {
-                const beginNs = raw[i * 2];
-                const endNs = raw[i * 2 + 1];
+                raw[i * 2];
+                raw[i * 2 + 1];
                 // Aggregate refine[i] entries under one key so a large `iterations`
                 // count doesn't spam the log with per-iteration lines.
-                const label = passLabels[i].startsWith('refine[') ? 'refine (sum)' : passLabels[i];
-                const ms = Number(endNs - beginNs) / 1e6;
-                gpuPassTimings[label] = (gpuPassTimings[label] ?? 0) + ms;
+                passLabels[i].startsWith('refine[') ? 'refine (sum)' : passLabels[i];
             }
-            console.debug('[EdgeTangentFlowWebGPU] per-pass GPU timings (ms):', gpuPassTimings);
         }
         else if (res.hasTimestampQuery === false) {
             // Only warn once per session-ish; cheap enough to just always note it.
             console.debug('[EdgeTangentFlowWebGPU] timestamp-query unsupported on this device — ' +
                 'submitAndGpuWait is a single coarse number, not broken down by pass.');
         }
-        const tUnpack = performance.now();
         const mapped = new Float32Array(stagingBuf.getMappedRange().slice(0));
         stagingBuf.unmap();
         // Flat stride-2 copy — no per-pixel object allocation. `mapped` is
@@ -2409,9 +2560,7 @@ class EdgeTangentFlowWebGPU {
             tangents[i * 2] = mapped[i * 4];
             tangents[i * 2 + 1] = mapped[i * 4 + 1];
         }
-        timings.cpuUnpack = performance.now() - tUnpack;
         // Cleanup temporary (per-call) resources — pipelines/device are cached.
-        const tCleanup = performance.now();
         inputBuf.destroy();
         gradientBuf.destroy();
         tensorBuf.destroy();
@@ -2421,9 +2570,6 @@ class EdgeTangentFlowWebGPU {
         tangentBuf2.destroy();
         kernelBuf.destroy();
         stagingBuf.destroy();
-        timings.cleanup = performance.now() - tCleanup;
-        timings.total = performance.now() - tStart;
-        console.debug('[EdgeTangentFlowWebGPU] timings (ms):', timings);
         return new EdgeTangentFlowWebGPU(tangents, width, height);
     }
     /**
@@ -2446,16 +2592,10 @@ class EdgeTangentFlowWebGPU {
      * Cleanup WebGPU resources (call when done with all ETF computations)
      */
     static dispose() {
-        const t0 = performance.now();
         if (this.resources) {
             this.resources.device.destroy();
             this.resources = null;
             this.resourcesPromise = null;
-            console.debug(`[EdgeTangentFlowWebGPU] dispose(): device destroyed in ${(performance.now() - t0).toFixed(2)}ms — ` +
-                'cache is now EMPTY; next compute() call will pay full cold-init cost.');
-        }
-        else {
-            console.debug(`[EdgeTangentFlowWebGPU] dispose(): no-op, resources already empty (${(performance.now() - t0).toFixed(2)}ms)`);
         }
     }
 }
