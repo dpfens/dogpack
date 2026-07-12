@@ -62,7 +62,8 @@ class FDoG {
     async process(input, overrides = {}) {
         const params = { ...this.config, ...overrides };
         // Step 1: Compute Edge Tangent Flow
-        const etf = await index_js_1.EdgeTangentFlow.compute(input, {
+        const etfComputer = new index_js_1.EdgeTangentFlowComputer();
+        const etf = await etfComputer.compute(input, {
             iterations: types_js_1.DEFAULT_ETF_CONFIG.iterations,
             kernelSize: Math.ceil(params.sigmaC * 2.45) * 2 + 1,
         }, params.sigmaC);
@@ -81,7 +82,7 @@ class FDoG {
             result = await flowBlur.blur(result, params.sigmaA);
         }
         flowBlur.dispose();
-        index_js_1.EdgeTangentFlow.dispose();
+        etfComputer.dispose();
         return result;
     }
     /**
@@ -90,7 +91,8 @@ class FDoG {
     async processDetailed(input, overrides = {}) {
         const params = { ...this.config, ...overrides };
         // Compute ETF
-        const etf = await index_js_1.EdgeTangentFlow.compute(input, {
+        const etfComputer = new index_js_1.EdgeTangentFlowComputer();
+        const etf = await etfComputer.compute(input, {
             iterations: types_js_1.DEFAULT_ETF_CONFIG.iterations,
             kernelSize: Math.ceil(params.sigmaC * 2.45) * 2 + 1,
         }, params.sigmaC);
@@ -117,7 +119,7 @@ class FDoG {
             result = await aaBlur.blur(smoothed, params.sigmaA);
             aaBlur.dispose();
         }
-        index_js_1.EdgeTangentFlow.dispose();
+        etfComputer.dispose();
         return { result, etf, sharpened, thresholded, smoothed };
     }
     /**
@@ -161,11 +163,9 @@ class FDoG {
         if (sigma <= 0) {
             return { data: new Float32Array(input.data), width: input.width, height: input.height };
         }
-        const flowCls = flow_guided_js_1.FlowGuidedBlur;
-        const aaBlur = new flowCls(etf);
+        const aaBlur = new flow_guided_js_1.FlowGuidedBlur(etf);
         const result = aaBlur.blur(input, sigma);
         aaBlur.dispose();
-        index_js_1.EdgeTangentFlow.dispose();
         return result;
     }
     /**

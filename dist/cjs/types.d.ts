@@ -142,4 +142,96 @@ export interface ETFConfig {
  * Default ETF configuration values
  */
 export declare const DEFAULT_ETF_CONFIG: ETFConfig;
+/**
+ * Structure tensor components at a pixel
+ * The structure tensor is: | E  F |
+ *                          | F  G |
+ * where E = Ix², F = Ix*Iy, G = Iy²
+ */
+export interface StructureTensor {
+    e: Float32Array;
+    f: Float32Array;
+    g: Float32Array;
+}
+/**
+ * Raw x/y gradient field for a single scalar channel.
+ */
+export interface Gradients {
+    x: Float32Array;
+    y: Float32Array;
+}
+/**
+ * A structure tensor plus its derived scalar magnitude field (the
+ * tensor's trace: sqrt(E + G)). Both the tensor components and the
+ * magnitude are additive across channels (Di Zenzo summation), which is
+ * what allows multi-channel ETF to reuse the same downstream pipeline
+ * (smoothing -> eigendecomposition -> refinement) as single-channel ETF.
+ */
+export interface ChannelTensor {
+    tensor: StructureTensor;
+    magnitude: Float32Array;
+}
+/**
+ * Common interface implemented by every Edge Tangent Flow backend
+ * (CPU, WebGL, WebGPU, ...).
+ *
+ * Multi-channel computation follows Di Zenzo's multichannel structure
+ * tensor approach ("A note on the gradient of a multi-image", CVGIP 33,
+ * 1986): implementations must combine per-channel structure tensors
+ * (not per-channel tangents) before eigendecomposition, so that a single
+ * eigendecomposition is performed on the combined tensor.
+ *
+ * Implementations have no color-space knowledge: a ChannelImage is just
+ * an arbitrary scalar field. Any color-space conversion or splitting
+ * (e.g. RGB -> Lab, or de-interleaving RGB into R/G/B channels) is the
+ * caller's responsibility and happens before compute()/computeMultiChannel()
+ * is called.
+ */
+export interface ETFComputer {
+    /**
+     * Compute an Edge Tangent Flow from a single scalar channel.
+     *
+     * @param input Scalar channel image (values in 0-1)
+     * @param config ETF configuration
+     * @param sigmaC Structure tensor smoothing sigma (optional override)
+     */
+    compute(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
+    /**
+     * Compute an Edge Tangent Flow jointly from several co-registered
+     * scalar channels (e.g. R/G/B or L/a/b), using Di Zenzo's multichannel
+     * structure tensor. All channels must share the same width/height.
+     *
+     * @param inputs Channel images, all with the same dimensions
+     * @param config ETF configuration
+     * @param sigmaC Structure tensor smoothing sigma (optional override)
+     */
+    computeMultiChannel(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
+    /**
+     * Release any resources (e.g. GPU buffers/textures) held by this
+     * computer. CPU implementations may implement this as a no-op.
+     */
+    dispose(): void;
+}
+/**
+ * Static interface for ETFComputer classes, mirroring BlurStrategyClass.
+ * Used to check runtime availability (e.g. WebGPU support) before
+ * instantiation.
+ */
+export interface ETFComputerClass {
+    /**
+     * Check if this ETF computer backend is supported in the current
+     * environment.
+     * @returns true if the backend can be used, false otherwise
+     */
+    isSupported(): boolean;
+    /**
+     * Get a human-readable reason if the backend is not supported.
+     * May be asynchronous: cheap synchronous API-surface checks (e.g. does
+     * `navigator.gpu` exist) can't confirm a GPU adapter is actually
+     * obtainable — that requires an async request. isSupported() above
+     * stays synchronous for a fast pre-check; this is the deeper check.
+     * @returns undefined if supported, or a string explaining why it's not
+     */
+    getUnsupportedReason?(): string | undefined | Promise<string | undefined>;
+}
 //# sourceMappingURL=types.d.ts.map

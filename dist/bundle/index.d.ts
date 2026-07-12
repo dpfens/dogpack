@@ -141,6 +141,47 @@ interface ETFConfig {
  * Default ETF configuration values
  */
 declare const DEFAULT_ETF_CONFIG: ETFConfig;
+/**
+ * Common interface implemented by every Edge Tangent Flow backend
+ * (CPU, WebGL, WebGPU, ...).
+ *
+ * Multi-channel computation follows Di Zenzo's multichannel structure
+ * tensor approach ("A note on the gradient of a multi-image", CVGIP 33,
+ * 1986): implementations must combine per-channel structure tensors
+ * (not per-channel tangents) before eigendecomposition, so that a single
+ * eigendecomposition is performed on the combined tensor.
+ *
+ * Implementations have no color-space knowledge: a ChannelImage is just
+ * an arbitrary scalar field. Any color-space conversion or splitting
+ * (e.g. RGB -> Lab, or de-interleaving RGB into R/G/B channels) is the
+ * caller's responsibility and happens before compute()/computeMultiChannel()
+ * is called.
+ */
+interface ETFComputer {
+    /**
+     * Compute an Edge Tangent Flow from a single scalar channel.
+     *
+     * @param input Scalar channel image (values in 0-1)
+     * @param config ETF configuration
+     * @param sigmaC Structure tensor smoothing sigma (optional override)
+     */
+    compute(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
+    /**
+     * Compute an Edge Tangent Flow jointly from several co-registered
+     * scalar channels (e.g. R/G/B or L/a/b), using Di Zenzo's multichannel
+     * structure tensor. All channels must share the same width/height.
+     *
+     * @param inputs Channel images, all with the same dimensions
+     * @param config ETF configuration
+     * @param sigmaC Structure tensor smoothing sigma (optional override)
+     */
+    computeMultiChannel(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
+    /**
+     * Release any resources (e.g. GPU buffers/textures) held by this
+     * computer. CPU implementations may implement this as a no-op.
+     */
+    dispose(): void;
+}
 
 interface ThresholdStrategy {
     threshold(sharpened: ChannelImage, config: ThresholdConfig): ChannelImage;
@@ -566,52 +607,6 @@ declare class XDoG implements DoGImplementation {
  */
 declare function xdog(input: ChannelImage, config?: Partial<XDoGConfig>): Promise<ChannelImage>;
 
-type ETFImpl = 'cpu' | 'webgl' | 'webgpu' | 'auto';
-/**
- * Unified Edge Tangent Flow that automatically selects the best implementation
- *
- * Preference order in 'auto' mode: WebGPU > WebGL > CPU. WebGPU compute is
- * inherently async (device acquisition + buffer readback both require
- * awaiting), so compute() is now async across the board — the WebGL and
- * CPU paths are still synchronous under the hood, but are wrapped so the
- * public API is consistent regardless of which implementation gets picked.
- */
-declare class EdgeTangentFlow implements FlowField {
-    private impl;
-    readonly width: number;
-    readonly height: number;
-    private constructor();
-    getTangent(x: number, y: number): Vec2;
-    getTangentArray(): Float32Array;
-    visualize(): ChannelImage;
-    /**
-     * Check if WebGPU acceleration is available
-     *
-     * Note: this is the same cheap synchronous check EdgeTangentFlowWebGPU
-     * itself uses (navigator.gpu presence) — it doesn't guarantee an adapter
-     * can actually be obtained. Use EdgeTangentFlowWebGPU.getUnsupportedReason()
-     * for a more thorough (async) check if needed.
-     */
-    static isWebGPUSupported(): boolean;
-    /**
-     * Check if WebGL acceleration is available
-     */
-    static isWebGLSupported(): boolean;
-    /**
-     * Compute ETF using the best available implementation
-     *
-     * @param input Grayscale image
-     * @param config ETF configuration
-     * @param sigmaC Structure tensor smoothing sigma
-     * @param forceImpl Force a specific implementation ('cpu' | 'webgl' | 'webgpu' | 'auto')
-     */
-    static compute(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number, forceImpl?: ETFImpl): Promise<EdgeTangentFlow>;
-    /**
-     * Cleanup WebGPU and WebGL resources
-     */
-    static dispose(): void;
-}
-
 /**
  * High-level FDoG implementation
  *
@@ -661,7 +656,7 @@ declare class FDoG implements DoGImplementation {
      */
     processDetailed(input: ChannelImage, overrides?: Partial<FDoGConfig>): Promise<{
         result: ChannelImage;
-        etf: EdgeTangentFlow;
+        etf: FlowField;
         sharpened: ChannelImage;
         thresholded: ChannelImage;
         smoothed: ChannelImage;
@@ -676,11 +671,11 @@ declare class FDoG implements DoGImplementation {
      * Useful when processing multiple frames of video where the ETF
      * can be computed once and reused, or interpolated between keyframes.
      */
-    processWithETF(input: ChannelImage, etf: EdgeTangentFlow, overrides?: Partial<FDoGConfig>): Promise<ChannelImage>;
+    processWithETF(input: ChannelImage, etf: FlowField, overrides?: Partial<FDoGConfig>): Promise<ChannelImage>;
     /**
      * Apply only the anti-aliasing pass to an already-processed image
      */
-    applyAntiAliasing(input: ChannelImage, etf: EdgeTangentFlow, sigmaA?: number): Promise<ChannelImage>;
+    applyAntiAliasing(input: ChannelImage, etf: FlowField, sigmaA?: number): Promise<ChannelImage>;
     /**
      * Get current configuration
      */
@@ -1314,6 +1309,55 @@ declare namespace index$3 {
   export type { index$3_FlowGuidedBlurConfig as FlowGuidedBlurConfig, index$3_IsotropicBlurConfig as IsotropicBlurConfig };
 }
 
+type ETFImpl = 'cpu' | 'webgl' | 'webgpu' | 'auto';
+/**
+ * Edge Tangent Flow computer that automatically selects the best available
+ * backend implementation.
+ *
+ * Preference order in 'auto' mode: WebGPU > WebGL > CPU. Backend selection
+ * is stateful and happens at most once per instance: the first call to
+ * compute()/computeMultiChannel() probes backends (honoring `forceImpl`,
+ * or falling back WebGPU -> WebGL -> CPU) and caches whichever one
+ * actually works; every later call on this instance reuses that same
+ * backend directly. This avoids re-attempting WebGPU/WebGL acquisition on
+ * every call, and means dispose() has a single, well-defined backend
+ * instance to release GPU resources from.
+ */
+declare class EdgeTangentFlowComputer implements ETFComputer {
+    private readonly forceImpl;
+    private computer;
+    constructor(forceImpl?: ETFImpl);
+    /**
+     * Check if WebGPU acceleration is available.
+     *
+     * Note: this is the same cheap synchronous check WebGpuEdgeTangentFlowComputer
+     * itself uses (navigator.gpu presence) — it doesn't guarantee an adapter
+     * can actually be obtained. Use WebGpuEdgeTangentFlowComputer.getUnsupportedReason()
+     * for a more thorough (async) check if needed.
+     */
+    static isWebGPUSupported(): boolean;
+    /**
+     * Check if WebGL acceleration is available.
+     */
+    static isWebGLSupported(): boolean;
+    compute(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
+    computeMultiChannel(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
+    /**
+     * Release resources held by whichever backend this instance resolved to.
+     * No-op if compute()/computeMultiChannel() was never called, since
+     * nothing was ever instantiated.
+     */
+    dispose(): void;
+    /**
+     * Run `op` against the resolved backend, resolving (and caching) it on
+     * first use. `op` is what actually drives selection in 'auto' mode: a
+     * backend only "wins" once it has successfully produced a result, not
+     * merely passed isSupported(), since WebGPU/WebGL can pass that cheap
+     * check and still fail at adapter/device/shader-compile time.
+     */
+    private run;
+}
+
 /**
  * Local variance-based texture detection preprocessor for XDoG/FDoG edge detection.
  *
@@ -1927,7 +1971,7 @@ interface DoGResult {
     /** The sharpened image before thresholding (if available) */
     sharpened?: ChannelImage;
     /** Edge tangent flow (only from FDoG) */
-    etf?: EdgeTangentFlow;
+    etf?: FlowField;
     /** The original grayscale input */
     originalGray?: ChannelImage;
     /** The original color input (if provided) */
@@ -3067,5 +3111,5 @@ declare namespace index {
   export type { index_AntiAliasingConfig as AntiAliasingConfig, index_BlendContext as BlendContext, index_BlendFunction as BlendFunction, index_BuiltinBlendMode as BuiltinBlendMode, index_Color as Color, index_ColorRetentionConfig as ColorRetentionConfig, index_ColorTransformFn as ColorTransformFn, index_DoGResult as DoGResult, index_ExtensionStrategy as ExtensionStrategy, index_HatchTexture as HatchTexture, index_HatchingConfig as HatchingConfig, index_MaskTransformFn as MaskTransformFn, index_MultiScaleConfig as MultiScaleConfig, index_MultiScaleLayer as MultiScaleLayer, index_NaturalMediaConfig as NaturalMediaConfig, index_NaturalMediaStyle as NaturalMediaStyle, index_PostProcessFn as PostProcessFn };
 }
 
-export { DEFAULT_ETF_CONFIG, DoGProcessor, EdgeTangentFlow, ThresholdModes, applyCustomThreshold, index$3 as blur, index$4 as dog, index as extensions, index$2 as preprocess, threshold, index$1 as utilities };
+export { DEFAULT_ETF_CONFIG, DoGProcessor, EdgeTangentFlowComputer, ThresholdModes, applyCustomThreshold, index$3 as blur, index$4 as dog, index as extensions, index$2 as preprocess, threshold, index$1 as utilities };
 export type { ADoGConfig, ADoGProcessingResult, ADogConfigParamType, AntiAliasingConfig, BackendOptions, BilateralFilterConfig, BlendFunction, BlurStrategy, BlurStrategyClass, ChannelImage, ColorRetentionConfig, ColorTransformFn, DoGConfig, DoGImplementation, DoGResult, DogConfigParamType, ETFConfig, ExtensionStrategy, FDoGConfig, FDogConfigParamType, FlowField, FlowGuidedBlurConfig, HDoGConfig, HDoGProcessingResult, HDogConfigParamType, HatchTexture, HatchingConfig, IsotropicBlurConfig, KuwaharaFilterConfig, LocalVarianceConfig, MaskTransformFn, MedianFilterConfig, MultiScaleConfig, MultiScaleLayer, NaturalMediaConfig, NaturalMediaStyle, ParamRange, PostProcessFn, Preprocessor, RGBImage$1 as RGBImage, ThresholdConfig, ThresholdStrategy, Vec2, XDoGConfig };

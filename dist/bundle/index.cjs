@@ -138,7 +138,7 @@ function perpendicular(v) {
  * @param size Kernel size (should be odd)
  * @returns Normalized Gaussian kernel
  */
-function generateGaussianKernel$2(sigma, size) {
+function generateGaussianKernel$1(sigma, size) {
     const kernel = new Float32Array(size);
     const center = Math.floor(size / 2);
     const sigma2 = 2 * sigma * sigma;
@@ -289,7 +289,7 @@ var index$4 = /*#__PURE__*/Object.freeze({
     createChannelImage: createChannelImage,
     dotVec2: dotVec2,
     gaussianSample: gaussianSample,
-    generateGaussianKernel: generateGaussianKernel$2,
+    generateGaussianKernel: generateGaussianKernel$1,
     getIndex: getIndex,
     getPixel: getPixel,
     getPixelBilinear: getPixelBilinear,
@@ -1090,7 +1090,7 @@ class CPUIsotropicBlur extends BaseCPUBlur {
         }
         // Compute kernel size (odd number)
         const kernelSize = computeKernelSize(sigma, this.config.kernelSizeMultiplier);
-        const kernel = generateGaussianKernel$2(sigma, kernelSize);
+        const kernel = generateGaussianKernel$1(sigma, kernelSize);
         const halfKernel = Math.floor(kernelSize / 2);
         // Separable convolution: horizontal pass
         const temp = createChannelImage(input.width, input.height);
@@ -1287,7 +1287,7 @@ class WebGLIsotropicBlur extends BaseWebGLBlur {
         const { gl } = resources;
         const { width, height } = input;
         const kernelSize = Math.min(this.config.maxKernelSize, Math.max(3, Math.floor(sigma * this.config.kernelSizeMultiplier) | 1));
-        const kernel = generateGaussianKernel$2(sigma, kernelSize);
+        const kernel = generateGaussianKernel$1(sigma, kernelSize);
         // Create or reuse textures
         if (this.currentWidth !== width || this.currentHeight !== height) {
             this.textures.forEach(t => gl.deleteTexture(t));
@@ -1586,7 +1586,7 @@ class WebGPUIsotropicBlur extends BaseWebGPUBlur {
         const pixelCount = width * height;
         // Compute kernel
         const kernelSize = Math.min(this.config.maxKernelSize, Math.max(3, Math.floor(sigma * this.config.kernelSizeMultiplier) | 1));
-        const kernel = generateGaussianKernel$2(sigma, kernelSize);
+        const kernel = generateGaussianKernel$1(sigma, kernelSize);
         // Ensure buffers
         this.ensureBuffers(device, pixelCount, kernelSize);
         // Upload data
@@ -1797,6 +1797,149 @@ async function xdog(input, config = {}) {
 }
 
 /**
+ * Shared FlowField result type for Edge Tangent Flow backends.
+ *
+ * Every ETFComputer backend (CPU, WebGPU, WebGL, ...) ends up with the
+ * same thing: a per-pixel unit tangent vector field plus width/height.
+ * The only thing that differs between backends is how that field arrives
+ * — the CPU backend naturally produces an array of Vec2 objects (the
+ * eigen-math is inherently per-pixel), while GPU backends read back a
+ * flat Float32Array from a storage buffer and would rather not allocate
+ * a pixel-count of JS objects while doing it. TangentFlowField accepts
+ * either via its two factory functions and stores tangents as a flat
+ * stride-2 Float32Array either way, so getTangent/getTangentArray/
+ * visualize/visualizeColor are implemented exactly once.
+ */
+class TangentFlowField {
+    tangents;
+    width;
+    height;
+    // Flat, stride-2 (x, y) buffer — avoids allocating pixelCount JS
+    // objects regardless of which backend produced the data.
+    constructor(tangents, width, height) {
+        this.tangents = tangents;
+        this.width = width;
+        this.height = height;
+    }
+    /**
+     * Construct from a flat stride-2 Float32Array, e.g. a GPU buffer
+     * readback. Takes ownership of the array — callers should not mutate
+     * it afterward.
+     */
+    static fromFloat32Array(tangents, width, height) {
+        return new TangentFlowField(tangents, width, height);
+    }
+    /**
+     * Construct from a per-pixel Vec2 array, e.g. the output of a CPU
+     * eigendecomposition pipeline. Copies into a flat stride-2 layout.
+     */
+    static fromVec2Array(tangents, width, height) {
+        const flat = new Float32Array(tangents.length * 2);
+        for (let i = 0; i < tangents.length; i++) {
+            flat[i * 2] = tangents[i].x;
+            flat[i * 2 + 1] = tangents[i].y;
+        }
+        return new TangentFlowField(flat, width, height);
+    }
+    getTangent(x, y) {
+        const clampedX = Math.max(0, Math.min(this.width - 1, Math.round(x)));
+        const clampedY = Math.max(0, Math.min(this.height - 1, Math.round(y)));
+        const idx = (clampedY * this.width + clampedX) * 2;
+        return { x: this.tangents[idx], y: this.tangents[idx + 1] };
+    }
+    /**
+     * Get all tangents as a flat array (for GPU upload). Returns a copy so
+     * callers can't mutate internal state out from under us.
+     */
+    getTangentArray() {
+        return this.tangents.slice();
+    }
+    /**
+     * Visualize the flow field as a grayscale image.
+     * Encodes direction as intensity (useful for debugging).
+     */
+    visualize() {
+        const output = createChannelImage(this.width, this.height);
+        for (let i = 0; i < this.width * this.height; i++) {
+            const tx = this.tangents[i * 2];
+            const ty = this.tangents[i * 2 + 1];
+            const angle = Math.atan2(ty, tx);
+            output.data[i] = (angle + Math.PI) / (2 * Math.PI);
+        }
+        return output;
+    }
+    /**
+     * Visualize as a color image (HSV with direction as hue).
+     */
+    visualizeColor() {
+        const imageData = new ImageData(this.width, this.height);
+        for (let i = 0; i < this.width * this.height; i++) {
+            const tx = this.tangents[i * 2];
+            const ty = this.tangents[i * 2 + 1];
+            // Direction as hue
+            const angle = Math.atan2(ty, tx);
+            const hue = (angle + Math.PI) / (2 * Math.PI);
+            // Magnitude as saturation/value (always 1 for normalized vectors)
+            const [r, g, b] = hsvToRgb$1(hue, 1, 1);
+            const o = i * 4;
+            imageData.data[o] = r;
+            imageData.data[o + 1] = g;
+            imageData.data[o + 2] = b;
+            imageData.data[o + 3] = 255;
+        }
+        return imageData;
+    }
+}
+/**
+ * Convert HSV to RGB. Only used by visualizeColor() above.
+ */
+function hsvToRgb$1(h, s, v) {
+    const i = Math.floor(h * 6);
+    const f = h * 6 - i;
+    const p = v * (1 - s);
+    const q = v * (1 - f * s);
+    const t = v * (1 - (1 - f) * s);
+    let r, g, b;
+    switch (i % 6) {
+        case 0:
+            r = v;
+            g = t;
+            b = p;
+            break;
+        case 1:
+            r = q;
+            g = v;
+            b = p;
+            break;
+        case 2:
+            r = p;
+            g = v;
+            b = t;
+            break;
+        case 3:
+            r = p;
+            g = q;
+            b = v;
+            break;
+        case 4:
+            r = t;
+            g = p;
+            b = v;
+            break;
+        case 5:
+            r = v;
+            g = p;
+            b = q;
+            break;
+        default:
+            r = 0;
+            g = 0;
+            b = 0;
+    }
+    return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+}
+
+/**
  * WebGPU-accelerated Edge Tangent Flow computation
  *
  * Functional port of the WebGL2 implementation (webgl.ts) onto WebGPU
@@ -1811,6 +1954,21 @@ async function xdog(input, config = {}) {
  * work around GLSL's lack of dynamically-sized arrays. Storage buffers have
  * no such limit here, so the blur radius is only bounded by sanity/perf
  * limits, not by shader syntax — see MAX_BLUR_RADIUS below.
+ *
+ * Multi-channel support follows Di Zenzo's approach ("A note on the
+ * gradient of a multi-image", CVGIP 33, 1986), matching the CPU backend:
+ * per-channel structure tensors are summed (not the resulting tangents),
+ * and a single eigendecomposition is performed on the combined tensor.
+ * On the GPU this means: for each input channel, run the gradient +
+ * structure-tensor passes and *accumulate* (read-modify-write add) into
+ * one shared tensor buffer, rather than overwriting it — see
+ * STRUCTURE_TENSOR_ACCUMULATE_SHADER. Everything from the Gaussian blur
+ * pass onward is unchanged regardless of channel count, so compute() is
+ * implemented as computeMultiChannel() called with a single-element array.
+ *
+ * This module has no knowledge of color spaces — it only ever sees
+ * ChannelImage scalar fields. RGB/Lab/etc. splitting and conversion is
+ * the caller's responsibility (see utils/color.ts).
  */
 // NOTE: isWebGPUComputeSupported() isn't assumed to exist in utils/index.js
 // yet (only isWebGLComputeSupported is referenced in webgl.ts), so a local
@@ -1881,16 +2039,30 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
   let gx = -p00 + p20 - 2.0 * p01 + 2.0 * p21 - p02 + p22;
   let gy = -p00 - 2.0 * p10 - p20 + p02 + 2.0 * p12 + p22;
-  let mag = length(vec2<f32>(gx, gy));
 
-  // R=gx, G=gy, B=magnitude
-  outputBuf[u32(y * w + x)] = vec4<f32>(gx, gy, mag, 1.0);
+  // R=gx, G=gy — B/A unused downstream (magnitude is re-derived from the
+  // structure tensor's trace after channel accumulation, not carried
+  // through from here; see FINALIZE_MAGNITUDE_SHADER).
+  outputBuf[u32(y * w + x)] = vec4<f32>(gx, gy, 0.0, 1.0);
 }
 `;
-const STRUCTURE_TENSOR_SHADER$1 = COMMON_WGSL + `
+// Computes one channel's structure tensor and *accumulates* it into
+// accumBuf (Di Zenzo multichannel summation) instead of overwriting it.
+// accumBuf must be zero-initialized before the first channel's pass —
+// freshly-created WebGPU storage buffers are guaranteed zero, so a
+// single-channel call (this pass runs exactly once) produces the same
+// result as a plain assignment would.
+//
+// .w (magnitude) is deliberately left untouched here. Summing each
+// channel's individual sqrt(e+g) would be wrong, since sqrt is nonlinear:
+// sum(sqrt(e_k + g_k)) != sqrt(sum(e_k) + sum(g_k)). Only the latter is
+// the Di Zenzo-consistent combined gradient magnitude, so it's computed
+// once from the final accumulated trace in FINALIZE_MAGNITUDE_SHADER
+// instead.
+const STRUCTURE_TENSOR_ACCUMULATE_SHADER = COMMON_WGSL + `
 @group(0) @binding(0) var<uniform> params: Params;
 @group(0) @binding(1) var<storage, read> gradBuf: array<vec4<f32>>;
-@group(0) @binding(2) var<storage, read_write> outputBuf: array<vec4<f32>>;
+@group(0) @binding(2) var<storage, read_write> accumBuf: array<vec4<f32>>;
 
 @compute @workgroup_size(${WORKGROUP_SIZE$1}, ${WORKGROUP_SIZE$1})
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -1910,8 +2082,30 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let f = gx * gy;
   let g = gy * gy;
 
-  // R=E, G=F, B=G, A=magnitude (passed through)
-  outputBuf[idx] = vec4<f32>(e, f, g, grad.z);
+  accumBuf[idx] = accumBuf[idx] + vec4<f32>(e, f, g, 0.0);
+}
+`;
+// Runs once, after every channel's structure tensor has been accumulated.
+// Re-derives magnitude from the combined tensor's trace: sqrt(E + G).
+// For a single channel this equals sqrt(gx^2 + gy^2) == hypot(gx, gy), so
+// compute() (a single-channel computeMultiChannel() call) sees identical
+// behavior to before this pass existed.
+const FINALIZE_MAGNITUDE_SHADER = COMMON_WGSL + `
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var<storage, read_write> tensorBuf: array<vec4<f32>>;
+
+@compute @workgroup_size(${WORKGROUP_SIZE$1}, ${WORKGROUP_SIZE$1})
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let w = i32(params.width);
+  let h = i32(params.height);
+  let x = i32(gid.x);
+  let y = i32(gid.y);
+  if (x >= w || y >= h) { return; }
+
+  let idx = u32(y * w + x);
+  let t = tensorBuf[idx];
+  let mag = sqrt(max(t.x + t.z, 0.0));
+  tensorBuf[idx] = vec4<f32>(t.x, t.y, t.z, mag);
 }
 `;
 // Both blur directions live in the same module — WGSL allows multiple
@@ -2214,43 +2408,27 @@ fn main(
 }
 `;
 /**
- * WebGPU-accelerated ETF implementation
+ * WebGPU-accelerated ETFComputer. Device/pipeline resources are cached
+ * statically (shared across every instance) since acquiring a GPUDevice
+ * is expensive and none of that state depends on image size or channel
+ * count; per-call state (buffers) is still allocated fresh in
+ * computeInternal().
  */
-class EdgeTangentFlowWebGPU {
-    // Flat, stride-2 (x,y) buffer — avoids allocating pixelCount JS objects.
-    tangents;
-    width;
-    height;
+class WebGpuEdgeTangentFlowComputer {
     static resources = null;
     static resourcesPromise = null;
-    constructor(tangents, width, height) {
-        this.tangents = tangents;
-        this.width = width;
-        this.height = height;
-    }
-    getTangent(x, y) {
-        const clampedX = Math.max(0, Math.min(this.width - 1, Math.round(x)));
-        const clampedY = Math.max(0, Math.min(this.height - 1, Math.round(y)));
-        const idx = (clampedY * this.width + clampedX) * 2;
-        return { x: this.tangents[idx], y: this.tangents[idx + 1] };
-    }
-    getTangentArray() {
-        // Already stored in exactly this layout — just hand back a copy so
-        // callers can't mutate internal state out from under us.
-        return this.tangents.slice();
-    }
     /**
      * Cheap synchronous check — mirrors the shape of isWebGLComputeSupported().
      * This only confirms the API surface exists; it can't confirm an adapter
      * is actually obtainable (that requires the async requestAdapter() call
-     * made lazily inside initResources/compute).
+     * made lazily inside initResources()/computeInternal()).
      */
     static isSupported() {
-        return typeof navigator !== 'undefined' && !!navigator.gpu;
+        return isWebGPUComputeSupported();
     }
     /**
-     * Optional richer diagnostic, matching the BlurStrategyClass shape used
-     * elsewhere in this codebase (see types.ts).
+     * Optional richer diagnostic, matching the ETFComputerClass shape in
+     * types.ts. Async, since it actually attempts to obtain an adapter.
      */
     static async getUnsupportedReason() {
         if (typeof navigator === 'undefined' || !navigator.gpu) {
@@ -2290,7 +2468,7 @@ class EdgeTangentFlowWebGPU {
                 requiredFeatures: hasTimestampQuery ? ['timestamp-query'] : [],
             });
             device.lost.then((info) => {
-                // Invalidate the cache so the next compute() call re-initializes.
+                // Invalidate the cache so the next call re-initializes.
                 if (this.resources && this.resources.device === device) {
                     this.resources = null;
                     this.resourcesPromise = null;
@@ -2325,7 +2503,8 @@ class EdgeTangentFlowWebGPU {
             const resources = {
                 device,
                 gradientPipeline: makePipeline(GRADIENT_SHADER$1),
-                structureTensorPipeline: makePipeline(STRUCTURE_TENSOR_SHADER$1),
+                structureTensorAccumulatePipeline: makePipeline(STRUCTURE_TENSOR_ACCUMULATE_SHADER),
+                finalizeMagnitudePipeline: makePipeline(FINALIZE_MAGNITUDE_SHADER),
                 blurHPipeline,
                 blurVPipeline,
                 blurHTiledPipeline,
@@ -2340,38 +2519,90 @@ class EdgeTangentFlowWebGPU {
         return this.resourcesPromise;
     }
     /**
-     * Compute ETF using WebGPU compute shaders.
-     *
-     * Note this is async (unlike the WebGL version's synchronous compute()),
-     * since device acquisition and the final buffer readback (mapAsync) are
-     * both inherently asynchronous in WebGPU.
+     * Compute ETF from a single scalar channel using WebGPU compute shaders.
+     * Implemented as computeMultiChannel() with a single-element array — the
+     * per-channel accumulate pass degenerates to a plain assignment when
+     * there's only one channel (see STRUCTURE_TENSOR_ACCUMULATE_SHADER).
      */
-    static async compute(input, config = {}, sigmaC) {
+    async compute(input, config = {}, sigmaC) {
+        return this.computeInternal([input], config, sigmaC);
+    }
+    /**
+     * Compute ETF jointly from several co-registered scalar channels (e.g.
+     * R/G/B or L/a/b), using Di Zenzo's multichannel structure tensor. All
+     * channels must share the same width/height.
+     */
+    async computeMultiChannel(inputs, config = {}, sigmaC) {
+        if (inputs.length === 0) {
+            throw new Error('computeMultiChannel requires at least one channel');
+        }
+        const { width, height } = inputs[0];
+        for (const channel of inputs) {
+            if (channel.width !== width || channel.height !== height) {
+                throw new Error('All channels passed to computeMultiChannel must share the same dimensions');
+            }
+        }
+        return this.computeInternal(inputs, config, sigmaC);
+    }
+    /**
+     * Release the cached WebGPU device + pipelines. Safe to call even if no
+     * compute()/computeMultiChannel() call has happened yet. Since the
+     * underlying resources are cached statically (shared across instances —
+     * see the class doc comment), this releases them for every
+     * WebGpuEdgeTangentFlowComputer instance, not just this one; call it
+     * once you're done with all ETF computations for the session.
+     */
+    dispose() {
+        const ctor = WebGpuEdgeTangentFlowComputer;
+        if (ctor.resources) {
+            ctor.resources.device.destroy();
+            ctor.resources = null;
+            ctor.resourcesPromise = null;
+        }
+    }
+    /**
+     * Shared implementation behind compute() and computeMultiChannel().
+     * Runs the gradient + structure-tensor-accumulate passes once per input
+     * channel (Di Zenzo summation), then a single finalize/blur/extract/
+     * refine pipeline identical to the pre-multichannel implementation.
+     *
+     * Note this is async (unlike a hypothetical synchronous CPU-style
+     * compute()), since device acquisition and the final buffer readback
+     * (mapAsync) are both inherently asynchronous in WebGPU.
+     */
+    async computeInternal(inputs, config, sigmaC) {
         const cfg = { ...DEFAULT_ETF_CONFIG, ...config };
-        const { width, height } = input;
+        const { width, height } = inputs[0];
         const pixelCount = width * height;
-        const res = await this.initResources();
+        const res = await WebGpuEdgeTangentFlowComputer.initResources();
         const { device } = res;
         // ---- Buffers ----
-        const inputBuf = createBufferWithData(device, input.data, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-        const gradientBuf = createEmptyVec4Buffer(device, pixelCount);
-        const tensorBuf = createEmptyVec4Buffer(device, pixelCount);
+        // One accumulator, shared across all channels (Di Zenzo sum), plus one
+        // scratch gradient buffer reused sequentially per channel — safe
+        // because compute passes within a single command encoder execute in
+        // encoded order, so each channel's gradient pass fully completes
+        // before the next pass reads it, and before the next channel's
+        // gradient pass overwrites it.
+        const tensorAccumBuf = createEmptyVec4Buffer(device, pixelCount);
+        const gradientScratchBuf = createEmptyVec4Buffer(device, pixelCount);
         const blurTempBuf = createEmptyVec4Buffer(device, pixelCount);
         const blurOutputBuf = createEmptyVec4Buffer(device, pixelCount);
         const tangentBuf1 = createEmptyVec4Buffer(device, pixelCount);
         const tangentBuf2 = createEmptyVec4Buffer(device, pixelCount);
+        const channelInputBufs = inputs.map((channel) => createBufferWithData(device, channel.data, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST));
         const smoothSigma = sigmaC ?? cfg.kernelSize / 2.45;
         const radius = Math.min(MAX_BLUR_RADIUS, Math.max(1, Math.ceil(smoothSigma * 2.45)));
         const kernelSize = radius * 2 + 1;
-        const kernel = generateGaussianKernel$1(smoothSigma, kernelSize);
+        const kernel = generateGaussianKernel(smoothSigma, kernelSize);
         const kernelBuf = createBufferWithData(device, kernel, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
         const dispatchX = Math.ceil(width / WORKGROUP_SIZE$1);
         const dispatchY = Math.ceil(height / WORKGROUP_SIZE$1);
         // ---- Optional per-pass GPU timing (requires 'timestamp-query') ----
-        // 5 fixed passes (gradient, tensor, blurH, blurV, tangentExtract) plus
-        // one per refine iteration. Each pass writes a begin+end timestamp.
+        // Two passes per input channel (gradient, tensorAccumulate), plus one
+        // finalize pass, plus 4 fixed passes (blurH, blurV, tangentExtract),
+        // plus one per refine iteration.
         const passLabels = [];
-        const numPasses = 5 + cfg.iterations;
+        const numPasses = inputs.length * 2 + 1 + 3 + cfg.iterations;
         const querySet = res.hasTimestampQuery
             ? device.createQuerySet({ type: 'timestamp', count: numPasses * 2 })
             : null;
@@ -2389,41 +2620,61 @@ class EdgeTangentFlowWebGPU {
             return writes;
         };
         const encoder = device.createCommandEncoder();
-        // Step 1: Compute gradients
+        // Steps 1-2: per channel, compute gradients then accumulate the
+        // resulting structure tensor into tensorAccumBuf (Di Zenzo sum).
+        for (let k = 0; k < inputs.length; k++) {
+            const channelBuf = channelInputBufs[k];
+            {
+                const params = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
+                const bindGroup = device.createBindGroup({
+                    layout: res.gradientPipeline.getBindGroupLayout(0),
+                    entries: [
+                        { binding: 0, resource: { buffer: params } },
+                        { binding: 1, resource: { buffer: channelBuf } },
+                        { binding: 2, resource: { buffer: gradientScratchBuf } },
+                    ],
+                });
+                const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites(`gradient[${k}]`) });
+                pass.setPipeline(res.gradientPipeline);
+                pass.setBindGroup(0, bindGroup);
+                pass.dispatchWorkgroups(dispatchX, dispatchY);
+                pass.end();
+            }
+            {
+                const params = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
+                const bindGroup = device.createBindGroup({
+                    layout: res.structureTensorAccumulatePipeline.getBindGroupLayout(0),
+                    entries: [
+                        { binding: 0, resource: { buffer: params } },
+                        { binding: 1, resource: { buffer: gradientScratchBuf } },
+                        { binding: 2, resource: { buffer: tensorAccumBuf } },
+                    ],
+                });
+                const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites(`tensorAccumulate[${k}]`) });
+                pass.setPipeline(res.structureTensorAccumulatePipeline);
+                pass.setBindGroup(0, bindGroup);
+                pass.dispatchWorkgroups(dispatchX, dispatchY);
+                pass.end();
+            }
+        }
+        // Step 3: finalize magnitude from the combined trace (no-op for the
+        // single-channel case beyond recomputing the same value).
         {
             const params = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
             const bindGroup = device.createBindGroup({
-                layout: res.gradientPipeline.getBindGroupLayout(0),
+                layout: res.finalizeMagnitudePipeline.getBindGroupLayout(0),
                 entries: [
                     { binding: 0, resource: { buffer: params } },
-                    { binding: 1, resource: { buffer: inputBuf } },
-                    { binding: 2, resource: { buffer: gradientBuf } },
+                    { binding: 1, resource: { buffer: tensorAccumBuf } },
                 ],
             });
-            const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites('gradient') });
-            pass.setPipeline(res.gradientPipeline);
+            const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites('finalizeMagnitude') });
+            pass.setPipeline(res.finalizeMagnitudePipeline);
             pass.setBindGroup(0, bindGroup);
             pass.dispatchWorkgroups(dispatchX, dispatchY);
             pass.end();
         }
-        // Step 2: Build structure tensor
-        {
-            const params = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
-            const bindGroup = device.createBindGroup({
-                layout: res.structureTensorPipeline.getBindGroupLayout(0),
-                entries: [
-                    { binding: 0, resource: { buffer: params } },
-                    { binding: 1, resource: { buffer: gradientBuf } },
-                    { binding: 2, resource: { buffer: tensorBuf } },
-                ],
-            });
-            const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites('structureTensor') });
-            pass.setPipeline(res.structureTensorPipeline);
-            pass.setBindGroup(0, bindGroup);
-            pass.dispatchWorkgroups(dispatchX, dispatchY);
-            pass.end();
-        }
-        // Step 3: Gaussian blur the structure tensor (horizontal then vertical)
+        // Step 4: Gaussian blur the structure tensor (horizontal then vertical)
         {
             const params = createParamsBuffer(device, { width, height, radius, kernelSize });
             // The tiled pipelines' workgroup-shared arrays are sized for
@@ -2438,7 +2689,7 @@ class EdgeTangentFlowWebGPU {
                 layout: blurHPipe.getBindGroupLayout(0),
                 entries: [
                     { binding: 0, resource: { buffer: params } },
-                    { binding: 1, resource: { buffer: tensorBuf } },
+                    { binding: 1, resource: { buffer: tensorAccumBuf } },
                     { binding: 2, resource: { buffer: blurTempBuf } },
                     { binding: 3, resource: { buffer: kernelBuf } },
                 ],
@@ -2463,7 +2714,7 @@ class EdgeTangentFlowWebGPU {
             passV.dispatchWorkgroups(dispatchX, dispatchY);
             passV.end();
         }
-        // Step 4: Extract initial tangent field
+        // Step 5: Extract initial tangent field
         {
             const params = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
             const bindGroup = device.createBindGroup({
@@ -2480,15 +2731,15 @@ class EdgeTangentFlowWebGPU {
             pass.dispatchWorkgroups(dispatchX, dispatchY);
             pass.end();
         }
-        // Step 5: Refine tangent field iteratively (ping-pong between buffers)
+        // Step 6: Refine tangent field iteratively (ping-pong between buffers)
         let readBuf = tangentBuf1;
         let writeBuf = tangentBuf2;
-        const params = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
+        const refineParams = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
         for (let i = 0; i < cfg.iterations; i++) {
             const bindGroup = device.createBindGroup({
                 layout: res.tangentRefinePipeline.getBindGroupLayout(0),
                 entries: [
-                    { binding: 0, resource: { buffer: params } },
+                    { binding: 0, resource: { buffer: refineParams } },
                     { binding: 1, resource: { buffer: readBuf } },
                     { binding: 2, resource: { buffer: writeBuf } },
                 ],
@@ -2543,9 +2794,16 @@ class EdgeTangentFlowWebGPU {
             for (let i = 0; i < passLabels.length; i++) {
                 raw[i * 2];
                 raw[i * 2 + 1];
-                // Aggregate refine[i] entries under one key so a large `iterations`
-                // count doesn't spam the log with per-iteration lines.
-                passLabels[i].startsWith('refine[') ? 'refine (sum)' : passLabels[i];
+                // Aggregate refine[i] and per-channel entries under one key each
+                // so a large `iterations` or channel count doesn't spam the log
+                // with per-iteration/per-channel lines.
+                let label = passLabels[i];
+                if (label.startsWith('refine['))
+                    label = 'refine (sum)';
+                else if (label.startsWith('gradient['))
+                    label = 'gradient (sum)';
+                else if (label.startsWith('tensorAccumulate['))
+                    label = 'tensorAccumulate (sum)';
             }
         }
         else if (res.hasTimestampQuery === false) {
@@ -2563,42 +2821,17 @@ class EdgeTangentFlowWebGPU {
             tangents[i * 2 + 1] = mapped[i * 4 + 1];
         }
         // Cleanup temporary (per-call) resources — pipelines/device are cached.
-        inputBuf.destroy();
-        gradientBuf.destroy();
-        tensorBuf.destroy();
+        for (const buf of channelInputBufs)
+            buf.destroy();
+        gradientScratchBuf.destroy();
+        tensorAccumBuf.destroy();
         blurTempBuf.destroy();
         blurOutputBuf.destroy();
         tangentBuf1.destroy();
         tangentBuf2.destroy();
         kernelBuf.destroy();
         stagingBuf.destroy();
-        return new EdgeTangentFlowWebGPU(tangents, width, height);
-    }
-    /**
-     * Visualize the flow field as a grayscale image
-     */
-    visualize() {
-        const output = createChannelImage(this.width, this.height);
-        for (let y = 0; y < this.height; y++) {
-            for (let x = 0; x < this.width; x++) {
-                const idx = y * this.width + x;
-                const tx = this.tangents[idx * 2];
-                const ty = this.tangents[idx * 2 + 1];
-                const angle = Math.atan2(ty, tx);
-                output.data[idx] = (angle + Math.PI) / (2 * Math.PI);
-            }
-        }
-        return output;
-    }
-    /**
-     * Cleanup WebGPU resources (call when done with all ETF computations)
-     */
-    static dispose() {
-        if (this.resources) {
-            this.resources.device.destroy();
-            this.resources = null;
-            this.resourcesPromise = null;
-        }
+        return TangentFlowField.fromFloat32Array(tangents, width, height);
     }
 }
 // ============== Helper Functions ==============
@@ -2626,7 +2859,7 @@ function createParamsBuffer(device, params) {
     device.queue.writeBuffer(buffer, 0, new Uint32Array([params.width, params.height, params.radius, params.kernelSize]));
     return buffer;
 }
-function generateGaussianKernel$1(sigma, size) {
+function generateGaussianKernel(sigma, size) {
     const kernel = new Float32Array(size);
     const center = Math.floor(size / 2);
     let sum = 0;
@@ -2640,13 +2873,34 @@ function generateGaussianKernel$1(sigma, size) {
     }
     return kernel;
 }
+/**
+ * Local equivalent of isWebGLComputeSupported() from utils/index.js.
+ * Consider hoisting this into utils/index.js as a sibling export.
+ */
+function isWebGPUComputeSupported() {
+    return typeof navigator !== 'undefined' && !!navigator.gpu;
+}
 
 /**
  * WebGL-accelerated Edge Tangent Flow computation
  *
- * Provides significant speedup over CPU implementation by running
+ * Provides significant speedup over the CPU implementation by running
  * gradient computation, structure tensor building/smoothing, and
  * tangent extraction on the GPU.
+ *
+ * Multi-channel support follows the same Di Zenzo multichannel structure
+ * tensor approach as the CPU backend (per-channel tensors summed, then a
+ * single eigendecomposition on the combined tensor) — but the summation
+ * itself is done on the GPU via additive blending straight into an
+ * accumulator framebuffer, rather than reading tensors back to JS and
+ * summing them there. Everything from the Gaussian blur pass onward is
+ * identical whether the accumulated tensor came from one channel or many.
+ *
+ * This module has no knowledge of color spaces. It operates purely on
+ * ChannelImage scalar fields uploaded as single-channel textures; RGB/Lab/
+ * etc. splitting and conversion is the caller's responsibility (see
+ * utils/color.ts) and happens before compute()/computeMultiChannel() is
+ * ever called.
  */
 /**
  * Shader source code
@@ -2710,6 +2964,9 @@ void main() {
   float g = gy * gy;
   
   // Output: R=E, G=F, B=G, A=magnitude (passed through)
+  // Note: with additive blending enabled, writing this for each channel
+  // in turn accumulates E, F, G, and magnitude across channels — this is
+  // the GPU-side equivalent of Di Zenzo tensor summation.
   fragColor = vec4(e, f, g, grad.b);
 }
 `;
@@ -2857,41 +3114,181 @@ void main() {
 }
 `;
 /**
- * WebGL-accelerated ETF implementation
+ * WebGL-backed ETFComputer. Holds a lazily-initialized GPU context and
+ * shader programs; call dispose() when done to release them.
  */
-class EdgeTangentFlowWebGL {
-    tangents;
-    width;
-    height;
-    static resources = null;
-    constructor(tangents, width, height) {
-        this.tangents = tangents;
-        this.width = width;
-        this.height = height;
-    }
-    getTangent(x, y) {
-        const clampedX = Math.max(0, Math.min(this.width - 1, Math.round(x)));
-        const clampedY = Math.max(0, Math.min(this.height - 1, Math.round(y)));
-        return this.tangents[clampedY * this.width + clampedX];
-    }
-    getTangentArray() {
-        const result = new Float32Array(this.width * this.height * 2);
-        for (let i = 0; i < this.tangents.length; i++) {
-            result[i * 2] = this.tangents[i].x;
-            result[i * 2 + 1] = this.tangents[i].y;
-        }
-        return result;
-    }
+class WebGLEdgeTangentFlowComputer {
+    resources = null;
     /**
-     * Check if WebGL2 is supported
+     * Check if WebGL2 with the required float texture extensions is
+     * supported in the current environment.
      */
     static isSupported() {
         return isWebGLComputeSupported();
     }
+    static getUnsupportedReason() {
+        if (isWebGLComputeSupported()) {
+            return undefined;
+        }
+        return 'WebGL2 with float texture support (EXT_color_buffer_float) is not available in this environment';
+    }
+    async compute(input, config = {}, sigmaC) {
+        return this.computeMultiChannel([input], config, sigmaC);
+    }
+    async computeMultiChannel(inputs, config = {}, sigmaC) {
+        if (inputs.length === 0) {
+            throw new Error('computeMultiChannel requires at least one channel');
+        }
+        const { width, height } = inputs[0];
+        for (const channel of inputs) {
+            if (channel.width !== width || channel.height !== height) {
+                throw new Error('All channels passed to computeMultiChannel must share the same dimensions');
+            }
+        }
+        const cfg = { ...DEFAULT_ETF_CONFIG, ...config };
+        const res = this.initResources(width, height);
+        const { gl } = res;
+        gl.viewport(0, 0, width, height);
+        // Per-channel scratch (overwritten each iteration) and the tensor
+        // accumulator that channels are additively blended into.
+        const gradientFB = createFramebuffer$1(gl, width, height, gl.RGBA32F);
+        const tensorAccumFB = createFramebuffer$1(gl, width, height, gl.RGBA32F);
+        const blurTempFB = createFramebuffer$1(gl, width, height, gl.RGBA32F);
+        const blurOutputFB = createFramebuffer$1(gl, width, height, gl.RGBA32F);
+        const tangentFB1 = createFramebuffer$1(gl, width, height, gl.RGBA32F);
+        const tangentFB2 = createFramebuffer$1(gl, width, height, gl.RGBA32F);
+        const channelTextures = [];
+        try {
+            // Step 1 & 2 (Di Zenzo summation): for each channel, compute its
+            // gradients, then build its structure tensor and additively blend
+            // it into tensorAccumFB. E, F, G, and magnitude (the tensor's
+            // trace-derived sqrt(E+G)) are all additive across channels, so
+            // hardware ONE+ONE blending performs exactly the same summation
+            // the CPU backend does in JS, without a readback per channel.
+            gl.bindFramebuffer(gl.FRAMEBUFFER, tensorAccumFB.fb);
+            gl.clearColor(0, 0, 0, 0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            for (const channel of inputs) {
+                const inputTex = createTexture(gl, width, height, gl.R32F, gl.RED, channel.data);
+                channelTextures.push(inputTex);
+                // Gradient pass: plain overwrite, no blending.
+                gl.disable(gl.BLEND);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, gradientFB.fb);
+                gl.useProgram(res.gradientProgram);
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, inputTex);
+                gl.uniform1i(gl.getUniformLocation(res.gradientProgram, 'u_input'), 0);
+                gl.uniform2f(gl.getUniformLocation(res.gradientProgram, 'u_resolution'), width, height);
+                drawQuad(gl, res.quadVAO);
+                // Tensor pass: additively blend this channel's tensor into the accumulator.
+                gl.enable(gl.BLEND);
+                gl.blendFunc(gl.ONE, gl.ONE);
+                gl.blendEquation(gl.FUNC_ADD);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, tensorAccumFB.fb);
+                gl.useProgram(res.structureTensorProgram);
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, gradientFB.tex);
+                gl.uniform1i(gl.getUniformLocation(res.structureTensorProgram, 'u_gradients'), 0);
+                drawQuad(gl, res.quadVAO);
+            }
+        }
+        finally {
+            gl.disable(gl.BLEND);
+            for (const tex of channelTextures) {
+                gl.deleteTexture(tex);
+            }
+        }
+        // Step 3: Gaussian blur the (possibly channel-summed) structure tensor
+        const smoothSigma = sigmaC ?? (cfg.kernelSize / 2.45);
+        const radius = Math.min(16, Math.ceil(smoothSigma * 2.45)); // Cap at 16 for shader array limit
+        const kernelSize = radius * 2 + 1;
+        const kernel = generateGaussianKernel$1(smoothSigma, kernelSize);
+        // Horizontal blur
+        gl.bindFramebuffer(gl.FRAMEBUFFER, blurTempFB.fb);
+        gl.useProgram(res.gaussianBlurHProgram);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, tensorAccumFB.tex);
+        gl.uniform1i(gl.getUniformLocation(res.gaussianBlurHProgram, 'u_input'), 0);
+        gl.uniform2f(gl.getUniformLocation(res.gaussianBlurHProgram, 'u_resolution'), width, height);
+        gl.uniform1fv(gl.getUniformLocation(res.gaussianBlurHProgram, 'u_kernel'), kernel);
+        gl.uniform1i(gl.getUniformLocation(res.gaussianBlurHProgram, 'u_kernelSize'), kernelSize);
+        gl.uniform1i(gl.getUniformLocation(res.gaussianBlurHProgram, 'u_radius'), radius);
+        drawQuad(gl, res.quadVAO);
+        // Vertical blur
+        gl.bindFramebuffer(gl.FRAMEBUFFER, blurOutputFB.fb);
+        gl.useProgram(res.gaussianBlurVProgram);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, blurTempFB.tex);
+        gl.uniform1i(gl.getUniformLocation(res.gaussianBlurVProgram, 'u_input'), 0);
+        gl.uniform2f(gl.getUniformLocation(res.gaussianBlurVProgram, 'u_resolution'), width, height);
+        gl.uniform1fv(gl.getUniformLocation(res.gaussianBlurVProgram, 'u_kernel'), kernel);
+        gl.uniform1i(gl.getUniformLocation(res.gaussianBlurVProgram, 'u_kernelSize'), kernelSize);
+        gl.uniform1i(gl.getUniformLocation(res.gaussianBlurVProgram, 'u_radius'), radius);
+        drawQuad(gl, res.quadVAO);
+        // Step 4: Extract initial tangent field
+        gl.bindFramebuffer(gl.FRAMEBUFFER, tangentFB1.fb);
+        gl.useProgram(res.tangentExtractProgram);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, blurOutputFB.tex);
+        gl.uniform1i(gl.getUniformLocation(res.tangentExtractProgram, 'u_tensor'), 0);
+        drawQuad(gl, res.quadVAO);
+        // Step 5: Refine tangent field iteratively (ping-pong between framebuffers)
+        let readFB = tangentFB1;
+        let writeFB = tangentFB2;
+        for (let i = 0; i < cfg.iterations; i++) {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, writeFB.fb);
+            gl.useProgram(res.tangentRefineProgram);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, readFB.tex);
+            gl.uniform1i(gl.getUniformLocation(res.tangentRefineProgram, 'u_tangents'), 0);
+            gl.uniform2f(gl.getUniformLocation(res.tangentRefineProgram, 'u_resolution'), width, height);
+            drawQuad(gl, res.quadVAO);
+            // Swap
+            [readFB, writeFB] = [writeFB, readFB];
+        }
+        // Read back results
+        gl.bindFramebuffer(gl.FRAMEBUFFER, readFB.fb);
+        const pixels = new Float32Array(width * height * 4);
+        gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, pixels);
+        // Convert to Vec2 array
+        const tangents = new Array(width * height);
+        for (let i = 0; i < width * height; i++) {
+            tangents[i] = {
+                x: pixels[i * 4],
+                y: pixels[i * 4 + 1],
+            };
+        }
+        // Cleanup temporary resources (channel textures already freed above)
+        deleteFramebuffer(gl, gradientFB);
+        deleteFramebuffer(gl, tensorAccumFB);
+        deleteFramebuffer(gl, blurTempFB);
+        deleteFramebuffer(gl, blurOutputFB);
+        deleteFramebuffer(gl, tangentFB1);
+        deleteFramebuffer(gl, tangentFB2);
+        return TangentFlowField.fromVec2Array(tangents, width, height);
+    }
+    /**
+     * Release WebGL resources held by this computer (programs, VAO/VBO,
+     * and implicitly the canvas/context). Safe to call multiple times.
+     */
+    dispose() {
+        if (this.resources) {
+            const { gl } = this.resources;
+            gl.deleteProgram(this.resources.gradientProgram);
+            gl.deleteProgram(this.resources.structureTensorProgram);
+            gl.deleteProgram(this.resources.gaussianBlurHProgram);
+            gl.deleteProgram(this.resources.gaussianBlurVProgram);
+            gl.deleteProgram(this.resources.tangentExtractProgram);
+            gl.deleteProgram(this.resources.tangentRefineProgram);
+            gl.deleteVertexArray(this.resources.quadVAO);
+            gl.deleteBuffer(this.resources.quadVBO);
+            this.resources = null;
+        }
+    }
     /**
      * Initialize WebGL resources (lazy initialization)
      */
-    static initResources(width, height) {
+    initResources(width, height) {
         if (this.resources) {
             // Resize canvas if needed
             const canvas = this.resources.canvas;
@@ -2953,141 +3350,6 @@ class EdgeTangentFlowWebGL {
         };
         return this.resources;
     }
-    /**
-     * Compute ETF using WebGL
-     */
-    static compute(input, config = {}, sigmaC) {
-        const cfg = { ...DEFAULT_ETF_CONFIG, ...config };
-        const { width, height } = input;
-        const res = this.initResources(width, height);
-        const { gl } = res;
-        gl.viewport(0, 0, width, height);
-        // Create input texture
-        const inputTex = createTexture(gl, width, height, gl.R32F, gl.RED, input.data);
-        // Create framebuffers for ping-pong
-        const gradientFB = createFramebuffer$1(gl, width, height, gl.RGBA32F);
-        const tensorFB = createFramebuffer$1(gl, width, height, gl.RGBA32F);
-        const blurTempFB = createFramebuffer$1(gl, width, height, gl.RGBA32F);
-        const blurOutputFB = createFramebuffer$1(gl, width, height, gl.RGBA32F);
-        const tangentFB1 = createFramebuffer$1(gl, width, height, gl.RGBA32F);
-        const tangentFB2 = createFramebuffer$1(gl, width, height, gl.RGBA32F);
-        // Step 1: Compute gradients
-        gl.bindFramebuffer(gl.FRAMEBUFFER, gradientFB.fb);
-        gl.useProgram(res.gradientProgram);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, inputTex);
-        gl.uniform1i(gl.getUniformLocation(res.gradientProgram, 'u_input'), 0);
-        gl.uniform2f(gl.getUniformLocation(res.gradientProgram, 'u_resolution'), width, height);
-        drawQuad(gl, res.quadVAO);
-        // Step 2: Build structure tensor
-        gl.bindFramebuffer(gl.FRAMEBUFFER, tensorFB.fb);
-        gl.useProgram(res.structureTensorProgram);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, gradientFB.tex);
-        gl.uniform1i(gl.getUniformLocation(res.structureTensorProgram, 'u_gradients'), 0);
-        drawQuad(gl, res.quadVAO);
-        // Step 3: Gaussian blur the structure tensor
-        const smoothSigma = sigmaC ?? (cfg.kernelSize / 2.45);
-        const radius = Math.min(16, Math.ceil(smoothSigma * 2.45)); // Cap at 16 for shader array limit
-        const kernelSize = radius * 2 + 1;
-        const kernel = generateGaussianKernel(smoothSigma, kernelSize);
-        // Horizontal blur
-        gl.bindFramebuffer(gl.FRAMEBUFFER, blurTempFB.fb);
-        gl.useProgram(res.gaussianBlurHProgram);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, tensorFB.tex);
-        gl.uniform1i(gl.getUniformLocation(res.gaussianBlurHProgram, 'u_input'), 0);
-        gl.uniform2f(gl.getUniformLocation(res.gaussianBlurHProgram, 'u_resolution'), width, height);
-        gl.uniform1fv(gl.getUniformLocation(res.gaussianBlurHProgram, 'u_kernel'), kernel);
-        gl.uniform1i(gl.getUniformLocation(res.gaussianBlurHProgram, 'u_kernelSize'), kernelSize);
-        gl.uniform1i(gl.getUniformLocation(res.gaussianBlurHProgram, 'u_radius'), radius);
-        drawQuad(gl, res.quadVAO);
-        // Vertical blur
-        gl.bindFramebuffer(gl.FRAMEBUFFER, blurOutputFB.fb);
-        gl.useProgram(res.gaussianBlurVProgram);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, blurTempFB.tex);
-        gl.uniform1i(gl.getUniformLocation(res.gaussianBlurVProgram, 'u_input'), 0);
-        gl.uniform2f(gl.getUniformLocation(res.gaussianBlurVProgram, 'u_resolution'), width, height);
-        gl.uniform1fv(gl.getUniformLocation(res.gaussianBlurVProgram, 'u_kernel'), kernel);
-        gl.uniform1i(gl.getUniformLocation(res.gaussianBlurVProgram, 'u_kernelSize'), kernelSize);
-        gl.uniform1i(gl.getUniformLocation(res.gaussianBlurVProgram, 'u_radius'), radius);
-        drawQuad(gl, res.quadVAO);
-        // Step 4: Extract initial tangent field
-        gl.bindFramebuffer(gl.FRAMEBUFFER, tangentFB1.fb);
-        gl.useProgram(res.tangentExtractProgram);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, blurOutputFB.tex);
-        gl.uniform1i(gl.getUniformLocation(res.tangentExtractProgram, 'u_tensor'), 0);
-        drawQuad(gl, res.quadVAO);
-        // Step 5: Refine tangent field iteratively (ping-pong between framebuffers)
-        let readFB = tangentFB1;
-        let writeFB = tangentFB2;
-        for (let i = 0; i < cfg.iterations; i++) {
-            gl.bindFramebuffer(gl.FRAMEBUFFER, writeFB.fb);
-            gl.useProgram(res.tangentRefineProgram);
-            gl.activeTexture(gl.TEXTURE0);
-            gl.bindTexture(gl.TEXTURE_2D, readFB.tex);
-            gl.uniform1i(gl.getUniformLocation(res.tangentRefineProgram, 'u_tangents'), 0);
-            gl.uniform2f(gl.getUniformLocation(res.tangentRefineProgram, 'u_resolution'), width, height);
-            drawQuad(gl, res.quadVAO);
-            // Swap
-            [readFB, writeFB] = [writeFB, readFB];
-        }
-        // Read back results
-        gl.bindFramebuffer(gl.FRAMEBUFFER, readFB.fb);
-        const pixels = new Float32Array(width * height * 4);
-        gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, pixels);
-        // Convert to Vec2 array
-        const tangents = new Array(width * height);
-        for (let i = 0; i < width * height; i++) {
-            tangents[i] = {
-                x: pixels[i * 4],
-                y: pixels[i * 4 + 1],
-            };
-        }
-        // Cleanup temporary resources
-        gl.deleteTexture(inputTex);
-        deleteFramebuffer(gl, gradientFB);
-        deleteFramebuffer(gl, tensorFB);
-        deleteFramebuffer(gl, blurTempFB);
-        deleteFramebuffer(gl, blurOutputFB);
-        deleteFramebuffer(gl, tangentFB1);
-        deleteFramebuffer(gl, tangentFB2);
-        return new EdgeTangentFlowWebGL(tangents, width, height);
-    }
-    /**
-     * Visualize the flow field as a grayscale image
-     */
-    visualize() {
-        const output = createChannelImage(this.width, this.height);
-        for (let y = 0; y < this.height; y++) {
-            for (let x = 0; x < this.width; x++) {
-                const idx = y * this.width + x;
-                const t = this.tangents[idx];
-                const angle = Math.atan2(t.y, t.x);
-                output.data[idx] = (angle + Math.PI) / (2 * Math.PI);
-            }
-        }
-        return output;
-    }
-    /**
-     * Cleanup WebGL resources (call when done with all ETF computations)
-     */
-    static dispose() {
-        if (this.resources) {
-            const { gl } = this.resources;
-            gl.deleteProgram(this.resources.gradientProgram);
-            gl.deleteProgram(this.resources.structureTensorProgram);
-            gl.deleteProgram(this.resources.gaussianBlurHProgram);
-            gl.deleteProgram(this.resources.gaussianBlurVProgram);
-            gl.deleteProgram(this.resources.tangentExtractProgram);
-            gl.deleteProgram(this.resources.tangentRefineProgram);
-            gl.deleteVertexArray(this.resources.quadVAO);
-            gl.deleteBuffer(this.resources.quadVBO);
-            this.resources = null;
-        }
-    }
 }
 // ============== Helper Functions ==============
 function createShader(gl, type, source) {
@@ -3147,200 +3409,143 @@ function drawQuad(gl, vao) {
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     gl.bindVertexArray(null);
 }
-function generateGaussianKernel(sigma, size) {
-    const kernel = new Float32Array(size);
-    const center = Math.floor(size / 2);
-    let sum = 0;
-    for (let i = 0; i < size; i++) {
-        const x = i - center;
-        kernel[i] = Math.exp(-(x * x) / (2 * sigma * sigma));
-        sum += kernel[i];
-    }
-    // Normalize
-    for (let i = 0; i < size; i++) {
-        kernel[i] /= sum;
-    }
-    return kernel;
-}
 
 /**
- * Edge Tangent Flow computation for FDoG
+ * CPU Edge Tangent Flow computation for FDoG
  *
  * The ETF represents the direction of edges at each pixel, computed from
  * the structure tensor of the image gradients.
  *
  * Based on Section 2.6 of Winnemöller et al. (2012) and
  * Kang et al. (2007) "Coherent Line Drawing"
+ *
+ * Multi-channel support follows Di Zenzo's approach ("A note on the
+ * gradient of a multi-image", CVGIP 33, 1986): per-channel structure
+ * tensors are summed (not the resulting tangents), and a single
+ * eigendecomposition is performed on the combined tensor. Everything
+ * from smoothing onward is identical regardless of how many channels
+ * fed into the tensor, so the single-channel and multi-channel paths
+ * share one pipeline.
+ *
+ * This module has no knowledge of color spaces. It operates purely on
+ * ChannelImage scalar fields; RGB/Lab/etc. splitting and conversion is
+ * the caller's responsibility (see utils/color.ts) and happens before
+ * compute()/computeMultiChannel() is ever called.
  */
 /**
- * Edge Tangent Flow field implementation
+ * CPU-backed ETFComputer. Synchronous under the hood, but exposes the
+ * same async ETFComputer contract as the WebGL/WebGPU backends so callers
+ * can swap implementations without caring which one they have.
  */
-let EdgeTangentFlow$1 = class EdgeTangentFlow {
-    tangents;
-    width;
-    height;
-    constructor(tangents, width, height) {
-        this.tangents = tangents;
-        this.width = width;
-        this.height = height;
-    }
-    getTangent(x, y) {
-        const clampedX = Math.max(0, Math.min(this.width - 1, Math.round(x)));
-        const clampedY = Math.max(0, Math.min(this.height - 1, Math.round(y)));
-        return this.tangents[clampedY * this.width + clampedX];
-    }
+class CpuEdgeTangentFlowComputer {
     /**
-     * Get all tangents as a flat array (for GPU upload)
+     * The CPU backend has no environment dependency and is always available.
      */
-    getTangentArray() {
-        const result = new Float32Array(this.width * this.height * 2);
-        for (let i = 0; i < this.tangents.length; i++) {
-            result[i * 2] = this.tangents[i].x;
-            result[i * 2 + 1] = this.tangents[i].y;
+    static isSupported() {
+        return true;
+    }
+    async compute(input, config = {}, sigmaC) {
+        const channelTensor = computeChannelTensor(input);
+        return buildFlowField(channelTensor, input.width, input.height, config, sigmaC);
+    }
+    async computeMultiChannel(inputs, config = {}, sigmaC) {
+        if (inputs.length === 0) {
+            throw new Error('computeMultiChannel requires at least one channel');
         }
-        return result;
-    }
-    /**
-     * Compute Edge Tangent Flow from a grayscale image
-     *
-     * @param input Grayscale image (values in 0-1)
-     * @param config ETF configuration
-     * @param sigmaC Structure tensor smoothing sigma (optional override)
-     */
-    static compute(input, config = {}, sigmaC) {
-        const cfg = { ...DEFAULT_ETF_CONFIG, ...config };
-        const { width, height } = input;
-        // Step 1: Compute image gradients using Sobel operator
-        const gradients = computeGradients(input);
-        // Step 2: Build structure tensor from gradients
-        const tensor = buildStructureTensor(gradients, width, height);
-        // Step 3: Smooth the structure tensor with Gaussian (not box filter!)
-        // Paper specifies sampling within 2.45 * σc for structure tensor blur
-        const smoothSigma = sigmaC ?? (cfg.kernelSize / 2.45);
-        const smoothedTensor = smoothStructureTensorGaussian(tensor, width, height, smoothSigma);
-        // Step 4: Extract initial tangent field from smoothed tensor
-        let tangents = extractTangentField(smoothedTensor, width, height);
-        // Step 5: Refine tangent field iteratively
-        for (let i = 0; i < cfg.iterations; i++) {
-            tangents = refineTangentField(tangents, gradients.magnitude, width, height);
-        }
-        return new EdgeTangentFlow(tangents, width, height);
-    }
-    /**
-     * Visualize the flow field as a grayscale image
-     * Encodes direction as intensity (useful for debugging)
-     */
-    visualize() {
-        const output = createChannelImage(this.width, this.height);
-        for (let y = 0; y < this.height; y++) {
-            for (let x = 0; x < this.width; x++) {
-                const idx = y * this.width + x;
-                const t = this.tangents[idx];
-                // Convert direction to angle, then to 0-1 range
-                const angle = Math.atan2(t.y, t.x);
-                output.data[idx] = (angle + Math.PI) / (2 * Math.PI);
+        const { width, height } = inputs[0];
+        for (const channel of inputs) {
+            if (channel.width !== width || channel.height !== height) {
+                throw new Error('All channels passed to computeMultiChannel must share the same dimensions');
             }
         }
-        return output;
+        const channelTensors = inputs.map(computeChannelTensor);
+        const combined = sumChannelTensors(channelTensors, width, height);
+        return buildFlowField(combined, width, height, config, sigmaC);
     }
-    /**
-     * Visualize as a color image (HSV with direction as hue)
-     */
-    visualizeColor() {
-        const imageData = new ImageData(this.width, this.height);
-        for (let y = 0; y < this.height; y++) {
-            for (let x = 0; x < this.width; x++) {
-                const idx = y * this.width + x;
-                const t = this.tangents[idx];
-                // Direction as hue
-                const angle = Math.atan2(t.y, t.x);
-                const hue = (angle + Math.PI) / (2 * Math.PI);
-                // Magnitude as saturation (always 1 for normalized vectors)
-                const saturation = 1;
-                const value = 1;
-                // HSV to RGB
-                const [r, g, b] = hsvToRgb$1(hue, saturation, value);
-                const i = idx * 4;
-                imageData.data[i] = r;
-                imageData.data[i + 1] = g;
-                imageData.data[i + 2] = b;
-                imageData.data[i + 3] = 255;
-            }
-        }
-        return imageData;
+    dispose() {
+        // No GPU resources to release for the CPU backend.
     }
-};
+}
 /**
- * Convert HSV to RGB
+ * Shared pipeline: smoothing, eigendecomposition, and iterative
+ * refinement, given a (possibly channel-summed) structure tensor. This is
+ * the single composition point used by both compute() and
+ * computeMultiChannel() above.
  */
-function hsvToRgb$1(h, s, v) {
-    const i = Math.floor(h * 6);
-    const f = h * 6 - i;
-    const p = v * (1 - s);
-    const q = v * (1 - f * s);
-    const t = v * (1 - (1 - f) * s);
-    let r, g, b;
-    switch (i % 6) {
-        case 0:
-            r = v;
-            g = t;
-            b = p;
-            break;
-        case 1:
-            r = q;
-            g = v;
-            b = p;
-            break;
-        case 2:
-            r = p;
-            g = v;
-            b = t;
-            break;
-        case 3:
-            r = p;
-            g = q;
-            b = v;
-            break;
-        case 4:
-            r = t;
-            g = p;
-            b = v;
-            break;
-        case 5:
-            r = v;
-            g = p;
-            b = q;
-            break;
-        default:
-            r = 0;
-            g = 0;
-            b = 0;
+function buildFlowField(channelTensor, width, height, config, sigmaC) {
+    const cfg = { ...DEFAULT_ETF_CONFIG, ...config };
+    // Smooth the structure tensor with Gaussian (not box filter!)
+    // Paper specifies sampling within 2.45 * σc for structure tensor blur
+    const smoothSigma = sigmaC ?? (cfg.kernelSize / 2.45);
+    const smoothedTensor = smoothStructureTensorGaussian(channelTensor.tensor, width, height, smoothSigma);
+    // Extract initial tangent field from smoothed tensor
+    let tangents = extractTangentField(smoothedTensor, width, height);
+    // Refine tangent field iteratively
+    for (let i = 0; i < cfg.iterations; i++) {
+        tangents = refineTangentField(tangents, channelTensor.magnitude, width, height);
     }
-    return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+    return TangentFlowField.fromVec2Array(tangents, width, height);
+}
+/**
+ * Compute a channel's structure tensor and its trace-derived magnitude
+ * field in one step. This is the single composition point shared by
+ * compute() (called once) and computeMultiChannel() (called once per
+ * input channel, then combined via sumChannelTensors).
+ */
+function computeChannelTensor(input) {
+    const tensor = buildStructureTensor(computeGradients(input), input.width, input.height);
+    const magnitude = tensorMagnitude(tensor, input.width * input.height);
+    return { tensor, magnitude };
+}
+/**
+ * Di Zenzo tensor summation: combine several channels' structure tensors
+ * (and their magnitudes) into one. Valid because E, F, G, and the
+ * trace-derived magnitude are all additive across channels — this is
+ * the mathematical basis for treating multi-channel ETF as "the same
+ * as single-channel, but with a summed tensor."
+ */
+function sumChannelTensors(channelTensors, width, height) {
+    const size = width * height;
+    const e = new Float32Array(size);
+    const f = new Float32Array(size);
+    const g = new Float32Array(size);
+    const magnitude = new Float32Array(size);
+    for (const { tensor, magnitude: mag } of channelTensors) {
+        for (let i = 0; i < size; i++) {
+            e[i] += tensor.e[i];
+            f[i] += tensor.f[i];
+            g[i] += tensor.g[i];
+            magnitude[i] += mag[i];
+        }
+    }
+    return { tensor: { e, f, g }, magnitude };
+}
+/**
+ * Derive the scalar gradient-magnitude field from a structure tensor's
+ * trace: sqrt(E + G) == sqrt(Ix² + Iy²) == hypot(Ix, Iy) for a single
+ * channel, so this is a drop-in replacement for a Sobel-derived
+ * magnitude field, but one that also composes correctly across summed
+ * multi-channel tensors.
+ */
+function tensorMagnitude(tensor, size) {
+    const magnitude = new Float32Array(size);
+    for (let i = 0; i < size; i++) {
+        magnitude[i] = Math.sqrt(tensor.e[i] + tensor.g[i]);
+    }
+    return magnitude;
 }
 /**
  * Compute image gradients using Sobel operator
  */
-// In etf.ts - Optimize gradient computation
 function computeGradients(input) {
     const { width, height } = input;
     const size = width * height;
     const gradX = new Float32Array(size);
     const gradY = new Float32Array(size);
-    const magnitude = new Float32Array(size);
-    // Precompute pixel indices for better cache locality
-    const indices = new Int32Array(width * height);
-    for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-            indices[y * width + x] = y * width + x;
-        }
-    }
-    // Use SIMD-like operations (manual loop unrolling)
     for (let i = 0; i < size; i++) {
         const x = i % width;
         const y = Math.floor(i / width);
         if (x > 0 && x < width - 1 && y > 0 && y < height - 1) {
-            // Use direct array access instead of getPixel calls
             const idx = y * width + x;
             const idxTop = idx - width;
             const idxBottom = idx + width;
@@ -3352,14 +3557,11 @@ function computeGradients(input) {
             const p02 = input.data[idxBottom - 1];
             const p12 = input.data[idxBottom];
             const p22 = input.data[idxBottom + 1];
-            const gx = -p00 + p20 - 2 * p01 + 2 * p21 - p02 + p22;
-            const gy = -p00 - 2 * p10 - p20 + p02 + 2 * p12 + p22;
-            gradX[i] = gx;
-            gradY[i] = gy;
-            magnitude[i] = Math.hypot(gx, gy); // Faster than sqrt(gx*gx + gy*gy)
+            gradX[i] = -p00 + p20 - 2 * p01 + 2 * p21 - p02 + p22;
+            gradY[i] = -p00 - 2 * p10 - p20 + p02 + 2 * p12 + p22;
         }
     }
-    return { x: gradX, y: gradY, magnitude };
+    return { x: gradX, y: gradY };
 }
 /**
  * Build structure tensor from gradients
@@ -3388,7 +3590,7 @@ function smoothStructureTensorGaussian(tensor, width, height, sigma) {
     // Kernel size based on paper's 2.45σ sampling rule
     const radius = Math.ceil(sigma * 2.45);
     const kernelSize = radius * 2 + 1;
-    const kernel = generateGaussianKernel$2(sigma, kernelSize);
+    const kernel = generateGaussianKernel$1(sigma, kernelSize);
     // Separable Gaussian blur for each component
     const smoothE = gaussianBlur2D(tensor.e, width, height, kernel, radius);
     const smoothF = gaussianBlur2D(tensor.f, width, height, kernel, radius);
@@ -3517,113 +3719,128 @@ function refineTangentField(tangents, magnitude, width, height) {
 }
 
 /**
- * Unified Edge Tangent Flow that automatically selects the best implementation
+ * Edge Tangent Flow computer that automatically selects the best available
+ * backend implementation.
  *
- * Preference order in 'auto' mode: WebGPU > WebGL > CPU. WebGPU compute is
- * inherently async (device acquisition + buffer readback both require
- * awaiting), so compute() is now async across the board — the WebGL and
- * CPU paths are still synchronous under the hood, but are wrapped so the
- * public API is consistent regardless of which implementation gets picked.
+ * Preference order in 'auto' mode: WebGPU > WebGL > CPU. Backend selection
+ * is stateful and happens at most once per instance: the first call to
+ * compute()/computeMultiChannel() probes backends (honoring `forceImpl`,
+ * or falling back WebGPU -> WebGL -> CPU) and caches whichever one
+ * actually works; every later call on this instance reuses that same
+ * backend directly. This avoids re-attempting WebGPU/WebGL acquisition on
+ * every call, and means dispose() has a single, well-defined backend
+ * instance to release GPU resources from.
  */
-class EdgeTangentFlow {
-    impl;
-    width;
-    height;
-    constructor(impl) {
-        this.impl = impl;
-        this.width = impl.width;
-        this.height = impl.height;
-    }
-    getTangent(x, y) {
-        return this.impl.getTangent(x, y);
-    }
-    getTangentArray() {
-        return this.impl.getTangentArray();
-    }
-    visualize() {
-        return this.impl.visualize();
+class EdgeTangentFlowComputer {
+    forceImpl;
+    computer = null;
+    constructor(forceImpl = 'auto') {
+        this.forceImpl = forceImpl;
     }
     /**
-     * Check if WebGPU acceleration is available
+     * Check if WebGPU acceleration is available.
      *
-     * Note: this is the same cheap synchronous check EdgeTangentFlowWebGPU
+     * Note: this is the same cheap synchronous check WebGpuEdgeTangentFlowComputer
      * itself uses (navigator.gpu presence) — it doesn't guarantee an adapter
-     * can actually be obtained. Use EdgeTangentFlowWebGPU.getUnsupportedReason()
+     * can actually be obtained. Use WebGpuEdgeTangentFlowComputer.getUnsupportedReason()
      * for a more thorough (async) check if needed.
      */
     static isWebGPUSupported() {
-        return EdgeTangentFlowWebGPU.isSupported();
+        return WebGpuEdgeTangentFlowComputer.isSupported();
     }
     /**
-     * Check if WebGL acceleration is available
+     * Check if WebGL acceleration is available.
      */
     static isWebGLSupported() {
-        return EdgeTangentFlowWebGL.isSupported();
+        return WebGLEdgeTangentFlowComputer.isSupported();
+    }
+    compute(input, config = {}, sigmaC) {
+        return this.run(computer => computer.compute(input, config, sigmaC));
+    }
+    computeMultiChannel(inputs, config = {}, sigmaC) {
+        return this.run(computer => computer.computeMultiChannel(inputs, config, sigmaC));
     }
     /**
-     * Compute ETF using the best available implementation
-     *
-     * @param input Grayscale image
-     * @param config ETF configuration
-     * @param sigmaC Structure tensor smoothing sigma
-     * @param forceImpl Force a specific implementation ('cpu' | 'webgl' | 'webgpu' | 'auto')
+     * Release resources held by whichever backend this instance resolved to.
+     * No-op if compute()/computeMultiChannel() was never called, since
+     * nothing was ever instantiated.
      */
-    static async compute(input, config = {}, sigmaC, forceImpl = 'auto') {
-        if (forceImpl === 'webgpu') {
-            if (!EdgeTangentFlowWebGPU.isSupported()) {
+    dispose() {
+        this.computer?.dispose();
+        this.computer = null;
+    }
+    /**
+     * Run `op` against the resolved backend, resolving (and caching) it on
+     * first use. `op` is what actually drives selection in 'auto' mode: a
+     * backend only "wins" once it has successfully produced a result, not
+     * merely passed isSupported(), since WebGPU/WebGL can pass that cheap
+     * check and still fail at adapter/device/shader-compile time.
+     */
+    async run(op) {
+        if (this.computer) {
+            return op(this.computer);
+        }
+        if (this.forceImpl === 'webgpu') {
+            if (!WebGpuEdgeTangentFlowComputer.isSupported()) {
                 throw new Error('WebGPU not supported but webgpu implementation was forced');
             }
             console.log('[ETF] Using WebGPU implementation (forced)');
-            const impl = await EdgeTangentFlowWebGPU.compute(input, config, sigmaC);
-            return new EdgeTangentFlow(impl);
+            const computer = new WebGpuEdgeTangentFlowComputer();
+            const result = await op(computer);
+            this.computer = computer;
+            return result;
         }
-        if (forceImpl === 'webgl') {
-            if (!EdgeTangentFlowWebGL.isSupported()) {
+        if (this.forceImpl === 'webgl') {
+            if (!WebGLEdgeTangentFlowComputer.isSupported()) {
                 throw new Error('WebGL not supported but webgl implementation was forced');
             }
             console.log('[ETF] Using WebGL implementation (forced)');
-            const impl = EdgeTangentFlowWebGL.compute(input, config, sigmaC);
-            return new EdgeTangentFlow(impl);
+            const computer = new WebGLEdgeTangentFlowComputer();
+            const result = await op(computer);
+            this.computer = computer;
+            return result;
         }
-        if (forceImpl === 'cpu') {
+        if (this.forceImpl === 'cpu') {
             console.log('[ETF] Using CPU implementation (forced)');
-            const impl = EdgeTangentFlow$1.compute(input, config, sigmaC);
-            return new EdgeTangentFlow(impl);
+            const computer = new CpuEdgeTangentFlowComputer();
+            const result = await op(computer);
+            this.computer = computer;
+            return result;
         }
-        // 'auto': prefer WebGPU, then WebGL, then CPU. Each tier falls through
-        // to the next on failure — WebGPU in particular can pass the cheap
-        // isSupported() check but still fail at adapter/device acquisition
-        // time, so that's guarded with a try/catch rather than trusted blindly.
-        if (EdgeTangentFlowWebGPU.isSupported()) {
+        // 'auto': prefer WebGPU, then WebGL, then CPU. Each tier is disposed
+        // immediately if op() throws, so a failed attempt doesn't leak a GPU
+        // context while we move on to the next tier.
+        if (WebGpuEdgeTangentFlowComputer.isSupported()) {
+            const computer = new WebGpuEdgeTangentFlowComputer();
             try {
                 console.log('[ETF] Using WebGPU implementation');
-                const impl = await EdgeTangentFlowWebGPU.compute(input, config, sigmaC);
-                return new EdgeTangentFlow(impl);
+                const result = await op(computer);
+                this.computer = computer;
+                return result;
             }
             catch (err) {
                 console.warn('[ETF] WebGPU implementation failed, falling back:', err);
+                computer.dispose();
             }
         }
-        if (EdgeTangentFlowWebGL.isSupported()) {
+        if (WebGLEdgeTangentFlowComputer.isSupported()) {
+            const computer = new WebGLEdgeTangentFlowComputer();
             try {
                 console.log('[ETF] Using WebGL implementation');
-                const impl = EdgeTangentFlowWebGL.compute(input, config, sigmaC);
-                return new EdgeTangentFlow(impl);
+                const result = await op(computer);
+                this.computer = computer;
+                return result;
             }
             catch (err) {
                 console.warn('[ETF] WebGL implementation failed, falling back:', err);
+                computer.dispose();
             }
         }
         console.log('[ETF] Using CPU implementation');
-        const impl = EdgeTangentFlow$1.compute(input, config, sigmaC);
-        return new EdgeTangentFlow(impl);
-    }
-    /**
-     * Cleanup WebGPU and WebGL resources
-     */
-    static dispose() {
-        EdgeTangentFlowWebGPU.dispose();
-        EdgeTangentFlowWebGL.dispose();
+        const computer = new CpuEdgeTangentFlowComputer();
+        const result = await op(computer);
+        this.computer = computer;
+        return result;
     }
 }
 
@@ -3658,7 +3875,7 @@ class CPUGradientAlignedBlur extends BaseCPUBlur {
         // Number of samples perpendicular to flow
         const halfSamples = Math.ceil(sigma * 2 / this.config.stepSize);
         const numSamples = halfSamples * 2 + 1;
-        const weights = generateGaussianKernel$2(sigma, numSamples);
+        const weights = generateGaussianKernel$1(sigma, numSamples);
         for (let y = 0; y < input.height; y++) {
             for (let x = 0; x < input.width; x++) {
                 const value = this.sampleAcrossFlow(input, x, y, halfSamples, weights);
@@ -3988,7 +4205,7 @@ class WebGLGradientAlignedBlur {
             console.warn(`[GradientAlignedBlur/WebGL] halfSamples clamped to ${MAX_SAMPLES$1 - 1} (sigma=${sigma} wanted more); kernel truncated. Raise MAX_SAMPLES if this matters.`);
         }
         const numSamples = halfSamples * 2 + 1;
-        const weights = generateGaussianKernel$2(sigma, numSamples);
+        const weights = generateGaussianKernel$1(sigma, numSamples);
         const paddedWeights = new Float32Array(MAX_SAMPLES$1);
         paddedWeights.set(weights);
         const tUpload = performance.now();
@@ -4343,7 +4560,7 @@ class WebGPUGradientAlignedBlur {
             console.warn(`[GradientAlignedBlur/WebGPU] halfSamples clamped to ${MAX_SAMPLES - 1} (sigma=${sigma} wanted ${wantedHalfSamples}); kernel truncated. Raise MAX_SAMPLES if this matters.`);
         }
         const numSamples = halfSamples * 2 + 1;
-        const weights = generateGaussianKernel$2(sigma, numSamples);
+        const weights = generateGaussianKernel$1(sigma, numSamples);
         const paddedWeights = new Float32Array(MAX_SAMPLES);
         paddedWeights.set(weights);
         // Row-band tile plan. Only the output/readback buffers scale with
@@ -4541,7 +4758,7 @@ class CPUFlowGuidedBlur extends BaseCPUBlur {
         const halfSamples = Math.ceil(sigma * 2 / this.config.stepSize);
         const numSamples = halfSamples * 2 + 1;
         // Generate 1D Gaussian weights
-        const weights = generateGaussianKernel$2(sigma, numSamples);
+        const weights = generateGaussianKernel$1(sigma, numSamples);
         for (let y = 0; y < input.height; y++) {
             for (let x = 0; x < input.width; x++) {
                 const value = this.sampleAlongFlow(input, x, y, halfSamples, weights);
@@ -4825,7 +5042,7 @@ class WebGLFlowGuidedBlur extends BaseWebGLBlur {
         const { width, height } = input;
         this.ensureTextureSize(gl, width, height);
         const kernelSize = Math.min(this.config.maxKernelSize, Math.max(3, Math.floor(sigma * this.config.kernelSizeMultiplier) | 1));
-        const kernel = generateGaussianKernel$2(sigma, kernelSize);
+        const kernel = generateGaussianKernel$1(sigma, kernelSize);
         const paddedKernel = new Float32Array(64);
         paddedKernel.set(kernel);
         const inputRGBA = new Uint8Array(width * height * 4);
@@ -5110,7 +5327,7 @@ class WebGPUFlowGuidedBlur extends BaseWebGPUBlur {
         const { width, height } = input;
         const pixelCount = width * height;
         const kernelSize = Math.min(this.config.maxKernelSize, Math.max(3, Math.floor(sigma * this.config.kernelSizeMultiplier) | 1));
-        const kernel = generateGaussianKernel$2(sigma, kernelSize);
+        const kernel = generateGaussianKernel$1(sigma, kernelSize);
         this.ensureBuffers(device, width, height, kernelSize);
         device.queue.writeBuffer(this.paramsBuffer, 0, new Uint32Array([width, height, kernelSize, 0]));
         device.queue.writeBuffer(this.kernelBuffer, 0, new Float32Array(kernel));
@@ -5242,7 +5459,8 @@ class FDoG {
     async process(input, overrides = {}) {
         const params = { ...this.config, ...overrides };
         // Step 1: Compute Edge Tangent Flow
-        const etf = await EdgeTangentFlow.compute(input, {
+        const etfComputer = new EdgeTangentFlowComputer();
+        const etf = await etfComputer.compute(input, {
             iterations: DEFAULT_ETF_CONFIG.iterations,
             kernelSize: Math.ceil(params.sigmaC * 2.45) * 2 + 1,
         }, params.sigmaC);
@@ -5261,7 +5479,7 @@ class FDoG {
             result = await flowBlur.blur(result, params.sigmaA);
         }
         flowBlur.dispose();
-        EdgeTangentFlow.dispose();
+        etfComputer.dispose();
         return result;
     }
     /**
@@ -5270,7 +5488,8 @@ class FDoG {
     async processDetailed(input, overrides = {}) {
         const params = { ...this.config, ...overrides };
         // Compute ETF
-        const etf = await EdgeTangentFlow.compute(input, {
+        const etfComputer = new EdgeTangentFlowComputer();
+        const etf = await etfComputer.compute(input, {
             iterations: DEFAULT_ETF_CONFIG.iterations,
             kernelSize: Math.ceil(params.sigmaC * 2.45) * 2 + 1,
         }, params.sigmaC);
@@ -5297,7 +5516,7 @@ class FDoG {
             result = await aaBlur.blur(smoothed, params.sigmaA);
             aaBlur.dispose();
         }
-        EdgeTangentFlow.dispose();
+        etfComputer.dispose();
         return { result, etf, sharpened, thresholded, smoothed };
     }
     /**
@@ -5341,11 +5560,9 @@ class FDoG {
         if (sigma <= 0) {
             return { data: new Float32Array(input.data), width: input.width, height: input.height };
         }
-        const flowCls = FlowGuidedBlur;
-        const aaBlur = new flowCls(etf);
+        const aaBlur = new FlowGuidedBlur(etf);
         const result = aaBlur.blur(input, sigma);
         aaBlur.dispose();
-        EdgeTangentFlow.dispose();
         return result;
     }
     /**
@@ -7038,7 +7255,7 @@ let GaussianBlur$1 = class GaussianBlur {
         }
         const radius = Math.ceil(sigma * 3);
         const kernelSize = radius * 2 + 1;
-        const kernel = generateGaussianKernel$2(sigma, kernelSize);
+        const kernel = generateGaussianKernel$1(sigma, kernelSize);
         // Horizontal pass
         const temp = createChannelImage(width, height);
         for (let y = 0; y < height; y++) {
@@ -9179,7 +9396,7 @@ var index = /*#__PURE__*/Object.freeze({
 
 exports.DEFAULT_ETF_CONFIG = DEFAULT_ETF_CONFIG;
 exports.DoGProcessor = DoGProcessor;
-exports.EdgeTangentFlow = EdgeTangentFlow;
+exports.EdgeTangentFlowComputer = EdgeTangentFlowComputer;
 exports.ThresholdModes = ThresholdModes;
 exports.applyCustomThreshold = applyCustomThreshold;
 exports.blur = index$2;

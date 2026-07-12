@@ -1,42 +1,38 @@
 /**
- * Edge Tangent Flow computation for FDoG
+ * CPU Edge Tangent Flow computation for FDoG
  *
  * The ETF represents the direction of edges at each pixel, computed from
  * the structure tensor of the image gradients.
  *
  * Based on Section 2.6 of Winnemöller et al. (2012) and
  * Kang et al. (2007) "Coherent Line Drawing"
+ *
+ * Multi-channel support follows Di Zenzo's approach ("A note on the
+ * gradient of a multi-image", CVGIP 33, 1986): per-channel structure
+ * tensors are summed (not the resulting tangents), and a single
+ * eigendecomposition is performed on the combined tensor. Everything
+ * from smoothing onward is identical regardless of how many channels
+ * fed into the tensor, so the single-channel and multi-channel paths
+ * share one pipeline.
+ *
+ * This module has no knowledge of color spaces. It operates purely on
+ * ChannelImage scalar fields; RGB/Lab/etc. splitting and conversion is
+ * the caller's responsibility (see utils/color.ts) and happens before
+ * compute()/computeMultiChannel() is ever called.
  */
-import type { ChannelImage, FlowField, Vec2, ETFConfig } from '../types.js';
+import type { ChannelImage, FlowField, ETFConfig, ETFComputer } from '../types.js';
 /**
- * Edge Tangent Flow field implementation
+ * CPU-backed ETFComputer. Synchronous under the hood, but exposes the
+ * same async ETFComputer contract as the WebGL/WebGPU backends so callers
+ * can swap implementations without caring which one they have.
  */
-export declare class EdgeTangentFlow implements FlowField {
-    private tangents;
-    readonly width: number;
-    readonly height: number;
-    private constructor();
-    getTangent(x: number, y: number): Vec2;
+export declare class CpuEdgeTangentFlowComputer implements ETFComputer {
     /**
-     * Get all tangents as a flat array (for GPU upload)
+     * The CPU backend has no environment dependency and is always available.
      */
-    getTangentArray(): Float32Array;
-    /**
-     * Compute Edge Tangent Flow from a grayscale image
-     *
-     * @param input Grayscale image (values in 0-1)
-     * @param config ETF configuration
-     * @param sigmaC Structure tensor smoothing sigma (optional override)
-     */
-    static compute(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number): EdgeTangentFlow;
-    /**
-     * Visualize the flow field as a grayscale image
-     * Encodes direction as intensity (useful for debugging)
-     */
-    visualize(): ChannelImage;
-    /**
-     * Visualize as a color image (HSV with direction as hue)
-     */
-    visualizeColor(): ImageData;
+    static isSupported(): boolean;
+    compute(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
+    computeMultiChannel(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
+    dispose(): void;
 }
 //# sourceMappingURL=cpu.d.ts.map

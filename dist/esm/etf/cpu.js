@@ -1,183 +1,142 @@
 /**
- * Edge Tangent Flow computation for FDoG
+ * CPU Edge Tangent Flow computation for FDoG
  *
  * The ETF represents the direction of edges at each pixel, computed from
  * the structure tensor of the image gradients.
  *
  * Based on Section 2.6 of Winnemöller et al. (2012) and
  * Kang et al. (2007) "Coherent Line Drawing"
+ *
+ * Multi-channel support follows Di Zenzo's approach ("A note on the
+ * gradient of a multi-image", CVGIP 33, 1986): per-channel structure
+ * tensors are summed (not the resulting tangents), and a single
+ * eigendecomposition is performed on the combined tensor. Everything
+ * from smoothing onward is identical regardless of how many channels
+ * fed into the tensor, so the single-channel and multi-channel paths
+ * share one pipeline.
+ *
+ * This module has no knowledge of color spaces. It operates purely on
+ * ChannelImage scalar fields; RGB/Lab/etc. splitting and conversion is
+ * the caller's responsibility (see utils/color.ts) and happens before
+ * compute()/computeMultiChannel() is ever called.
  */
 import { DEFAULT_ETF_CONFIG } from '../types.js';
-import { createChannelImage, normalizeVec2, dotVec2, generateGaussianKernel } from '../utils/index.js';
+import { normalizeVec2, dotVec2, generateGaussianKernel } from '../utils/index.js';
+import { TangentFlowField } from './flow-field.js';
 /**
- * Edge Tangent Flow field implementation
+ * CPU-backed ETFComputer. Synchronous under the hood, but exposes the
+ * same async ETFComputer contract as the WebGL/WebGPU backends so callers
+ * can swap implementations without caring which one they have.
  */
-export class EdgeTangentFlow {
-    tangents;
-    width;
-    height;
-    constructor(tangents, width, height) {
-        this.tangents = tangents;
-        this.width = width;
-        this.height = height;
-    }
-    getTangent(x, y) {
-        const clampedX = Math.max(0, Math.min(this.width - 1, Math.round(x)));
-        const clampedY = Math.max(0, Math.min(this.height - 1, Math.round(y)));
-        return this.tangents[clampedY * this.width + clampedX];
-    }
+export class CpuEdgeTangentFlowComputer {
     /**
-     * Get all tangents as a flat array (for GPU upload)
+     * The CPU backend has no environment dependency and is always available.
      */
-    getTangentArray() {
-        const result = new Float32Array(this.width * this.height * 2);
-        for (let i = 0; i < this.tangents.length; i++) {
-            result[i * 2] = this.tangents[i].x;
-            result[i * 2 + 1] = this.tangents[i].y;
+    static isSupported() {
+        return true;
+    }
+    async compute(input, config = {}, sigmaC) {
+        const channelTensor = computeChannelTensor(input);
+        return buildFlowField(channelTensor, input.width, input.height, config, sigmaC);
+    }
+    async computeMultiChannel(inputs, config = {}, sigmaC) {
+        if (inputs.length === 0) {
+            throw new Error('computeMultiChannel requires at least one channel');
         }
-        return result;
-    }
-    /**
-     * Compute Edge Tangent Flow from a grayscale image
-     *
-     * @param input Grayscale image (values in 0-1)
-     * @param config ETF configuration
-     * @param sigmaC Structure tensor smoothing sigma (optional override)
-     */
-    static compute(input, config = {}, sigmaC) {
-        const cfg = { ...DEFAULT_ETF_CONFIG, ...config };
-        const { width, height } = input;
-        // Step 1: Compute image gradients using Sobel operator
-        const gradients = computeGradients(input);
-        // Step 2: Build structure tensor from gradients
-        const tensor = buildStructureTensor(gradients, width, height);
-        // Step 3: Smooth the structure tensor with Gaussian (not box filter!)
-        // Paper specifies sampling within 2.45 * σc for structure tensor blur
-        const smoothSigma = sigmaC ?? (cfg.kernelSize / 2.45);
-        const smoothedTensor = smoothStructureTensorGaussian(tensor, width, height, smoothSigma);
-        // Step 4: Extract initial tangent field from smoothed tensor
-        let tangents = extractTangentField(smoothedTensor, width, height);
-        // Step 5: Refine tangent field iteratively
-        for (let i = 0; i < cfg.iterations; i++) {
-            tangents = refineTangentField(tangents, gradients.magnitude, width, height);
-        }
-        return new EdgeTangentFlow(tangents, width, height);
-    }
-    /**
-     * Visualize the flow field as a grayscale image
-     * Encodes direction as intensity (useful for debugging)
-     */
-    visualize() {
-        const output = createChannelImage(this.width, this.height);
-        for (let y = 0; y < this.height; y++) {
-            for (let x = 0; x < this.width; x++) {
-                const idx = y * this.width + x;
-                const t = this.tangents[idx];
-                // Convert direction to angle, then to 0-1 range
-                const angle = Math.atan2(t.y, t.x);
-                output.data[idx] = (angle + Math.PI) / (2 * Math.PI);
+        const { width, height } = inputs[0];
+        for (const channel of inputs) {
+            if (channel.width !== width || channel.height !== height) {
+                throw new Error('All channels passed to computeMultiChannel must share the same dimensions');
             }
         }
-        return output;
+        const channelTensors = inputs.map(computeChannelTensor);
+        const combined = sumChannelTensors(channelTensors, width, height);
+        return buildFlowField(combined, width, height, config, sigmaC);
     }
-    /**
-     * Visualize as a color image (HSV with direction as hue)
-     */
-    visualizeColor() {
-        const imageData = new ImageData(this.width, this.height);
-        for (let y = 0; y < this.height; y++) {
-            for (let x = 0; x < this.width; x++) {
-                const idx = y * this.width + x;
-                const t = this.tangents[idx];
-                // Direction as hue
-                const angle = Math.atan2(t.y, t.x);
-                const hue = (angle + Math.PI) / (2 * Math.PI);
-                // Magnitude as saturation (always 1 for normalized vectors)
-                const saturation = 1;
-                const value = 1;
-                // HSV to RGB
-                const [r, g, b] = hsvToRgb(hue, saturation, value);
-                const i = idx * 4;
-                imageData.data[i] = r;
-                imageData.data[i + 1] = g;
-                imageData.data[i + 2] = b;
-                imageData.data[i + 3] = 255;
-            }
-        }
-        return imageData;
+    dispose() {
+        // No GPU resources to release for the CPU backend.
     }
 }
 /**
- * Convert HSV to RGB
+ * Shared pipeline: smoothing, eigendecomposition, and iterative
+ * refinement, given a (possibly channel-summed) structure tensor. This is
+ * the single composition point used by both compute() and
+ * computeMultiChannel() above.
  */
-function hsvToRgb(h, s, v) {
-    const i = Math.floor(h * 6);
-    const f = h * 6 - i;
-    const p = v * (1 - s);
-    const q = v * (1 - f * s);
-    const t = v * (1 - (1 - f) * s);
-    let r, g, b;
-    switch (i % 6) {
-        case 0:
-            r = v;
-            g = t;
-            b = p;
-            break;
-        case 1:
-            r = q;
-            g = v;
-            b = p;
-            break;
-        case 2:
-            r = p;
-            g = v;
-            b = t;
-            break;
-        case 3:
-            r = p;
-            g = q;
-            b = v;
-            break;
-        case 4:
-            r = t;
-            g = p;
-            b = v;
-            break;
-        case 5:
-            r = v;
-            g = p;
-            b = q;
-            break;
-        default:
-            r = 0;
-            g = 0;
-            b = 0;
+function buildFlowField(channelTensor, width, height, config, sigmaC) {
+    const cfg = { ...DEFAULT_ETF_CONFIG, ...config };
+    // Smooth the structure tensor with Gaussian (not box filter!)
+    // Paper specifies sampling within 2.45 * σc for structure tensor blur
+    const smoothSigma = sigmaC ?? (cfg.kernelSize / 2.45);
+    const smoothedTensor = smoothStructureTensorGaussian(channelTensor.tensor, width, height, smoothSigma);
+    // Extract initial tangent field from smoothed tensor
+    let tangents = extractTangentField(smoothedTensor, width, height);
+    // Refine tangent field iteratively
+    for (let i = 0; i < cfg.iterations; i++) {
+        tangents = refineTangentField(tangents, channelTensor.magnitude, width, height);
     }
-    return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+    return TangentFlowField.fromVec2Array(tangents, width, height);
+}
+/**
+ * Compute a channel's structure tensor and its trace-derived magnitude
+ * field in one step. This is the single composition point shared by
+ * compute() (called once) and computeMultiChannel() (called once per
+ * input channel, then combined via sumChannelTensors).
+ */
+function computeChannelTensor(input) {
+    const tensor = buildStructureTensor(computeGradients(input), input.width, input.height);
+    const magnitude = tensorMagnitude(tensor, input.width * input.height);
+    return { tensor, magnitude };
+}
+/**
+ * Di Zenzo tensor summation: combine several channels' structure tensors
+ * (and their magnitudes) into one. Valid because E, F, G, and the
+ * trace-derived magnitude are all additive across channels — this is
+ * the mathematical basis for treating multi-channel ETF as "the same
+ * as single-channel, but with a summed tensor."
+ */
+function sumChannelTensors(channelTensors, width, height) {
+    const size = width * height;
+    const e = new Float32Array(size);
+    const f = new Float32Array(size);
+    const g = new Float32Array(size);
+    const magnitude = new Float32Array(size);
+    for (const { tensor, magnitude: mag } of channelTensors) {
+        for (let i = 0; i < size; i++) {
+            e[i] += tensor.e[i];
+            f[i] += tensor.f[i];
+            g[i] += tensor.g[i];
+            magnitude[i] += mag[i];
+        }
+    }
+    return { tensor: { e, f, g }, magnitude };
+}
+/**
+ * Derive the scalar gradient-magnitude field from a structure tensor's
+ * trace: sqrt(E + G) == sqrt(Ix² + Iy²) == hypot(Ix, Iy) for a single
+ * channel, so this is a drop-in replacement for a Sobel-derived
+ * magnitude field, but one that also composes correctly across summed
+ * multi-channel tensors.
+ */
+function tensorMagnitude(tensor, size) {
+    const magnitude = new Float32Array(size);
+    for (let i = 0; i < size; i++) {
+        magnitude[i] = Math.sqrt(tensor.e[i] + tensor.g[i]);
+    }
+    return magnitude;
 }
 /**
  * Compute image gradients using Sobel operator
  */
-// In etf.ts - Optimize gradient computation
 function computeGradients(input) {
     const { width, height } = input;
     const size = width * height;
     const gradX = new Float32Array(size);
     const gradY = new Float32Array(size);
-    const magnitude = new Float32Array(size);
-    // Precompute pixel indices for better cache locality
-    const indices = new Int32Array(width * height);
-    for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-            indices[y * width + x] = y * width + x;
-        }
-    }
-    // Use SIMD-like operations (manual loop unrolling)
     for (let i = 0; i < size; i++) {
         const x = i % width;
         const y = Math.floor(i / width);
         if (x > 0 && x < width - 1 && y > 0 && y < height - 1) {
-            // Use direct array access instead of getPixel calls
             const idx = y * width + x;
             const idxTop = idx - width;
             const idxBottom = idx + width;
@@ -189,14 +148,11 @@ function computeGradients(input) {
             const p02 = input.data[idxBottom - 1];
             const p12 = input.data[idxBottom];
             const p22 = input.data[idxBottom + 1];
-            const gx = -p00 + p20 - 2 * p01 + 2 * p21 - p02 + p22;
-            const gy = -p00 - 2 * p10 - p20 + p02 + 2 * p12 + p22;
-            gradX[i] = gx;
-            gradY[i] = gy;
-            magnitude[i] = Math.hypot(gx, gy); // Faster than sqrt(gx*gx + gy*gy)
+            gradX[i] = -p00 + p20 - 2 * p01 + 2 * p21 - p02 + p22;
+            gradY[i] = -p00 - 2 * p10 - p20 + p02 + 2 * p12 + p22;
         }
     }
-    return { x: gradX, y: gradY, magnitude };
+    return { x: gradX, y: gradY };
 }
 /**
  * Build structure tensor from gradients

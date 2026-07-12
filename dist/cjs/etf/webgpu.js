@@ -14,12 +14,27 @@
  * work around GLSL's lack of dynamically-sized arrays. Storage buffers have
  * no such limit here, so the blur radius is only bounded by sanity/perf
  * limits, not by shader syntax — see MAX_BLUR_RADIUS below.
+ *
+ * Multi-channel support follows Di Zenzo's approach ("A note on the
+ * gradient of a multi-image", CVGIP 33, 1986), matching the CPU backend:
+ * per-channel structure tensors are summed (not the resulting tangents),
+ * and a single eigendecomposition is performed on the combined tensor.
+ * On the GPU this means: for each input channel, run the gradient +
+ * structure-tensor passes and *accumulate* (read-modify-write add) into
+ * one shared tensor buffer, rather than overwriting it — see
+ * STRUCTURE_TENSOR_ACCUMULATE_SHADER. Everything from the Gaussian blur
+ * pass onward is unchanged regardless of channel count, so compute() is
+ * implemented as computeMultiChannel() called with a single-element array.
+ *
+ * This module has no knowledge of color spaces — it only ever sees
+ * ChannelImage scalar fields. RGB/Lab/etc. splitting and conversion is
+ * the caller's responsibility (see utils/color.ts).
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.EdgeTangentFlowWebGPU = void 0;
+exports.WebGpuEdgeTangentFlowComputer = void 0;
 exports.isWebGPUComputeSupported = isWebGPUComputeSupported;
 const types_js_1 = require("../types.js");
-const index_js_1 = require("../utils/index.js");
+const flow_field_js_1 = require("./flow-field.js");
 // NOTE: isWebGPUComputeSupported() isn't assumed to exist in utils/index.js
 // yet (only isWebGLComputeSupported is referenced in webgl.ts), so a local
 // equivalent is defined at the bottom of this file. Feel free to hoist it
@@ -89,16 +104,30 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
   let gx = -p00 + p20 - 2.0 * p01 + 2.0 * p21 - p02 + p22;
   let gy = -p00 - 2.0 * p10 - p20 + p02 + 2.0 * p12 + p22;
-  let mag = length(vec2<f32>(gx, gy));
 
-  // R=gx, G=gy, B=magnitude
-  outputBuf[u32(y * w + x)] = vec4<f32>(gx, gy, mag, 1.0);
+  // R=gx, G=gy — B/A unused downstream (magnitude is re-derived from the
+  // structure tensor's trace after channel accumulation, not carried
+  // through from here; see FINALIZE_MAGNITUDE_SHADER).
+  outputBuf[u32(y * w + x)] = vec4<f32>(gx, gy, 0.0, 1.0);
 }
 `;
-const STRUCTURE_TENSOR_SHADER = COMMON_WGSL + `
+// Computes one channel's structure tensor and *accumulates* it into
+// accumBuf (Di Zenzo multichannel summation) instead of overwriting it.
+// accumBuf must be zero-initialized before the first channel's pass —
+// freshly-created WebGPU storage buffers are guaranteed zero, so a
+// single-channel call (this pass runs exactly once) produces the same
+// result as a plain assignment would.
+//
+// .w (magnitude) is deliberately left untouched here. Summing each
+// channel's individual sqrt(e+g) would be wrong, since sqrt is nonlinear:
+// sum(sqrt(e_k + g_k)) != sqrt(sum(e_k) + sum(g_k)). Only the latter is
+// the Di Zenzo-consistent combined gradient magnitude, so it's computed
+// once from the final accumulated trace in FINALIZE_MAGNITUDE_SHADER
+// instead.
+const STRUCTURE_TENSOR_ACCUMULATE_SHADER = COMMON_WGSL + `
 @group(0) @binding(0) var<uniform> params: Params;
 @group(0) @binding(1) var<storage, read> gradBuf: array<vec4<f32>>;
-@group(0) @binding(2) var<storage, read_write> outputBuf: array<vec4<f32>>;
+@group(0) @binding(2) var<storage, read_write> accumBuf: array<vec4<f32>>;
 
 @compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -118,8 +147,30 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let f = gx * gy;
   let g = gy * gy;
 
-  // R=E, G=F, B=G, A=magnitude (passed through)
-  outputBuf[idx] = vec4<f32>(e, f, g, grad.z);
+  accumBuf[idx] = accumBuf[idx] + vec4<f32>(e, f, g, 0.0);
+}
+`;
+// Runs once, after every channel's structure tensor has been accumulated.
+// Re-derives magnitude from the combined tensor's trace: sqrt(E + G).
+// For a single channel this equals sqrt(gx^2 + gy^2) == hypot(gx, gy), so
+// compute() (a single-channel computeMultiChannel() call) sees identical
+// behavior to before this pass existed.
+const FINALIZE_MAGNITUDE_SHADER = COMMON_WGSL + `
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var<storage, read_write> tensorBuf: array<vec4<f32>>;
+
+@compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let w = i32(params.width);
+  let h = i32(params.height);
+  let x = i32(gid.x);
+  let y = i32(gid.y);
+  if (x >= w || y >= h) { return; }
+
+  let idx = u32(y * w + x);
+  let t = tensorBuf[idx];
+  let mag = sqrt(max(t.x + t.z, 0.0));
+  tensorBuf[idx] = vec4<f32>(t.x, t.y, t.z, mag);
 }
 `;
 // Both blur directions live in the same module — WGSL allows multiple
@@ -422,43 +473,27 @@ fn main(
 }
 `;
 /**
- * WebGPU-accelerated ETF implementation
+ * WebGPU-accelerated ETFComputer. Device/pipeline resources are cached
+ * statically (shared across every instance) since acquiring a GPUDevice
+ * is expensive and none of that state depends on image size or channel
+ * count; per-call state (buffers) is still allocated fresh in
+ * computeInternal().
  */
-class EdgeTangentFlowWebGPU {
-    // Flat, stride-2 (x,y) buffer — avoids allocating pixelCount JS objects.
-    tangents;
-    width;
-    height;
+class WebGpuEdgeTangentFlowComputer {
     static resources = null;
     static resourcesPromise = null;
-    constructor(tangents, width, height) {
-        this.tangents = tangents;
-        this.width = width;
-        this.height = height;
-    }
-    getTangent(x, y) {
-        const clampedX = Math.max(0, Math.min(this.width - 1, Math.round(x)));
-        const clampedY = Math.max(0, Math.min(this.height - 1, Math.round(y)));
-        const idx = (clampedY * this.width + clampedX) * 2;
-        return { x: this.tangents[idx], y: this.tangents[idx + 1] };
-    }
-    getTangentArray() {
-        // Already stored in exactly this layout — just hand back a copy so
-        // callers can't mutate internal state out from under us.
-        return this.tangents.slice();
-    }
     /**
      * Cheap synchronous check — mirrors the shape of isWebGLComputeSupported().
      * This only confirms the API surface exists; it can't confirm an adapter
      * is actually obtainable (that requires the async requestAdapter() call
-     * made lazily inside initResources/compute).
+     * made lazily inside initResources()/computeInternal()).
      */
     static isSupported() {
-        return typeof navigator !== 'undefined' && !!navigator.gpu;
+        return isWebGPUComputeSupported();
     }
     /**
-     * Optional richer diagnostic, matching the BlurStrategyClass shape used
-     * elsewhere in this codebase (see types.ts).
+     * Optional richer diagnostic, matching the ETFComputerClass shape in
+     * types.ts. Async, since it actually attempts to obtain an adapter.
      */
     static async getUnsupportedReason() {
         if (typeof navigator === 'undefined' || !navigator.gpu) {
@@ -498,7 +533,7 @@ class EdgeTangentFlowWebGPU {
                 requiredFeatures: hasTimestampQuery ? ['timestamp-query'] : [],
             });
             device.lost.then((info) => {
-                // Invalidate the cache so the next compute() call re-initializes.
+                // Invalidate the cache so the next call re-initializes.
                 if (this.resources && this.resources.device === device) {
                     this.resources = null;
                     this.resourcesPromise = null;
@@ -533,7 +568,8 @@ class EdgeTangentFlowWebGPU {
             const resources = {
                 device,
                 gradientPipeline: makePipeline(GRADIENT_SHADER),
-                structureTensorPipeline: makePipeline(STRUCTURE_TENSOR_SHADER),
+                structureTensorAccumulatePipeline: makePipeline(STRUCTURE_TENSOR_ACCUMULATE_SHADER),
+                finalizeMagnitudePipeline: makePipeline(FINALIZE_MAGNITUDE_SHADER),
                 blurHPipeline,
                 blurVPipeline,
                 blurHTiledPipeline,
@@ -548,26 +584,77 @@ class EdgeTangentFlowWebGPU {
         return this.resourcesPromise;
     }
     /**
-     * Compute ETF using WebGPU compute shaders.
-     *
-     * Note this is async (unlike the WebGL version's synchronous compute()),
-     * since device acquisition and the final buffer readback (mapAsync) are
-     * both inherently asynchronous in WebGPU.
+     * Compute ETF from a single scalar channel using WebGPU compute shaders.
+     * Implemented as computeMultiChannel() with a single-element array — the
+     * per-channel accumulate pass degenerates to a plain assignment when
+     * there's only one channel (see STRUCTURE_TENSOR_ACCUMULATE_SHADER).
      */
-    static async compute(input, config = {}, sigmaC) {
+    async compute(input, config = {}, sigmaC) {
+        return this.computeInternal([input], config, sigmaC);
+    }
+    /**
+     * Compute ETF jointly from several co-registered scalar channels (e.g.
+     * R/G/B or L/a/b), using Di Zenzo's multichannel structure tensor. All
+     * channels must share the same width/height.
+     */
+    async computeMultiChannel(inputs, config = {}, sigmaC) {
+        if (inputs.length === 0) {
+            throw new Error('computeMultiChannel requires at least one channel');
+        }
+        const { width, height } = inputs[0];
+        for (const channel of inputs) {
+            if (channel.width !== width || channel.height !== height) {
+                throw new Error('All channels passed to computeMultiChannel must share the same dimensions');
+            }
+        }
+        return this.computeInternal(inputs, config, sigmaC);
+    }
+    /**
+     * Release the cached WebGPU device + pipelines. Safe to call even if no
+     * compute()/computeMultiChannel() call has happened yet. Since the
+     * underlying resources are cached statically (shared across instances —
+     * see the class doc comment), this releases them for every
+     * WebGpuEdgeTangentFlowComputer instance, not just this one; call it
+     * once you're done with all ETF computations for the session.
+     */
+    dispose() {
+        const ctor = WebGpuEdgeTangentFlowComputer;
+        if (ctor.resources) {
+            ctor.resources.device.destroy();
+            ctor.resources = null;
+            ctor.resourcesPromise = null;
+        }
+    }
+    /**
+     * Shared implementation behind compute() and computeMultiChannel().
+     * Runs the gradient + structure-tensor-accumulate passes once per input
+     * channel (Di Zenzo summation), then a single finalize/blur/extract/
+     * refine pipeline identical to the pre-multichannel implementation.
+     *
+     * Note this is async (unlike a hypothetical synchronous CPU-style
+     * compute()), since device acquisition and the final buffer readback
+     * (mapAsync) are both inherently asynchronous in WebGPU.
+     */
+    async computeInternal(inputs, config, sigmaC) {
         const cfg = { ...types_js_1.DEFAULT_ETF_CONFIG, ...config };
-        const { width, height } = input;
+        const { width, height } = inputs[0];
         const pixelCount = width * height;
-        const res = await this.initResources();
+        const res = await WebGpuEdgeTangentFlowComputer.initResources();
         const { device } = res;
         // ---- Buffers ----
-        const inputBuf = createBufferWithData(device, input.data, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-        const gradientBuf = createEmptyVec4Buffer(device, pixelCount);
-        const tensorBuf = createEmptyVec4Buffer(device, pixelCount);
+        // One accumulator, shared across all channels (Di Zenzo sum), plus one
+        // scratch gradient buffer reused sequentially per channel — safe
+        // because compute passes within a single command encoder execute in
+        // encoded order, so each channel's gradient pass fully completes
+        // before the next pass reads it, and before the next channel's
+        // gradient pass overwrites it.
+        const tensorAccumBuf = createEmptyVec4Buffer(device, pixelCount);
+        const gradientScratchBuf = createEmptyVec4Buffer(device, pixelCount);
         const blurTempBuf = createEmptyVec4Buffer(device, pixelCount);
         const blurOutputBuf = createEmptyVec4Buffer(device, pixelCount);
         const tangentBuf1 = createEmptyVec4Buffer(device, pixelCount);
         const tangentBuf2 = createEmptyVec4Buffer(device, pixelCount);
+        const channelInputBufs = inputs.map((channel) => createBufferWithData(device, channel.data, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST));
         const smoothSigma = sigmaC ?? cfg.kernelSize / 2.45;
         const radius = Math.min(MAX_BLUR_RADIUS, Math.max(1, Math.ceil(smoothSigma * 2.45)));
         const kernelSize = radius * 2 + 1;
@@ -576,10 +663,11 @@ class EdgeTangentFlowWebGPU {
         const dispatchX = Math.ceil(width / WORKGROUP_SIZE);
         const dispatchY = Math.ceil(height / WORKGROUP_SIZE);
         // ---- Optional per-pass GPU timing (requires 'timestamp-query') ----
-        // 5 fixed passes (gradient, tensor, blurH, blurV, tangentExtract) plus
-        // one per refine iteration. Each pass writes a begin+end timestamp.
+        // Two passes per input channel (gradient, tensorAccumulate), plus one
+        // finalize pass, plus 4 fixed passes (blurH, blurV, tangentExtract),
+        // plus one per refine iteration.
         const passLabels = [];
-        const numPasses = 5 + cfg.iterations;
+        const numPasses = inputs.length * 2 + 1 + 3 + cfg.iterations;
         const querySet = res.hasTimestampQuery
             ? device.createQuerySet({ type: 'timestamp', count: numPasses * 2 })
             : null;
@@ -597,41 +685,61 @@ class EdgeTangentFlowWebGPU {
             return writes;
         };
         const encoder = device.createCommandEncoder();
-        // Step 1: Compute gradients
+        // Steps 1-2: per channel, compute gradients then accumulate the
+        // resulting structure tensor into tensorAccumBuf (Di Zenzo sum).
+        for (let k = 0; k < inputs.length; k++) {
+            const channelBuf = channelInputBufs[k];
+            {
+                const params = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
+                const bindGroup = device.createBindGroup({
+                    layout: res.gradientPipeline.getBindGroupLayout(0),
+                    entries: [
+                        { binding: 0, resource: { buffer: params } },
+                        { binding: 1, resource: { buffer: channelBuf } },
+                        { binding: 2, resource: { buffer: gradientScratchBuf } },
+                    ],
+                });
+                const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites(`gradient[${k}]`) });
+                pass.setPipeline(res.gradientPipeline);
+                pass.setBindGroup(0, bindGroup);
+                pass.dispatchWorkgroups(dispatchX, dispatchY);
+                pass.end();
+            }
+            {
+                const params = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
+                const bindGroup = device.createBindGroup({
+                    layout: res.structureTensorAccumulatePipeline.getBindGroupLayout(0),
+                    entries: [
+                        { binding: 0, resource: { buffer: params } },
+                        { binding: 1, resource: { buffer: gradientScratchBuf } },
+                        { binding: 2, resource: { buffer: tensorAccumBuf } },
+                    ],
+                });
+                const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites(`tensorAccumulate[${k}]`) });
+                pass.setPipeline(res.structureTensorAccumulatePipeline);
+                pass.setBindGroup(0, bindGroup);
+                pass.dispatchWorkgroups(dispatchX, dispatchY);
+                pass.end();
+            }
+        }
+        // Step 3: finalize magnitude from the combined trace (no-op for the
+        // single-channel case beyond recomputing the same value).
         {
             const params = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
             const bindGroup = device.createBindGroup({
-                layout: res.gradientPipeline.getBindGroupLayout(0),
+                layout: res.finalizeMagnitudePipeline.getBindGroupLayout(0),
                 entries: [
                     { binding: 0, resource: { buffer: params } },
-                    { binding: 1, resource: { buffer: inputBuf } },
-                    { binding: 2, resource: { buffer: gradientBuf } },
+                    { binding: 1, resource: { buffer: tensorAccumBuf } },
                 ],
             });
-            const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites('gradient') });
-            pass.setPipeline(res.gradientPipeline);
+            const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites('finalizeMagnitude') });
+            pass.setPipeline(res.finalizeMagnitudePipeline);
             pass.setBindGroup(0, bindGroup);
             pass.dispatchWorkgroups(dispatchX, dispatchY);
             pass.end();
         }
-        // Step 2: Build structure tensor
-        {
-            const params = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
-            const bindGroup = device.createBindGroup({
-                layout: res.structureTensorPipeline.getBindGroupLayout(0),
-                entries: [
-                    { binding: 0, resource: { buffer: params } },
-                    { binding: 1, resource: { buffer: gradientBuf } },
-                    { binding: 2, resource: { buffer: tensorBuf } },
-                ],
-            });
-            const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites('structureTensor') });
-            pass.setPipeline(res.structureTensorPipeline);
-            pass.setBindGroup(0, bindGroup);
-            pass.dispatchWorkgroups(dispatchX, dispatchY);
-            pass.end();
-        }
-        // Step 3: Gaussian blur the structure tensor (horizontal then vertical)
+        // Step 4: Gaussian blur the structure tensor (horizontal then vertical)
         {
             const params = createParamsBuffer(device, { width, height, radius, kernelSize });
             // The tiled pipelines' workgroup-shared arrays are sized for
@@ -646,7 +754,7 @@ class EdgeTangentFlowWebGPU {
                 layout: blurHPipe.getBindGroupLayout(0),
                 entries: [
                     { binding: 0, resource: { buffer: params } },
-                    { binding: 1, resource: { buffer: tensorBuf } },
+                    { binding: 1, resource: { buffer: tensorAccumBuf } },
                     { binding: 2, resource: { buffer: blurTempBuf } },
                     { binding: 3, resource: { buffer: kernelBuf } },
                 ],
@@ -671,7 +779,7 @@ class EdgeTangentFlowWebGPU {
             passV.dispatchWorkgroups(dispatchX, dispatchY);
             passV.end();
         }
-        // Step 4: Extract initial tangent field
+        // Step 5: Extract initial tangent field
         {
             const params = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
             const bindGroup = device.createBindGroup({
@@ -688,15 +796,15 @@ class EdgeTangentFlowWebGPU {
             pass.dispatchWorkgroups(dispatchX, dispatchY);
             pass.end();
         }
-        // Step 5: Refine tangent field iteratively (ping-pong between buffers)
+        // Step 6: Refine tangent field iteratively (ping-pong between buffers)
         let readBuf = tangentBuf1;
         let writeBuf = tangentBuf2;
-        const params = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
+        const refineParams = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
         for (let i = 0; i < cfg.iterations; i++) {
             const bindGroup = device.createBindGroup({
                 layout: res.tangentRefinePipeline.getBindGroupLayout(0),
                 entries: [
-                    { binding: 0, resource: { buffer: params } },
+                    { binding: 0, resource: { buffer: refineParams } },
                     { binding: 1, resource: { buffer: readBuf } },
                     { binding: 2, resource: { buffer: writeBuf } },
                 ],
@@ -752,9 +860,16 @@ class EdgeTangentFlowWebGPU {
             for (let i = 0; i < passLabels.length; i++) {
                 const beginNs = raw[i * 2];
                 const endNs = raw[i * 2 + 1];
-                // Aggregate refine[i] entries under one key so a large `iterations`
-                // count doesn't spam the log with per-iteration lines.
-                const label = passLabels[i].startsWith('refine[') ? 'refine (sum)' : passLabels[i];
+                // Aggregate refine[i] and per-channel entries under one key each
+                // so a large `iterations` or channel count doesn't spam the log
+                // with per-iteration/per-channel lines.
+                let label = passLabels[i];
+                if (label.startsWith('refine['))
+                    label = 'refine (sum)';
+                else if (label.startsWith('gradient['))
+                    label = 'gradient (sum)';
+                else if (label.startsWith('tensorAccumulate['))
+                    label = 'tensorAccumulate (sum)';
                 const ms = Number(endNs - beginNs) / 1e6;
                 gpuPassTimings[label] = (gpuPassTimings[label] ?? 0) + ms;
             }
@@ -774,45 +889,20 @@ class EdgeTangentFlowWebGPU {
             tangents[i * 2 + 1] = mapped[i * 4 + 1];
         }
         // Cleanup temporary (per-call) resources — pipelines/device are cached.
-        inputBuf.destroy();
-        gradientBuf.destroy();
-        tensorBuf.destroy();
+        for (const buf of channelInputBufs)
+            buf.destroy();
+        gradientScratchBuf.destroy();
+        tensorAccumBuf.destroy();
         blurTempBuf.destroy();
         blurOutputBuf.destroy();
         tangentBuf1.destroy();
         tangentBuf2.destroy();
         kernelBuf.destroy();
         stagingBuf.destroy();
-        return new EdgeTangentFlowWebGPU(tangents, width, height);
-    }
-    /**
-     * Visualize the flow field as a grayscale image
-     */
-    visualize() {
-        const output = (0, index_js_1.createChannelImage)(this.width, this.height);
-        for (let y = 0; y < this.height; y++) {
-            for (let x = 0; x < this.width; x++) {
-                const idx = y * this.width + x;
-                const tx = this.tangents[idx * 2];
-                const ty = this.tangents[idx * 2 + 1];
-                const angle = Math.atan2(ty, tx);
-                output.data[idx] = (angle + Math.PI) / (2 * Math.PI);
-            }
-        }
-        return output;
-    }
-    /**
-     * Cleanup WebGPU resources (call when done with all ETF computations)
-     */
-    static dispose() {
-        if (this.resources) {
-            this.resources.device.destroy();
-            this.resources = null;
-            this.resourcesPromise = null;
-        }
+        return flow_field_js_1.TangentFlowField.fromFloat32Array(tangents, width, height);
     }
 }
-exports.EdgeTangentFlowWebGPU = EdgeTangentFlowWebGPU;
+exports.WebGpuEdgeTangentFlowComputer = WebGpuEdgeTangentFlowComputer;
 // ============== Helper Functions ==============
 function alignTo4(bytes) {
     return Math.ceil(bytes / 4) * 4;

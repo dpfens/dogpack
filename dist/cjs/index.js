@@ -83,7 +83,7 @@
  * ```
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.extensions = exports.utilities = exports.DEFAULT_ETF_CONFIG = exports.threshold = exports.preprocess = exports.EdgeTangentFlow = exports.blur = exports.applyCustomThreshold = exports.ThresholdModes = exports.DoGProcessor = exports.dog = void 0;
+exports.extensions = exports.utilities = exports.DEFAULT_ETF_CONFIG = exports.threshold = exports.preprocess = exports.EdgeTangentFlowComputer = exports.blur = exports.applyCustomThreshold = exports.ThresholdModes = exports.DoGProcessor = exports.dog = void 0;
 exports.dog = require("./dog/index.js");
 // Core processor (for advanced usage)
 var processor_js_1 = require("./processor.js");
@@ -94,7 +94,7 @@ Object.defineProperty(exports, "applyCustomThreshold", { enumerable: true, get: 
 exports.blur = require("./blur/index.js");
 // Edge Tangent Flow (for visualization or custom pipelines)
 var index_js_1 = require("./etf/index.js");
-Object.defineProperty(exports, "EdgeTangentFlow", { enumerable: true, get: function () { return index_js_1.EdgeTangentFlow; } });
+Object.defineProperty(exports, "EdgeTangentFlowComputer", { enumerable: true, get: function () { return index_js_1.EdgeTangentFlowComputer; } });
 // Preprocessing
 exports.preprocess = require("./preprocess/index.js");
 exports.threshold = require("./threshold.js");

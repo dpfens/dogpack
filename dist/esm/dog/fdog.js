@@ -9,7 +9,7 @@
  */
 import { DEFAULT_ETF_CONFIG, } from '../types.js';
 import { DoGProcessor } from '../processor.js';
-import { EdgeTangentFlow } from '../etf/index.js';
+import { EdgeTangentFlowComputer } from '../etf/index.js';
 import { imageDataToLuminance, luminanceToImageData } from '../utils/index.js';
 import { GradientAlignedBlur } from '../blur/gradient-aligned/index.js';
 import { FlowGuidedBlur } from '../blur/flow-guided.js';
@@ -58,7 +58,8 @@ export class FDoG {
     async process(input, overrides = {}) {
         const params = { ...this.config, ...overrides };
         // Step 1: Compute Edge Tangent Flow
-        const etf = await EdgeTangentFlow.compute(input, {
+        const etfComputer = new EdgeTangentFlowComputer();
+        const etf = await etfComputer.compute(input, {
             iterations: DEFAULT_ETF_CONFIG.iterations,
             kernelSize: Math.ceil(params.sigmaC * 2.45) * 2 + 1,
         }, params.sigmaC);
@@ -77,7 +78,7 @@ export class FDoG {
             result = await flowBlur.blur(result, params.sigmaA);
         }
         flowBlur.dispose();
-        EdgeTangentFlow.dispose();
+        etfComputer.dispose();
         return result;
     }
     /**
@@ -86,7 +87,8 @@ export class FDoG {
     async processDetailed(input, overrides = {}) {
         const params = { ...this.config, ...overrides };
         // Compute ETF
-        const etf = await EdgeTangentFlow.compute(input, {
+        const etfComputer = new EdgeTangentFlowComputer();
+        const etf = await etfComputer.compute(input, {
             iterations: DEFAULT_ETF_CONFIG.iterations,
             kernelSize: Math.ceil(params.sigmaC * 2.45) * 2 + 1,
         }, params.sigmaC);
@@ -113,7 +115,7 @@ export class FDoG {
             result = await aaBlur.blur(smoothed, params.sigmaA);
             aaBlur.dispose();
         }
-        EdgeTangentFlow.dispose();
+        etfComputer.dispose();
         return { result, etf, sharpened, thresholded, smoothed };
     }
     /**
@@ -157,11 +159,9 @@ export class FDoG {
         if (sigma <= 0) {
             return { data: new Float32Array(input.data), width: input.width, height: input.height };
         }
-        const flowCls = FlowGuidedBlur;
-        const aaBlur = new flowCls(etf);
+        const aaBlur = new FlowGuidedBlur(etf);
         const result = aaBlur.blur(input, sigma);
         aaBlur.dispose();
-        EdgeTangentFlow.dispose();
         return result;
     }
     /**

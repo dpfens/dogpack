@@ -87,7 +87,7 @@ export { DoGProcessor, ThresholdModes, applyCustomThreshold } from './processor.
 // Blur strategies (for custom configurations)
 export * as blur from './blur/index.js';
 // Edge Tangent Flow (for visualization or custom pipelines)
-export { EdgeTangentFlow } from './etf/index.js';
+export { EdgeTangentFlowComputer } from './etf/index.js';
 // Preprocessing
 export * as preprocess from './preprocess/index.js';
 export * as threshold from './threshold.js';

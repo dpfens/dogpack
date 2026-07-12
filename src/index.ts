@@ -112,7 +112,7 @@ export type {
 } from './blur/index.js';
 
 // Edge Tangent Flow (for visualization or custom pipelines)
-export { EdgeTangentFlow } from './etf/index.js';
+export { EdgeTangentFlowComputer } from './etf/index.js';
 
 // Preprocessing
 

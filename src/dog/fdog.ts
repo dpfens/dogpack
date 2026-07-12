@@ -11,9 +11,10 @@
 import { 
   DEFAULT_ETF_CONFIG,
   type ChannelImage,
+  type FlowField,
 } from '../types.js';
 import { DoGProcessor } from '../processor.js';
-import { EdgeTangentFlow } from '../etf/index.js';
+import { EdgeTangentFlowComputer } from '../etf/index.js';
 import { imageDataToLuminance, luminanceToImageData } from '../utils/index.js';
 import { GradientAlignedBlur } from '../blur/gradient-aligned/index.js';
 import { FlowGuidedBlur } from '../blur/flow-guided.js';
@@ -68,7 +69,8 @@ export class FDoG implements DoGImplementation {
     const params = { ...this.config, ...overrides };
 
     // Step 1: Compute Edge Tangent Flow
-    const etf = await EdgeTangentFlow.compute(input, {
+    const etfComputer = new EdgeTangentFlowComputer();
+    const etf = await etfComputer.compute(input, {
       iterations: DEFAULT_ETF_CONFIG.iterations,
       kernelSize: Math.ceil(params.sigmaC * 2.45) * 2 + 1,
     }, params.sigmaC);
@@ -93,7 +95,7 @@ export class FDoG implements DoGImplementation {
     }
 
     flowBlur.dispose();
-    EdgeTangentFlow.dispose();
+    etfComputer.dispose();
 
     return result;
   }
@@ -106,7 +108,7 @@ export class FDoG implements DoGImplementation {
     overrides: Partial<FDoGConfig> = {}
   ): Promise<{
     result: ChannelImage;
-    etf: EdgeTangentFlow;
+    etf: FlowField;
     sharpened: ChannelImage;
     thresholded: ChannelImage;
     smoothed: ChannelImage;
@@ -114,7 +116,8 @@ export class FDoG implements DoGImplementation {
     const params = { ...this.config, ...overrides };
     
     // Compute ETF
-    const etf = await EdgeTangentFlow.compute(input, {
+    const etfComputer = new EdgeTangentFlowComputer();
+    const etf = await etfComputer.compute(input, {
       iterations: DEFAULT_ETF_CONFIG.iterations,
       kernelSize: Math.ceil(params.sigmaC * 2.45) * 2 + 1,
     }, params.sigmaC);
@@ -145,7 +148,7 @@ export class FDoG implements DoGImplementation {
       result = await aaBlur.blur(smoothed, params.sigmaA);
       aaBlur.dispose();
     }
-    EdgeTangentFlow.dispose();
+    etfComputer.dispose();
     return { result, etf, sharpened, thresholded, smoothed };
   }
   
@@ -166,7 +169,7 @@ export class FDoG implements DoGImplementation {
    */
   async processWithETF(
     input: ChannelImage,
-    etf: EdgeTangentFlow,
+    etf: FlowField,
     overrides: Partial<FDoGConfig> = {}
   ): Promise<ChannelImage> {
     const params = { ...this.config, ...overrides };
@@ -198,7 +201,7 @@ export class FDoG implements DoGImplementation {
    */
   async applyAntiAliasing(
     input: ChannelImage,
-    etf: EdgeTangentFlow,
+    etf: FlowField,
     sigmaA?: number
   ): Promise<ChannelImage> {
     const sigma = sigmaA ?? this.config.sigmaA;
@@ -206,11 +209,9 @@ export class FDoG implements DoGImplementation {
       return { data: new Float32Array(input.data), width: input.width, height: input.height };
     }
 
-    const flowCls = FlowGuidedBlur;
-    const aaBlur = new flowCls(etf);
+    const aaBlur = new FlowGuidedBlur(etf);
     const result = aaBlur.blur(input, sigma);
     aaBlur.dispose();
-    EdgeTangentFlow.dispose();
     return result;
   }
   

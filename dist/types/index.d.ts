@@ -87,7 +87,7 @@ export type { DoGConfig, DoGImplementation, DogConfigParamType, XDoGConfig, FDoG
 export { DoGProcessor, ThresholdModes, applyCustomThreshold } from './processor.js';
 export * as blur from './blur/index.js';
 export type { IsotropicBlurConfig, FlowGuidedBlurConfig } from './blur/index.js';
-export { EdgeTangentFlow } from './etf/index.js';
+export { EdgeTangentFlowComputer } from './etf/index.js';
 export * as preprocess from './preprocess/index.js';
 export type { LocalVarianceConfig, BackendOptions } from './preprocess/index.js';
 export type { ThresholdConfig, ThresholdStrategy } from './threshold.js';

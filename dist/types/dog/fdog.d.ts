@@ -7,8 +7,7 @@
  * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
  * advanced image stylization" by Winnemöller et al. (2012)
  */
-import { type ChannelImage } from '../types.js';
-import { EdgeTangentFlow } from '../etf/index.js';
+import { type ChannelImage, type FlowField } from '../types.js';
 import { FDOG_STYLE_PRESETS, type DoGImplementation, type FDoGConfig } from './types.js';
 /**
  * FDoG (Flow-based Difference of Gaussians)
@@ -49,7 +48,7 @@ export declare class FDoG implements DoGImplementation {
      */
     processDetailed(input: ChannelImage, overrides?: Partial<FDoGConfig>): Promise<{
         result: ChannelImage;
-        etf: EdgeTangentFlow;
+        etf: FlowField;
         sharpened: ChannelImage;
         thresholded: ChannelImage;
         smoothed: ChannelImage;
@@ -64,11 +63,11 @@ export declare class FDoG implements DoGImplementation {
      * Useful when processing multiple frames of video where the ETF
      * can be computed once and reused, or interpolated between keyframes.
      */
-    processWithETF(input: ChannelImage, etf: EdgeTangentFlow, overrides?: Partial<FDoGConfig>): Promise<ChannelImage>;
+    processWithETF(input: ChannelImage, etf: FlowField, overrides?: Partial<FDoGConfig>): Promise<ChannelImage>;
     /**
      * Apply only the anti-aliasing pass to an already-processed image
      */
-    applyAntiAliasing(input: ChannelImage, etf: EdgeTangentFlow, sigmaA?: number): Promise<ChannelImage>;
+    applyAntiAliasing(input: ChannelImage, etf: FlowField, sigmaA?: number): Promise<ChannelImage>;
     /**
      * Get current configuration
      */

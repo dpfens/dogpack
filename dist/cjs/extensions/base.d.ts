@@ -1,5 +1,4 @@
-import type { ChannelImage } from '../types.js';
-import { EdgeTangentFlow } from '../etf/index.js';
+import type { ChannelImage, FlowField } from '../types.js';
 /**
  * Base interface for all extension strategies
  */
@@ -25,7 +24,7 @@ export interface DoGResult {
     /** The sharpened image before thresholding (if available) */
     sharpened?: ChannelImage;
     /** Edge tangent flow (only from FDoG) */
-    etf?: EdgeTangentFlow;
+    etf?: FlowField;
     /** The original grayscale input */
     originalGray?: ChannelImage;
     /** The original color input (if provided) */

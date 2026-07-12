@@ -1,48 +1,51 @@
-import type { ETFConfig, FlowField, ChannelImage, Vec2 } from '../types.js';
+import type { ETFComputer, ETFConfig, FlowField, ChannelImage } from '../types.js';
 export type ETFImpl = 'cpu' | 'webgl' | 'webgpu' | 'auto';
 /**
- * Unified Edge Tangent Flow that automatically selects the best implementation
+ * Edge Tangent Flow computer that automatically selects the best available
+ * backend implementation.
  *
- * Preference order in 'auto' mode: WebGPU > WebGL > CPU. WebGPU compute is
- * inherently async (device acquisition + buffer readback both require
- * awaiting), so compute() is now async across the board — the WebGL and
- * CPU paths are still synchronous under the hood, but are wrapped so the
- * public API is consistent regardless of which implementation gets picked.
+ * Preference order in 'auto' mode: WebGPU > WebGL > CPU. Backend selection
+ * is stateful and happens at most once per instance: the first call to
+ * compute()/computeMultiChannel() probes backends (honoring `forceImpl`,
+ * or falling back WebGPU -> WebGL -> CPU) and caches whichever one
+ * actually works; every later call on this instance reuses that same
+ * backend directly. This avoids re-attempting WebGPU/WebGL acquisition on
+ * every call, and means dispose() has a single, well-defined backend
+ * instance to release GPU resources from.
  */
-export declare class EdgeTangentFlow implements FlowField {
-    private impl;
-    readonly width: number;
-    readonly height: number;
-    private constructor();
-    getTangent(x: number, y: number): Vec2;
-    getTangentArray(): Float32Array;
-    visualize(): ChannelImage;
+export declare class EdgeTangentFlowComputer implements ETFComputer {
+    private readonly forceImpl;
+    private computer;
+    constructor(forceImpl?: ETFImpl);
     /**
-     * Check if WebGPU acceleration is available
+     * Check if WebGPU acceleration is available.
      *
-     * Note: this is the same cheap synchronous check EdgeTangentFlowWebGPU
+     * Note: this is the same cheap synchronous check WebGpuEdgeTangentFlowComputer
      * itself uses (navigator.gpu presence) — it doesn't guarantee an adapter
-     * can actually be obtained. Use EdgeTangentFlowWebGPU.getUnsupportedReason()
+     * can actually be obtained. Use WebGpuEdgeTangentFlowComputer.getUnsupportedReason()
      * for a more thorough (async) check if needed.
      */
     static isWebGPUSupported(): boolean;
     /**
-     * Check if WebGL acceleration is available
+     * Check if WebGL acceleration is available.
      */
     static isWebGLSupported(): boolean;
+    compute(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
+    computeMultiChannel(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
     /**
-     * Compute ETF using the best available implementation
-     *
-     * @param input Grayscale image
-     * @param config ETF configuration
-     * @param sigmaC Structure tensor smoothing sigma
-     * @param forceImpl Force a specific implementation ('cpu' | 'webgl' | 'webgpu' | 'auto')
+     * Release resources held by whichever backend this instance resolved to.
+     * No-op if compute()/computeMultiChannel() was never called, since
+     * nothing was ever instantiated.
      */
-    static compute(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number, forceImpl?: ETFImpl): Promise<EdgeTangentFlow>;
+    dispose(): void;
     /**
-     * Cleanup WebGPU and WebGL resources
+     * Run `op` against the resolved backend, resolving (and caching) it on
+     * first use. `op` is what actually drives selection in 'auto' mode: a
+     * backend only "wins" once it has successfully produced a result, not
+     * merely passed isSupported(), since WebGPU/WebGL can pass that cheap
+     * check and still fail at adapter/device/shader-compile time.
      */
-    static dispose(): void;
+    private run;
 }
-export default EdgeTangentFlow;
+export default EdgeTangentFlowComputer;
 //# sourceMappingURL=index.d.ts.map
