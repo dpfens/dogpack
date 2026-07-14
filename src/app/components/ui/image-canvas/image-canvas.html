@@ -1,0 +1,47 @@
+<div #host class="position-relative w-100 h-100 overflow-hidden bg-body-tertiary rounded"
+    (wheel)="onWheel($event)"
+    (pointerdown)="onPanStart($event)"
+    (pointermove)="onPanMove($event)"
+    (pointerup)="onPanEnd($event)"
+    (pointerleave)="onPanEnd($event)">
+
+    <canvas #canvas class="w-100 h-100 d-block" [style.cursor]="cursorStyle()"></canvas>
+
+    @if (compareWith() && status() === 'ready') {
+    <div class="position-absolute top-0 bottom-0 bg-white bg-opacity-75"
+            style="width: 2px;" [style.left.%]="comparePos()">
+        <div class="position-absolute top-50 start-50 translate-middle
+                    bg-white border rounded-circle shadow-sm d-flex
+                    align-items-center justify-content-center"
+            style="width: 32px; height: 32px; cursor: ew-resize;"
+            (pointerdown)="onDividerStart($event)">
+        <i class="bi bi-arrows-expand"></i>
+        </div>
+    </div>
+    }
+
+    @if (status() === 'loading') {
+    <div class="position-absolute top-0 start-0 w-100 h-100 d-flex
+                align-items-center justify-content-center bg-body bg-opacity-75">
+        <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading…</span>
+        </div>
+    </div>
+    }
+
+    @if (status() === 'error') {
+    <div class="position-absolute top-0 start-0 w-100 h-100 d-flex
+                align-items-center justify-content-center p-3">
+        <div class="alert alert-danger mb-0 text-center" role="alert">
+        {{ errorMessage() || 'Failed to load image' }}
+        </div>
+    </div>
+    }
+
+    @if (status() === 'idle') {
+    <div class="position-absolute top-0 start-0 w-100 h-100 d-flex
+                align-items-center justify-content-center text-secondary">
+        No image
+    </div>
+    }
+</div>

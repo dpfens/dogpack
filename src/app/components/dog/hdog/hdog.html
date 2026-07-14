@@ -1,0 +1,34 @@
+<div class="mb-3">
+  <label class="form-label">Preset</label>
+  <select class="form-select" (change)="selectPreset($any($event.target).value)">
+    <option value="">Custom</option>
+    @for (name of presetNames; track name) {
+      <option [value]="name">{{ name }}</option>
+    }
+  </select>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header">FDoG (line drawing)</div>
+  <div class="card-body">
+    <fdog [preset]="fdogPreset()" />
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header">ADoG (primary tone)</div>
+  <div class="card-body">
+    <adog [preset]="adogPreset()" />
+  </div>
+</div>
+
+<div class="mb-3">
+  <label class="form-label">s′ scale factor (secondary ADoG)</label>
+  <param-slider
+    [sliderMin]="paramRanges.adogSecondaryScaleFactor.recommendedMin"
+    [sliderMax]="paramRanges.adogSecondaryScaleFactor.recommendedMax"
+    [hardMin]="paramRanges.adogSecondaryScaleFactor.hardMin"
+    [hardMax]="paramRanges.adogSecondaryScaleFactor.hardMax"
+    [step]="paramRanges.adogSecondaryScaleFactor.step"
+    [formControl]="adogSecondaryScaleFactor" />
+</div>

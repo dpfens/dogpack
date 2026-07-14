@@ -1,0 +1,23 @@
+<div class="d-flex align-items-center gap-2">
+  <input
+    type="range"
+    class="form-range flex-grow-1"
+    [min]="sliderMin()"
+    [max]="sliderMax()"
+    [step]="step()"
+    [value]="value()"
+    [disabled]="disabled()"
+    (input)="update($any($event.target).value)"
+    (blur)="touched()" />
+  <input
+    type="number"
+    class="form-control form-control-sm"
+    style="width: 6.5rem;"
+    [min]="hardMin()"
+    [max]="hardMax()"
+    [step]="step()"
+    [value]="value()"
+    [disabled]="disabled()"
+    (input)="update($any($event.target).value)"
+    (blur)="touched()" />
+</div>

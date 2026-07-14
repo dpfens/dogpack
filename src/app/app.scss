@@ -1,0 +1,22 @@
+.landing {
+  min-height: 100vh;
+  padding: 2rem;
+}
+
+.upload-dropzone {
+  cursor: pointer;
+  border: 2px dashed var(--bs-border-color);
+  color: var(--bs-secondary-color);
+  transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+
+  &:hover {
+    border-color: var(--bs-primary);
+    color: var(--bs-body-color);
+  }
+}
+
+.landing.dragging .upload-dropzone {
+  border-color: var(--bs-primary);
+  background-color: var(--bs-primary-bg-subtle);
+  color: var(--bs-body-color);
+}

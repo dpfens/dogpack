@@ -1,0 +1,43 @@
+<div class="card">
+  <div class="card-body">
+    @if (!preset() && presetNames.length) {
+      <div class="mb-3">
+        <label class="form-label">Preset</label>
+        <select class="form-select" (change)="selectPreset($any($event.target).value)">
+          <option value="">Custom</option>
+          @for (name of presetNames; track name) {
+            <option [value]="name">{{ name }}</option>
+          }
+        </select>
+      </div>
+    }
+
+    <dog
+      [ranges]="paramRanges"
+      [preset]="preset() ?? selectedPreset()"
+      (configChange)="onConfig($event)" />
+
+    <div class="mb-3">
+      <label class="form-label">Kernel size multiplier</label>
+      <param-slider
+        [sliderMin]="paramRanges.kernelSizeMultiplier.recommendedMin"
+        [sliderMax]="paramRanges.kernelSizeMultiplier.recommendedMax"
+        [hardMin]="paramRanges.kernelSizeMultiplier.hardMin"
+        [hardMax]="paramRanges.kernelSizeMultiplier.hardMax"
+        [step]="paramRanges.kernelSizeMultiplier.step"
+        [formControl]="kernelSizeMultiplier" />
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">Blur strategy</label>
+      <select
+        class="form-select"
+        [value]="blurStrategyKey()"
+        (change)="blurStrategyKey.set($any($event.target).value)">
+        @for (opt of blurOptions; track opt.key) {
+          <option [value]="opt.key">{{ opt.label }}</option>
+        }
+      </select>
+    </div>
+  </div>
+</div>

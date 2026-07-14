@@ -1,0 +1,89 @@
+<form [formGroup]="form" (ngSubmit)="submit()">
+  <fieldset class="border rounded p-3 mb-3">
+    <legend class="fs-6 fw-semibold w-auto px-2">Base DoG parameters</legend>
+
+    <div class="mb-3">
+      <label class="form-label">Sigma (base blur)</label>
+      <param-slider
+        [sliderMin]="recMin('sigma')"
+        [sliderMax]="recMax('sigma')"
+        [hardMin]="ranges().sigma.hardMin"
+        [hardMax]="ranges().sigma.hardMax"
+        [step]="ranges().sigma.step"
+        [formControl]="form.controls.sigma" />
+      <div class="form-text">{{ hint('sigma') }}</div>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">k (blur ratio)</label>
+      <param-slider
+        [sliderMin]="recMin('k')"
+        [sliderMax]="recMax('k')"
+        [hardMin]="ranges().k.hardMin"
+        [hardMax]="ranges().k.hardMax"
+        [step]="ranges().k.step"
+        [formControl]="form.controls.k" />
+      <div class="form-text">{{ hint('k') }}</div>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">p (sharpening strength)</label>
+      <param-slider
+        [sliderMin]="recMin('p')"
+        [sliderMax]="recMax('p')"
+        [hardMin]="ranges().p.hardMin"
+        [hardMax]="ranges().p.hardMax"
+        [step]="ranges().p.step"
+        [formControl]="form.controls.p" />
+      <div class="form-text">{{ hint('p') }}</div>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">epsilon (white/black threshold)</label>
+      <param-slider
+        [sliderMin]="recMin('epsilon')"
+        [sliderMax]="recMax('epsilon')"
+        [hardMin]="ranges().epsilon.hardMin"
+        [hardMax]="ranges().epsilon.hardMax"
+        [step]="ranges().epsilon.step"
+        [formControl]="form.controls.epsilon" />
+      <div class="form-text">{{ hint('epsilon') }}</div>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">phi (threshold sharpness)</label>
+      <param-slider
+        [sliderMin]="recMin('phi')"
+        [sliderMax]="recMax('phi')"
+        [hardMin]="ranges().phi.hardMin"
+        [hardMax]="ranges().phi.hardMax"
+        [step]="ranges().phi.step"
+        [formControl]="form.controls.phi" />
+      <div class="form-text">{{ hint('phi') }}</div>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">Threshold strategy</label>
+      <select class="form-select" [formControl]="form.controls.strategyKey">
+        @for (opt of strategyOptions; track opt.key) {
+          <option [value]="opt.key">{{ opt.label }}</option>
+        }
+      </select>
+    </div>
+
+    @if (isHysteresis()) {
+      <div class="row g-2">
+        <div class="col-6">
+          <label class="form-label">High offset</label>
+          <input type="number" step="0.05" class="form-control" [formControl]="form.controls.highOffset" />
+        </div>
+        <div class="col-6">
+          <label class="form-label">Low offset</label>
+          <input type="number" step="0.05" class="form-control" [formControl]="form.controls.lowOffset" />
+        </div>
+      </div>
+    }
+  </fieldset>
+
+  <button type="submit" class="btn btn-primary" [disabled]="form.invalid">Apply</button>
+</form>

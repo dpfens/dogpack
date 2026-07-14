@@ -1,0 +1,53 @@
+<div class="card">
+  <div class="card-body">
+    @if (!preset()) {
+      <div class="mb-3">
+        <label class="form-label">Preset</label>
+        <select class="form-select" (change)="selectPreset($any($event.target).value)">
+          <option value="">Custom</option>
+          @for (name of presetNames; track name) {
+            <option [value]="name">{{ name }}</option>
+          }
+        </select>
+      </div>
+    }
+
+    <dog
+      [ranges]="paramRanges"
+      [preset]="preset() ?? selectedPreset()"
+      (configChange)="onConfig($event)" />
+
+    <div class="mb-3">
+      <label class="form-label">σc (structure tensor smoothing)</label>
+      <param-slider
+        [sliderMin]="paramRanges.sigmaC.recommendedMin"
+        [sliderMax]="paramRanges.sigmaC.recommendedMax"
+        [hardMin]="paramRanges.sigmaC.hardMin"
+        [hardMax]="paramRanges.sigmaC.hardMax"
+        [step]="paramRanges.sigmaC.step"
+        [formControl]="sigmaC" />
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">σm (flow-aligned smoothing)</label>
+      <param-slider
+        [sliderMin]="paramRanges.sigmaM.recommendedMin"
+        [sliderMax]="paramRanges.sigmaM.recommendedMax"
+        [hardMin]="paramRanges.sigmaM.hardMin"
+        [hardMax]="paramRanges.sigmaM.hardMax"
+        [step]="paramRanges.sigmaM.step"
+        [formControl]="sigmaM" />
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">σa (anti-aliasing LIC)</label>
+      <param-slider
+        [sliderMin]="paramRanges.sigmaA.recommendedMin"
+        [sliderMax]="paramRanges.sigmaA.recommendedMax"
+        [hardMin]="paramRanges.sigmaA.hardMin"
+        [hardMax]="paramRanges.sigmaA.hardMax"
+        [step]="paramRanges.sigmaA.step"
+        [formControl]="sigmaA" />
+    </div>
+  </div>
+</div>

@@ -1,0 +1,76 @@
+<div class="card">
+  <div class="card-header d-flex align-items-center gap-2 flex-wrap">
+    <input
+      type="text"
+      class="form-control form-control-sm w-auto"
+      style="min-width: 8rem"
+      placeholder="Layer"
+      [value]="name()"
+      (input)="name.set($any($event.target).value)"
+    />
+
+    <select
+      class="form-select form-select-sm w-auto ms-auto"
+      [value]="blend() ?? ''"
+      (change)="blend.set($any($event.target).value || undefined)"
+    >
+      <option value="" disabled>Blend mode</option>
+      @for (mode of blendModes; track mode) {
+        <option [value]="mode">{{ mode }}</option>
+      }
+    </select>
+
+    <div class="btn-group">
+      <button
+        type="button"
+        class="btn btn-sm btn-primary dropdown-toggle"
+        data-bs-toggle="dropdown"
+        aria-expanded="false"
+      >
+        Add node
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end">
+        @for (type of nodeTypes; track type.kind) {
+          <li>
+            <button class="dropdown-item" type="button" (click)="addNode(type.kind)">
+              {{ type.label }}
+            </button>
+          </li>
+        }
+      </ul>
+    </div>
+  </div>
+
+  <div class="card-body vstack gap-3">
+    @if (instances().length === 0) {
+      <p class="text-muted small mb-0 fst-italic">No nodes yet — use "Add node" to get started.</p>
+    }
+
+    @for (entry of instances(); track entry.id) {
+      <div class="position-relative border rounded-3 p-2 pt-4">
+        <span class="badge text-bg-secondary text-capitalize position-absolute top-0 start-0 m-1">
+          {{ entry.kind }}
+        </span>
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-danger position-absolute top-0 end-0 m-1 py-0 px-2"
+          (click)="remove(entry)"
+          [attr.aria-label]="'Remove ' + entry.kind"
+          [title]="'Remove ' + entry.kind"
+        >
+          &times;
+        </button>
+
+        <!-- The actual XDog/FDog/ADog/HDog/Layer component is relocated here
+             right after creation — see attach() in layer.ts. -->
+        <div #slot></div>
+      </div>
+    }
+
+    <!-- Hidden mounting point components are first created into, before
+         being relocated into their row's #slot above. -->
+    <div class="d-none">
+      <ng-container #container></ng-container>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,212 @@
+<div class="container-fluid p-3">
+  <div class="row g-3">
+    <!-- Preview column -->
+    <div class="col-12 col-lg-7">
+      <div class="row g-3">
+        <div class="col-12 col-md-6">
+          <div class="card h-100">
+            <div class="card-header">Source</div>
+            <div class="card-body d-flex align-items-center justify-content-center bg-body-tertiary p-2">
+              <app-image-canvas [imageData]="image()" />
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-md-6">
+          <div class="card h-100">
+            <div class="card-header d-flex align-items-center justify-content-between">
+              <span>Preprocessed</span>
+              <span class="badge" [class.text-bg-success]="usingWebGL()" [class.text-bg-secondary]="!usingWebGL()">
+                {{ usingWebGL() ? 'GPU' : 'CPU' }}
+              </span>
+            </div>
+            <div class="card-body d-flex align-items-center justify-content-center bg-body-tertiary p-2">
+              <app-image-canvas [imageData]="lastOutput()" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Controls column -->
+    <div class="col-12 col-lg-5">
+      <div class="card mb-3">
+        <div class="card-header">Channels</div>
+        <div class="card-body">
+          <div class="btn-group w-100" role="group" aria-label="Channel mode">
+            <input
+              type="radio"
+              class="btn-check"
+              name="channelMode"
+              id="channelModeRgb"
+              autocomplete="off"
+              [checked]="channelMode() === 'rgb'"
+              (change)="setChannelMode('rgb')"
+            />
+            <label class="btn btn-outline-primary" for="channelModeRgb">All channels (RGB)</label>
+
+            <input
+              type="radio"
+              class="btn-check"
+              name="channelMode"
+              id="channelModeLuminance"
+              autocomplete="off"
+              [checked]="channelMode() === 'luminance'"
+              (change)="setChannelMode('luminance')"
+            />
+            <label class="btn btn-outline-primary" for="channelModeLuminance">Luminance only</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header d-flex align-items-center justify-content-between">
+          <span>Pipeline</span>
+          <span class="badge text-bg-secondary">{{ steps().length }} step(s)</span>
+        </div>
+
+        <ul class="list-group list-group-flush">
+          @for (step of steps(); track $index; let i = $index, first = $first, last = $last) {
+            <li class="list-group-item">
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <span class="fw-semibold">{{ stepLabels[step.type] }}</span>
+                <div class="btn-group btn-group-sm">
+                  <button type="button" class="btn btn-outline-secondary" [disabled]="first" (click)="moveStepUp(i)">
+                    ↑
+                  </button>
+                  <button type="button" class="btn btn-outline-secondary" [disabled]="last" (click)="moveStepDown(i)">
+                    ↓
+                  </button>
+                  <button type="button" class="btn btn-outline-danger" (click)="removeStep(i)">✕</button>
+                </div>
+              </div>
+
+              @if (step.type === 'preset') {
+                <select
+                  class="form-select form-select-sm"
+                  [value]="step.name"
+                  (change)="updatePresetName(i, $any($event.target).value)"
+                >
+                  @for (name of presetNames; track name) {
+                    <option [value]="name">{{ name }}</option>
+                  }
+                </select>
+              }
+
+              @if (step.type === 'bilateral') {
+                <div class="row g-2">
+                  <div class="col-6">
+                    <label class="form-label small mb-0">Spatial σ</label>
+                    <input
+                      type="range"
+                      class="form-range"
+                      min="0.5"
+                      max="10"
+                      step="0.5"
+                      [value]="step.config?.sigmaSpatial ?? 4"
+                      (input)="updateBilateral(i, 'sigmaSpatial', $any($event.target).valueAsNumber)"
+                    />
+                  </div>
+                  <div class="col-6">
+                    <label class="form-label small mb-0">Range σ</label>
+                    <input
+                      type="range"
+                      class="form-range"
+                      min="0.01"
+                      max="0.5"
+                      step="0.01"
+                      [value]="step.config?.sigmaRange ?? 0.1"
+                      (input)="updateBilateral(i, 'sigmaRange', $any($event.target).valueAsNumber)"
+                    />
+                  </div>
+                </div>
+              }
+
+              @if (step.type === 'median' || step.type === 'kuwahara') {
+                <label class="form-label small mb-0">Radius</label>
+                <input
+                  type="range"
+                  class="form-range"
+                  min="1"
+                  max="8"
+                  step="1"
+                  [value]="step.config?.radius ?? 3"
+                  (input)="updateRadius(i, $any($event.target).valueAsNumber)"
+                />
+              }
+
+              @if (step.type === 'gaussian') {
+                <label class="form-label small mb-0">Sigma</label>
+                <input
+                  type="range"
+                  class="form-range"
+                  min="0.1"
+                  max="5"
+                  step="0.1"
+                  [value]="step.sigma ?? 1"
+                  (input)="updateGaussianSigma(i, $any($event.target).valueAsNumber)"
+                />
+              }
+
+              @if (step.type === 'contrast') {
+                <div class="row g-2">
+                  <div class="col-6">
+                    <label class="form-label small mb-0">Black point</label>
+                    <input
+                      type="range"
+                      class="form-range"
+                      min="0"
+                      max="0.3"
+                      step="0.01"
+                      [value]="step.blackPoint ?? 0.01"
+                      (input)="updateContrast(i, 'blackPoint', $any($event.target).valueAsNumber)"
+                    />
+                  </div>
+                  <div class="col-6">
+                    <label class="form-label small mb-0">White point</label>
+                    <input
+                      type="range"
+                      class="form-range"
+                      min="0.7"
+                      max="1"
+                      step="0.01"
+                      [value]="step.whitePoint ?? 0.99"
+                      (input)="updateContrast(i, 'whitePoint', $any($event.target).valueAsNumber)"
+                    />
+                  </div>
+                </div>
+              }
+
+              @if (step.type === 'quantize') {
+                <label class="form-label small mb-0">Levels</label>
+                <input
+                  type="range"
+                  class="form-range"
+                  min="2"
+                  max="32"
+                  step="1"
+                  [value]="step.levels ?? 8"
+                  (input)="updateQuantizeLevels(i, $any($event.target).valueAsNumber)"
+                />
+              }
+            </li>
+          } @empty {
+            <li class="list-group-item text-body-secondary">No steps yet - add one below.</li>
+          }
+        </ul>
+
+        <div class="card-body d-flex gap-2">
+          <select
+            class="form-select"
+            [value]="selectedAddIndex()"
+            (change)="onAddIndexChange($any($event.target).valueAsNumber)"
+          >
+            @for (step of addableSteps; track $index; let idx = $index) {
+              <option [value]="idx">{{ stepLabels[step.type] }}</option>
+            }
+          </select>
+          <button type="button" class="btn btn-primary text-nowrap" (click)="addSelectedStep()">Add step</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,64 @@
+<div class="card">
+  <div class="card-body">
+    @if (!preset()) {
+      <div class="mb-3">
+        <label class="form-label">Preset</label>
+        <select class="form-select" (change)="selectPreset($any($event.target).value)">
+          <option value="">Custom</option>
+          @for (name of presetNames; track name) {
+            <option [value]="name">{{ name }}</option>
+          }
+        </select>
+      </div>
+    }
+
+    <dog
+      [ranges]="paramRanges"
+      [preset]="preset() ?? selectedPreset()"
+      (configChange)="onConfig($event)" />
+
+    <div class="mb-3">
+      <label class="form-label">τ (minimum contrast sensitivity)</label>
+      <param-slider
+        [sliderMin]="paramRanges.tau.recommendedMin"
+        [sliderMax]="paramRanges.tau.recommendedMax"
+        [hardMin]="paramRanges.tau.hardMin"
+        [hardMax]="paramRanges.tau.hardMax"
+        [step]="paramRanges.tau.step"
+        [formControl]="tau" />
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">s (tone falloff steepness)</label>
+      <param-slider
+        [sliderMin]="paramRanges.s.recommendedMin"
+        [sliderMax]="paramRanges.s.recommendedMax"
+        [hardMin]="paramRanges.s.hardMin"
+        [hardMax]="paramRanges.s.hardMax"
+        [step]="paramRanges.s.step"
+        [formControl]="s" />
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">c (adaptive noise scale)</label>
+      <param-slider
+        [sliderMin]="paramRanges.noiseScaleC.recommendedMin"
+        [sliderMax]="paramRanges.noiseScaleC.recommendedMax"
+        [hardMin]="paramRanges.noiseScaleC.hardMin"
+        [hardMax]="paramRanges.noiseScaleC.hardMax"
+        [step]="paramRanges.noiseScaleC.step"
+        [formControl]="noiseScaleC" />
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">Kernel size multiplier</label>
+      <param-slider
+        [sliderMin]="paramRanges.kernelSizeMultiplier.recommendedMin"
+        [sliderMax]="paramRanges.kernelSizeMultiplier.recommendedMax"
+        [hardMin]="paramRanges.kernelSizeMultiplier.hardMin"
+        [hardMax]="paramRanges.kernelSizeMultiplier.hardMax"
+        [step]="paramRanges.kernelSizeMultiplier.step"
+        [formControl]="kernelSizeMultiplier" />
+    </div>
+  </div>
+</div>

@@ -1,0 +1,47 @@
+<div class="container-fluid p-3">
+  <div class="row g-3">
+    <!-- Shared canvas: always shows whatever DoGService says is active,
+         regardless of whether that's preprocessing or a node anywhere in the
+         pipeline tree below. -->
+    <div class="col-12 col-lg-5">
+      <div class="card h-100">
+        <div class="card-header d-flex align-items-center justify-content-between">
+          <span>Preview</span>
+          @if (activeLabelText(); as label) {
+            <span class="badge text-bg-secondary">{{ label }}</span>
+          }
+        </div>
+        <div class="card-body p-2" style="min-height: 400px;">
+          <app-image-canvas
+              [imageData]="activeImage()"
+              [compareWith]="sourceImage()"
+              [status]="canvasStatus()"
+            />
+        </div>
+      </div>
+    </div>
+
+    <!-- Preprocessing: recomputes eagerly and claims focus on every change. -->
+    <div class="col-12 col-lg-7">
+      <app-preprocessing-component [image]="sourceImage()" />
+
+      <!-- The pipeline builder. Its own runPreview() runs its FULL composed
+           model (itself plus every nested layer/leaf) and reports through
+           DoGService, same as every leaf's own Preview button does. -->
+      <div class="card mt-3">
+        <div class="card-header d-flex align-items-center justify-content-between">
+          <span>Pipeline</span>
+          <button type="button" class="btn btn-primary btn-sm" [disabled]="rootLayer.previewPending()" (click)="rootLayer.runPreview()">
+            @if (rootLayer.previewPending()) {
+              <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+            }
+            Preview full pipeline
+          </button>
+        </div>
+        <div class="card-body">
+          <dog-layer #rootLayer />
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
