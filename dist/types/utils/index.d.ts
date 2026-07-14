@@ -38,8 +38,13 @@ export declare function imageDataToLuminance(imageData: ImageData): ChannelImage
 /**
  * Convert grayscale image to ImageData (for canvas display)
  * Assumes input is in 0-1 range
+ *
+ * @param alpha Optional per-pixel alpha (0-255), one entry per pixel in
+ * the same row-major order as `gray.data`. Omit to get a fully opaque
+ * image (alpha = 255 everywhere), which matches this function's original
+ * behavior for callers that don't care about transparency.
  */
-export declare function luminanceToImageData(gray: ChannelImage): ImageData;
+export declare function luminanceToImageData(gray: ChannelImage, alpha?: Uint8ClampedArray): ImageData;
 /**
  * Normalize a 2D vector
  */

@@ -101,8 +101,13 @@
     /**
      * Convert grayscale image to ImageData (for canvas display)
      * Assumes input is in 0-1 range
+     *
+     * @param alpha Optional per-pixel alpha (0-255), one entry per pixel in
+     * the same row-major order as `gray.data`. Omit to get a fully opaque
+     * image (alpha = 255 everywhere), which matches this function's original
+     * behavior for callers that don't care about transparency.
      */
-    function luminanceToImageData(gray) {
+    function luminanceToImageData(gray, alpha) {
         const imageData = new ImageData(gray.width, gray.height);
         const pixelCount = gray.width * gray.height;
         for (let i = 0; i < pixelCount; i++) {
@@ -110,7 +115,7 @@
             imageData.data[i * 4] = value;
             imageData.data[i * 4 + 1] = value;
             imageData.data[i * 4 + 2] = value;
-            imageData.data[i * 4 + 3] = 255;
+            imageData.data[i * 4 + 3] = alpha ? alpha[i] : 255;
         }
         return imageData;
     }

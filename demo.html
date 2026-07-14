@@ -727,7 +727,6 @@
                         </div>
 
                         <!-- Output -->
-                        <!-- Output -->
                         <div class="mt-4">
                             <div class="form-check form-switch">
                                 <input class="form-check-input" type="checkbox" role="switch" id="useColorToggle">
@@ -1235,6 +1234,7 @@
                     let grayscale = utilities.imageDataToLuminance(imageData);
                     
                     // Apply preprocessing
+                    
                     grayscale = applyPreprocessing(grayscale);
 
                     const processor = makeProcessor(params);

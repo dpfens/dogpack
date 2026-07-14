@@ -1831,8 +1831,13 @@ declare function imageDataToLuminance(imageData: ImageData): ChannelImage;
 /**
  * Convert grayscale image to ImageData (for canvas display)
  * Assumes input is in 0-1 range
+ *
+ * @param alpha Optional per-pixel alpha (0-255), one entry per pixel in
+ * the same row-major order as `gray.data`. Omit to get a fully opaque
+ * image (alpha = 255 everywhere), which matches this function's original
+ * behavior for callers that don't care about transparency.
  */
-declare function luminanceToImageData(gray: ChannelImage): ImageData;
+declare function luminanceToImageData(gray: ChannelImage, alpha?: Uint8ClampedArray): ImageData;
 /**
  * Normalize a 2D vector
  */
@@ -3112,4 +3117,4 @@ declare namespace index {
 }
 
 export { DEFAULT_ETF_CONFIG, DoGProcessor, EdgeTangentFlowComputer, ThresholdModes, applyCustomThreshold, index$3 as blur, index$4 as dog, index as extensions, index$2 as preprocess, threshold, index$1 as utilities };
-export type { ADoGConfig, ADoGProcessingResult, ADogConfigParamType, AntiAliasingConfig, BackendOptions, BilateralFilterConfig, BlendFunction, BlurStrategy, BlurStrategyClass, ChannelImage, ColorRetentionConfig, ColorTransformFn, DoGConfig, DoGImplementation, DoGResult, DogConfigParamType, ETFConfig, ExtensionStrategy, FDoGConfig, FDogConfigParamType, FlowField, FlowGuidedBlurConfig, HDoGConfig, HDoGProcessingResult, HDogConfigParamType, HatchTexture, HatchingConfig, IsotropicBlurConfig, KuwaharaFilterConfig, LocalVarianceConfig, MaskTransformFn, MedianFilterConfig, MultiScaleConfig, MultiScaleLayer, NaturalMediaConfig, NaturalMediaStyle, ParamRange, PostProcessFn, Preprocessor, RGBImage$1 as RGBImage, ThresholdConfig, ThresholdStrategy, Vec2, XDoGConfig };
+export type { ADoGConfig, ADoGProcessingResult, ADogConfigParamType, AntiAliasingConfig, BackendOptions, BilateralFilterConfig, BlendFunction, BlurStrategy, BlurStrategyClass, ChannelImage, ColorRetentionConfig, ColorTransformFn, DoGConfig, DoGImplementation, DoGResult, DogConfigParamType, ETFConfig, ExtensionStrategy, FDoGConfig, FDogConfigParamType, FlowField, FlowGuidedBlurConfig, GradientAlignedBlurConfig, HDoGConfig, HDoGProcessingResult, HDogConfigParamType, HatchTexture, HatchingConfig, IsotropicBlurConfig, KuwaharaFilterConfig, LocalVarianceConfig, MaskTransformFn, MedianFilterConfig, MultiScaleConfig, MultiScaleLayer, NaturalMediaConfig, NaturalMediaStyle, ParamRange, PostProcessFn, Preprocessor, RGBImage$1 as RGBImage, ThresholdConfig, ThresholdStrategy, Vec2, XDoGConfig };
