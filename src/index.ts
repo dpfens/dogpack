@@ -133,6 +133,7 @@ export type {
   FlowField,
   ETFConfig,
   BilateralFilterConfig,
+  GradientAlignedBlurConfig,
   MedianFilterConfig,
   KuwaharaFilterConfig,
   Preprocessor
