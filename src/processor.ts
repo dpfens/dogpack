@@ -9,18 +9,18 @@
  * advanced image stylization" by Winnemöller et al. (2012)
  */
 
-import type { BlurStrategy, ChannelImage } from './types.js';
+import type { BlurStrategy, ChannelImage } from './interfaces/base.js';
 
 import { at, createChannelImage } from './utils/index.js';
 import { SoftThresholdStrategy, type ThresholdConfig, type ThresholdStrategy } from './threshold.js';
 import type { DoGConfig } from './dog/index.js';
-import { DEFAULT_DOG_CONFIG, type DoGProcessingResult } from './dog/types.js';
+import { DEFAULT_DOG_CONFIG, type DoGProcessingResult } from './interfaces/dog.js';
 
 /**
  * Difference of Gaussians processor
  * 
  * Uses the reparameterized formulation (Equation 7):
- * S_σ,k,p(x) = G_σ(x) + p · D_σ,k(x) = (1 + p) · G_σ(x) - p · G_kσ(x)
+ * S_σ,k,p(x) = G_σ(x) + p x D_σ,k(x) = (1 + p) x G_σ(x) - p x G_kσ(x)
  * 
  * This is equivalent to unsharp masking of the blurred image, which
  * decouples edge sharpening strength (p) from threshold parameters.
@@ -175,7 +175,7 @@ export class DoGProcessor {
   
   /**
    * Compute sharpened image using Equation 7 from the paper:
-   * S_σ,k,p(x) = G_σ(x) + p · D_σ,k(x) = (1 + p) · G_σ(x) - p · G_kσ(x)
+   * S_σ,k,p(x) = G_σ(x) + p x D_σ,k(x) = (1 + p) x G_σ(x) - p x G_kσ(x)
    * 
    * This can be understood as unsharp masking of the blurred image.
    * The parameter p controls the edge sharpening strength independently

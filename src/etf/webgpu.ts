@@ -36,8 +36,9 @@ import {
   type ETFConfig,
   type ETFComputer,
   DEFAULT_ETF_CONFIG,
-} from '../types.js';
+} from '../interfaces/base.js';
 import { TangentFlowField } from './flow-field.js';
+import { BaseWebGPUStrategy } from '../base.js';
 
 // NOTE: isWebGPUComputeSupported() isn't assumed to exist in utils/index.js
 // yet (only isWebGLComputeSupported is referenced in webgl.ts), so a local
@@ -524,22 +525,25 @@ fn main(
  * count; per-call state (buffers) is still allocated fresh in
  * computeInternal().
  */
-export class WebGpuEdgeTangentFlowComputer implements ETFComputer {
+export class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy implements ETFComputer {
   private static resources: WebGPUResources | null = null;
   private static resourcesPromise: Promise<WebGPUResources> | null = null;
 
   /**
-   * Cheap synchronous check — mirrors the shape of isWebGLComputeSupported().
-   * This only confirms the API surface exists; it can't confirm an adapter
-   * is actually obtainable (that requires the async requestAdapter() call
-   * made lazily inside initResources()/computeInternal()).
+   * Cheap check — mirrors the shape of isWebGLComputeSupported(), just
+   * wrapped in a resolved Promise to match the async `ETFComputerCtor`
+   * shape. This only confirms the API surface exists; it can't confirm
+   * an adapter is actually obtainable (that requires the async
+   * requestAdapter() call made lazily inside
+   * initResources()/computeInternal()) — use getUnsupportedReason() for
+   * that deeper check.
    */
-  static isSupported(): boolean {
+  static async isSupported(): Promise<boolean> {
     return isWebGPUComputeSupported();
   }
 
   /**
-   * Optional richer diagnostic, matching the ETFComputerClass shape in
+   * Optional richer diagnostic, matching the ETFComputerCtor shape in
    * types.ts. Async, since it actually attempts to obtain an adapter.
    */
   static async getUnsupportedReason(): Promise<string | undefined> {
@@ -579,8 +583,19 @@ export class WebGpuEdgeTangentFlowComputer implements ETFComputer {
       }
 
       const hasTimestampQuery = adapter.features.has('timestamp-query');
+      // Without explicit requiredLimits, WebGPU hands back the *default*
+      // limits (maxBufferSize/maxStorageBufferBindingSize commonly 256MB/
+      // 128MB) rather than what the adapter can actually do. This computer
+      // allocates several whole-image vec4<f32> buffers (16 bytes/pixel) —
+      // a ~12MP image already needs ~192MB per buffer — so requesting the
+      // real adapter limits raises the ceiling before that becomes a
+      // problem, rather than silently truncating/corrupting large images.
       const device = await adapter.requestDevice({
         requiredFeatures: hasTimestampQuery ? ['timestamp-query'] : [],
+        requiredLimits: {
+          maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
+          maxBufferSize: adapter.limits.maxBufferSize,
+        },
       });
 
       device.lost.then((info) => {
@@ -718,6 +733,31 @@ export class WebGpuEdgeTangentFlowComputer implements ETFComputer {
     const res = await WebGpuEdgeTangentFlowComputer.initResources();
     const { device } = res;
 
+    // Every intermediate buffer below (tensorAccumBuf, gradientScratchBuf,
+    // blurTempBuf, blurOutputBuf, tangentBuf1, tangentBuf2) is a whole-image
+    // vec4<f32> buffer — 16 bytes/pixel — bound as a storage buffer. Check
+    // that against maxStorageBufferBindingSize *and* maxBufferSize up front:
+    // exceeding either is a WebGPU validation failure that surfaces via
+    // 'uncapturederror' rather than a catchable exception at the call site,
+    // so left unchecked this doesn't throw — it just silently reads back
+    // zeros/garbage for whatever the GPU couldn't actually bind, producing a
+    // corrupted (incoherent, low-contrast) flow field with no visible error.
+    // Fail loud instead, so callers relying on the ETFComputer wrapper's
+    // fallback (see index.ts) get a chance to demote to WebGL/CPU.
+    const vec4BufferBytes = pixelCount * 4 * 4;
+    const { maxStorageBufferBindingSize, maxBufferSize } = device.limits;
+    if (vec4BufferBytes > maxStorageBufferBindingSize || vec4BufferBytes > maxBufferSize) {
+      throw new Error(
+        `[EdgeTangentFlowWebGPU] ${width}x${height} image needs ${vec4BufferBytes} ` +
+          `bytes per intermediate buffer, exceeding this device's ` +
+          `maxStorageBufferBindingSize (${maxStorageBufferBindingSize}) / ` +
+          `maxBufferSize (${maxBufferSize}). Downscale the image, or reduce ` +
+          `pixel count until it fits — this implementation processes the ` +
+          `whole image per buffer with no row-band tiling.`,
+      );
+    }
+
+    return this.runGuarded(device, async () => {
     // ---- Buffers ----
     // One accumulator, shared across all channels (Di Zenzo sum), plus one
     // scratch gradient buffer reused sequentially per channel — safe
@@ -999,6 +1039,7 @@ export class WebGpuEdgeTangentFlowComputer implements ETFComputer {
     kernelBuf.destroy();
     stagingBuf.destroy();
     return TangentFlowField.fromFloat32Array(tangents, width, height);
+    });
   }
 }
 

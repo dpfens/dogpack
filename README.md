@@ -564,7 +564,7 @@ const outputImageData = utilities.grayscaleToImageData(result);
 The Edge Tangent Flow field represents the direction of edges at each pixel and can be visualized for debugging or artistic purposes. Understanding the ETF helps in tuning the σc parameter:
 
 ```typescript
-import { dog, EdgeTangentFlow, utilities } from 'dogpack';
+import { dog, EdgeTangentFlowComputer, utilities } from 'dogpack';
 
 const fdog = new dog.FDoG();
 const grayscale = utilities.imageDataToLuminance(imageData);
@@ -574,7 +574,7 @@ const etf = fdog.computeETF(grayscale);
 
 // Visualize as color image (direction encoded as hue)
 const flowViz = etf.visualizeColor();
-EdgeTangentFlow.dispose();
+EdgeTangentFlowComputer.dispose();
 ctx.putImageData(flowViz, 0, 0);
 
 // Or draw tangent vectors manually for detailed inspection
@@ -594,13 +594,13 @@ for (let y = 0; y < height; y += 10) {
 For video processing or animation, computing the ETF once and reusing it across multiple frames can significantly improve performance. This is particularly useful when the scene structure remains relatively stable between frames:
 
 ```typescript
-const etf = fdog.computeETF(grayscale);
+const etf = EdgeTangentFlowComputer.compute(grayscale);
+EdgeTangentFlowComputer.dispose();
 
 // Process multiple frames with the same flow field
 const result1 = await fdog.processWithETF(frame1, etf);
 const result2 = await fdog.processWithETF(frame2, etf);
 fdog.dispose();
-EdgeTangentFlow.dispose();
 ```
 
 ### Detailed Processing Pipeline
@@ -618,9 +618,6 @@ const { result, etf, sharpened, thresholded, smoothed } =
 // - thresholded: after soft threshold applied
 // - smoothed: after flow-aligned smoothing
 // - result: final output after anti-aliasing
-
-// cleanup afterwards
-EdgeTangentFlow.dispose();
 ```
 
 

@@ -1,105 +1,109 @@
-import type { BlurStrategy, ChannelImage, FlowField, GradientAlignedBlurConfig } from "../../types.js";
-import { isWebGLComputeSupported, isWebGPUSupported } from "../../utils/index.js";
-import { CPUGradientAlignedBlur } from "./cpu.js";
-import { WebGLGradientAlignedBlur } from "./webgl.js";
-import { WebGPUGradientAlignedBlur } from "./webgpu.js";
+import type {
+  BlurStrategy,
+  BlurStrategyCtor,
+  ChannelImage,
+  FlowField,
+  GradientAlignedBlurConfig,
+} from '../../interfaces/base.js';
+import { CPUGradientAlignedBlur } from './cpu.js';
+import { WebGLGradientAlignedBlur } from './webgl.js';
+import { WebGPUGradientAlignedBlur } from './webgpu.js';
 
-export type GradientAlignedBackend = 'webgpu' | 'webgl' | 'cpu';
- 
+// Backends expose `setFlowField` beyond the base `BlurStrategy` shape;
+// `BlurStrategyCtor.new()` is typed to return plain `BlurStrategy`, so we
+// widen locally rather than adding setFlowField to the shared interface
+// (Preprocessor/ETFComputer backends have no equivalent concept).
 type BackendInstance = BlurStrategy & {
   setFlowField?(flowField: FlowField): void;
-  dispose?(): void;
 };
- 
+
 export class GradientAlignedBlur implements BlurStrategy {
-  private instance: BackendInstance;
-  private backend: GradientAlignedBackend = 'cpu';
-  private initPromise: Promise<void>;
- 
-  constructor(
+  private failedBackends = new Set<BlurStrategyCtor>();
+
+  private constructor(
+    private instance: BackendInstance,
+    private currentCtor: BlurStrategyCtor,
     private flowField: FlowField,
-    private config: Partial<GradientAlignedBlurConfig> = {},
-  ) {
-    // Always start with a working CPU instance so the object is valid the
-    // instant it's constructed. blur() awaits initPromise before running,
-    // so no work actually happens on this instance unless backend upgrade
-    // fails entirely — it's a fallback, not a "first frame is slow" thing.
-    this.instance = new CPUGradientAlignedBlur(flowField, config);
-    this.backend = 'cpu';
-    this.initPromise = this.upgradeBackend();
-  }
- 
-  /**
-   * Preferred construction path — resolves only once backend detection has
-   * finished, so `getBackend()` is meaningful immediately.
-   */
+    private config: Partial<GradientAlignedBlurConfig>,
+  ) {}
+
+  // Ordered best-to-worst. `satisfies` (not `implements`) catches a
+  // backend missing isSupported() or the instance shape at this line.
+  private static readonly candidates = [
+    WebGPUGradientAlignedBlur,
+    WebGLGradientAlignedBlur,
+    CPUGradientAlignedBlur,
+  ] satisfies BlurStrategyCtor[];
+
   static async create(
     flowField: FlowField,
     config: Partial<GradientAlignedBlurConfig> = {},
   ): Promise<GradientAlignedBlur> {
-    const instance = new GradientAlignedBlur(flowField, config);
-    await instance.ready();
-    return instance;
-  }
- 
-  /** Resolves once GPU backend detection/initialization has settled (including CPU fallback). */
-  ready(): Promise<void> {
-    return this.initPromise;
-  }
- 
-  getBackend(): GradientAlignedBackend {
-    return this.backend;
-  }
- 
-  private async upgradeBackend(): Promise<void> {
-    const t0 = performance.now();
- 
-    if (await isWebGPUSupported()) {
-      try {
-        const gpuInstance = await WebGPUGradientAlignedBlur.create(this.flowField, this.config);
-        this.instance.dispose?.();
-        this.instance = gpuInstance;
-        this.backend = 'webgpu';
-        console.log(
-          `[GradientAlignedBlur] Using WebGPU backend (init: ${(performance.now() - t0).toFixed(2)}ms)`,
-        );
-        return;
-      } catch (err) {
-        console.warn('[GradientAlignedBlur] WebGPU init failed, falling back:', err);
+    for (const Ctor of GradientAlignedBlur.candidates) {
+      if (await Ctor.isSupported()) {
+        try {
+          const instance = new Ctor({ ...config, flowField }) as BackendInstance;
+          return new GradientAlignedBlur(instance, Ctor, flowField, config);
+        } catch {
+          continue; // isSupported() lied — try next
+        }
       }
     }
- 
-    if (isWebGLComputeSupported()) {
-      try {
-        const glInstance = new WebGLGradientAlignedBlur(this.flowField, this.config);
-        this.instance.dispose?.();
-        this.instance = glInstance;
-        this.backend = 'webgl';
-        console.log(
-          `[GradientAlignedBlur] Using WebGL2 backend (init: ${(performance.now() - t0).toFixed(2)}ms)`,
-        );
-        return;
-      } catch (err) {
-        console.warn('[GradientAlignedBlur] WebGL2 init failed, falling back to CPU:', err);
-      }
-    }
- 
-    console.log(
-      `[GradientAlignedBlur] Using CPU backend (fallback) (detection: ${(performance.now() - t0).toFixed(2)}ms)`,
-    );
+    throw new Error('No supported gradient-aligned blur implementation available');
   }
- 
+
+  get backend() {
+    return this.instance.backend;
+  }
+
+  dispose(): void {
+    this.instance.dispose();
+  }
+
   async blur(input: ChannelImage, sigma: number): Promise<ChannelImage> {
-    await this.initPromise;
-    return this.instance.blur(input, sigma);
+    let current = this.instance;
+    while (true) {
+      try {
+        console.log(`${this.constructor.name}: Running ${current.backend}`);
+        return await current.blur(input, sigma);
+      } catch (err) {
+        console.warn(`${this.constructor.name}: [${this.currentCtor.name}] process() failed, attempting fallback:`, err);
+        const fallback = await this.demoteAndFindNext();
+        if (!fallback) throw err;
+        current = fallback;
+      }
+    }
   }
- 
+
+  /**
+   * Propagates to whatever backend is currently running, and is also
+   * remembered for any future backend constructed by demoteAndFindNext()
+   * (fallback instances are built fresh via `new Ctor(config)`, so the
+   * current flow field has to be threaded through `config` each time
+   * rather than mutated on an existing instance).
+   */
   setFlowField(flowField: FlowField): void {
     this.flowField = flowField;
     this.instance.setFlowField?.(flowField);
   }
- 
-  dispose(): void {
-    this.instance.dispose?.();
+
+  private async demoteAndFindNext(): Promise<BlurStrategy | null> {
+    this.failedBackends.add(this.currentCtor);
+    this.instance.dispose();
+    for (const Ctor of GradientAlignedBlur.candidates) {
+      if (this.failedBackends.has(Ctor)) continue;
+      if (await Ctor.isSupported()) {
+        try {
+          console.warn(`Falling back to ${Ctor.name}`);
+          this.instance = new Ctor({ ...this.config, flowField: this.flowField }) as BackendInstance;
+          this.currentCtor = Ctor;
+          return this.instance;
+        } catch(err) {
+          console.warn(`[${Ctor.name}] construction failed despite isSupported():`, err);
+          this.failedBackends.add(Ctor);
+        }
+      }
+    }
+    return null;
   }
 }

@@ -4,12 +4,19 @@
  * Provides both isotropic (standard) and anisotropic (flow-guided) blur
  * implementations for use in XDoG and FDoG pipelines.
  * 
- * FIXED: WebGPUIsotropicBlur now supports parallel/concurrent blur operations
+ * Supports parallel/concurrent blur operations
  */
 
-import type { BlurStrategy, ChannelImage } from '../types.js';
-import { createChannelImage, getPixel,  generateGaussianKernel, computeKernelSize } from '../utils/index.js';
-import { BaseCPUBlur, BaseWebGLBlur, BaseWebGPUBlur } from './base.js';
+import type { BlurStrategy, BlurStrategyCtor, ChannelImage } from '../interfaces/base.js';
+import {
+  createChannelImage,
+  getPixel,
+  generateGaussianKernel,
+  computeKernelSize,
+  isWebGLComputeSupported,
+  isWebGPUSupported,
+} from '../utils/index.js';
+import { BaseCPUStrategy, BaseWebGLStrategy, BaseWebGPUStrategy } from '../base.js';
 
 /**
  * Configuration for isotropic Gaussian blur
@@ -46,12 +53,17 @@ export interface FlowGuidedBlurConfig {
  * Standard isotropic Gaussian blur using separable convolution
  * This is the blur used in basic XDoG
  */
-export class CPUIsotropicBlur extends BaseCPUBlur implements BlurStrategy {
+export class CPUIsotropicBlur extends BaseCPUStrategy implements BlurStrategy {
   private config: BaseIsotropicBlurConfig;
   
   constructor(config: Partial<BaseIsotropicBlurConfig> = {}) {
     super();
     this.config = { ...DEFAULT_ISOTROPIC_CONFIG, ...config };
+  }
+
+  /** CPU is always available — it's the universal fallback. */
+  static async isSupported(): Promise<boolean> {
+    return true;
   }
 
   dispose(): void {}
@@ -265,7 +277,7 @@ const DEFAULT_WEBGL_CONFIG: WebGLBlurConfig = {
  * WebGL2-accelerated isotropic Gaussian blur
  * Uses separable convolution with two passes (horizontal + vertical)
  */
-export class WebGLIsotropicBlur extends BaseWebGLBlur implements BlurStrategy {
+export class WebGLIsotropicBlur extends BaseWebGLStrategy implements BlurStrategy {
   private config: WebGLBlurConfig;
   private resources: WebGLResources | null = null;
   private currentWidth = 0;
@@ -276,6 +288,15 @@ export class WebGLIsotropicBlur extends BaseWebGLBlur implements BlurStrategy {
   constructor(config: Partial<WebGLBlurConfig> = {}) {
     super();
     this.config = { ...DEFAULT_WEBGL_CONFIG, ...config };
+  }
+
+  /**
+   * Cheap synchronous-in-spirit check (wrapped in a resolved Promise to
+   * satisfy `BlurStrategyCtor`) Excludes software
+   * rasterizers, which are too slow to be a useful GPU fallback.
+   */
+  static async isSupported(): Promise<boolean> {
+    return isWebGLComputeSupported();
   }
   
   private initResources(canvas: OffscreenCanvas | HTMLCanvasElement): WebGLResources {
@@ -560,10 +581,10 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
  * WebGPU-accelerated isotropic Gaussian blur
  * Uses compute shaders with separable convolution
  * 
- * FIXED: Now supports concurrent/parallel blur calls by creating
+ * Supports concurrent/parallel blur calls by creating
  * separate staging buffers for each operation instead of reusing one.
  */
-export class WebGPUIsotropicBlur extends BaseWebGPUBlur implements BlurStrategy {
+export class WebGPUIsotropicBlur extends BaseWebGPUStrategy implements BlurStrategy {
   private config: WebGPUBlurConfig;
   private resources: WebGPUResources | null = null;
   
@@ -579,6 +600,14 @@ export class WebGPUIsotropicBlur extends BaseWebGPUBlur implements BlurStrategy 
   constructor(config: Partial<WebGPUBlurConfig> = {}) {
     super();
     this.config = { ...DEFAULT_WEBGPU_CONFIG, ...config };
+  }
+
+  /**
+   * Confirms an adapter is actually obtainable, not just that
+   * `navigator.gpu` exists as an API surface.
+   */
+  static async isSupported(): Promise<boolean> {
+    return isWebGPUSupported();
   }
   
   /**
@@ -685,8 +714,8 @@ export class WebGPUIsotropicBlur extends BaseWebGPUBlur implements BlurStrategy 
   /**
    * Blur implementation - supports concurrent/parallel calls
    * 
-   * KEY FIX: Creates a new staging buffer for each operation instead of
-   * reusing a single one. This prevents "Buffer already has an outstanding
+   * CCreates a new staging buffer for each operation instead of
+   * reusing a single one, preventing "Buffer already has an outstanding
    * map pending" errors when blur() is called in parallel.
    */
   async blur(input: ChannelImage, sigma: number): Promise<ChannelImage> {
@@ -815,25 +844,98 @@ export class WebGPUIsotropicBlur extends BaseWebGPUBlur implements BlurStrategy 
 
 export type IsotropicBlurConfig = BaseIsotropicBlurConfig | WebGLBlurConfig | WebGPUBlurConfig
 
+/**
+ * Backend-agnostic isotropic blur. Picks the best backend this device
+ * actually supports for *this algorithm* (not a global session-wide
+ * choice), and falls back to the next-best backend if the active one
+ * fails mid-session (lost context, driver crash, etc.).
+ *
+ * Construction is async (`IsotropicBlur.create()`) because backend
+ * detection is inherently async; constructors can't be async, so a
+ * private constructor plus a static factory forces detection to
+ * complete before the instance is usable.
+ */
 export class IsotropicBlur implements BlurStrategy {
-    instance: BlurStrategy;
-    
-    constructor(config: Partial<IsotropicBlurConfig>) {
-        if (WebGPUIsotropicBlur.isSupported()) {
-            this.instance = new WebGPUIsotropicBlur(config);
-        }
-        else if (WebGLIsotropicBlur.isSupported()) {
-            this.instance = new WebGLIsotropicBlur(config);
-        } else {
-            this.instance = new CPUIsotropicBlur(config);
-        }
-    }
+  private failedBackends = new Set<BlurStrategyCtor>();
 
-    dispose(): void {
-      this.instance.dispose();
-    }
+  private constructor(
+    private instance: BlurStrategy,
+    private currentCtor: BlurStrategyCtor,
+    private config: Partial<IsotropicBlurConfig>
+  ) {}
 
-    async blur(input: ChannelImage, sigma: number): Promise<ChannelImage> {
-        return this.instance.blur(input, sigma);
+  // Ordered best-to-worst. `satisfies` (not `implements`) catches a
+  // backend missing isSupported() or the instance shape at this line,
+  // rather than failing silently or only at a call site deep inside.
+  private static readonly candidates = [
+    WebGPUIsotropicBlur,
+    WebGLIsotropicBlur,
+    CPUIsotropicBlur,
+  ] satisfies BlurStrategyCtor[];
+
+  static async create(config: Partial<IsotropicBlurConfig> = {}): Promise<IsotropicBlur> {
+    for (const Ctor of IsotropicBlur.candidates) {
+      if (await Ctor.isSupported()) {
+        try {
+          return new IsotropicBlur(new Ctor(config), Ctor, config);
+        } catch {
+          continue; // isSupported() lied — try the next candidate
+        }
+      }
     }
+    throw new Error('No supported blur implementation available');
+  }
+
+  get backend() {
+    return this.instance.backend;
+  }
+
+  dispose(): void {
+    this.instance.dispose();
+  }
+
+  async blur(input: ChannelImage, sigma: number): Promise<ChannelImage> {
+    let current = this.instance;
+    while (true) {
+      try {
+        console.log(`${this.constructor.name}: Running ${current.backend}`);
+        return await current.blur(input, sigma);
+      } catch (err) {
+        console.warn(`${this.constructor.name}: [${this.currentCtor.name}] process() failed, attempting fallback:`, err);
+        const fallback = await this.demoteAndFindNext();
+        if (!fallback) throw err;
+        current = fallback;
+      }
+    }
+  }
+
+  /**
+   * Demotes the current backend and activates the next untried, supported
+   * candidate. A single-step retry, not a cascading loop through every
+   * remaining backend: cascading on one call risks masking a real input
+   * bug (e.g. a bad sigma) as a backend problem.
+   *
+   * `failedBackends` is per-instance, not module-global — a transient
+   * driver hiccup shouldn't permanently blacklist a backend for the whole
+   * session.
+   */
+  private async demoteAndFindNext(): Promise<BlurStrategy | null> {
+    this.failedBackends.add(this.currentCtor);
+    this.instance.dispose();
+    for (const Ctor of IsotropicBlur.candidates) {
+      if (this.failedBackends.has(Ctor)) continue;
+      if (await Ctor.isSupported()) {
+        try {
+          this.instance = new Ctor(this.config);
+          this.currentCtor = Ctor;
+          console.warn(`Falling back to ${Ctor.name}`);
+          return this.instance;
+        } catch (err) {
+          console.warn(`[${Ctor.name}] construction failed despite isSupported():`, err);
+          this.failedBackends.add(Ctor);
+        }
+      }
+    }
+    return null;
+  }
 }

@@ -12,18 +12,13 @@
  * accumulator framebuffer, rather than reading tensors back to JS and
  * summing them there. Everything from the Gaussian blur pass onward is
  * identical whether the accumulated tensor came from one channel or many.
- *
- * This module has no knowledge of color spaces. It operates purely on
- * ChannelImage scalar fields uploaded as single-channel textures; RGB/Lab/
- * etc. splitting and conversion is the caller's responsibility (see
- * utils/color.ts) and happens before compute()/computeMultiChannel() is
- * ever called.
  */
 
-import type { ChannelImage, FlowField, Vec2, ETFConfig, ETFComputer } from '../types.js';
-import { DEFAULT_ETF_CONFIG } from '../types.js';
+import type { ChannelImage, FlowField, Vec2, ETFConfig, ETFComputer } from '../interfaces/base.js';
+import { DEFAULT_ETF_CONFIG } from '../interfaces/base.js';
 import { isWebGLComputeSupported, generateGaussianKernel } from '../utils/index.js';
 import { TangentFlowField } from './flow-field.js';
+import { BaseWebGLStrategy } from '../base.js';
 
 /**
  * WebGL context and resources for ETF computation
@@ -265,14 +260,16 @@ void main() {
  * WebGL-backed ETFComputer. Holds a lazily-initialized GPU context and
  * shader programs; call dispose() when done to release them.
  */
-export class WebGLEdgeTangentFlowComputer implements ETFComputer {
+export class WebGLEdgeTangentFlowComputer extends BaseWebGLStrategy implements ETFComputer {
   private resources: WebGLResources | null = null;
 
   /**
    * Check if WebGL2 with the required float texture extensions is
-   * supported in the current environment.
+   * supported in the current environment. Async to match the
+   * `ETFComputerCtor` shape shared with the WebGPU backend, even though
+   * this particular check is cheap and synchronous under the hood.
    */
-  static isSupported(): boolean {
+  static async isSupported(): Promise<boolean> {
     return isWebGLComputeSupported();
   }
 
@@ -310,6 +307,7 @@ export class WebGLEdgeTangentFlowComputer implements ETFComputer {
     const res = this.initResources(width, height);
     const { gl } = res;
 
+    return this.runGuarded(gl, () => {
     gl.viewport(0, 0, width, height);
 
     // Per-channel scratch (overwritten each iteration) and the tensor
@@ -444,6 +442,7 @@ export class WebGLEdgeTangentFlowComputer implements ETFComputer {
     deleteFramebuffer(gl, tangentFB2);
 
     return TangentFlowField.fromVec2Array(tangents, width, height);
+    });
   }
 
   /**

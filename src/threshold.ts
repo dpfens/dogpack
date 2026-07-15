@@ -1,4 +1,4 @@
-import type { ChannelImage } from './types.js';
+import type { ChannelImage } from './interfaces/base.js';
 import { createChannelImage, at } from "./utils/index.js";
 
 export interface ThresholdStrategy {

@@ -12,13 +12,13 @@ import {
   DEFAULT_ETF_CONFIG,
   type ChannelImage,
   type FlowField,
-} from '../types.js';
+} from '../interfaces/base.js';
 import { DoGProcessor } from '../processor.js';
 import { EdgeTangentFlowComputer } from '../etf/index.js';
 import { imageDataToLuminance, luminanceToImageData } from '../utils/index.js';
 import { GradientAlignedBlur } from '../blur/gradient-aligned/index.js';
 import { FlowGuidedBlur } from '../blur/flow-guided.js';
-import { DEFAULT_FDOG_CONFIG, FDOG_STYLE_PRESETS, type DoGImplementation, type FDoGConfig } from './types.js';
+import { DEFAULT_FDOG_CONFIG, FDOG_STYLE_PRESETS, type DoGImplementation, type FDoGConfig } from '../interfaces/dog.js';
 
 /**
  * FDoG (Flow-based Difference of Gaussians)
@@ -69,20 +69,20 @@ export class FDoG implements DoGImplementation {
     const params = { ...this.config, ...overrides };
 
     // Step 1: Compute Edge Tangent Flow
-    const etfComputer = new EdgeTangentFlowComputer();
+    const etfComputer = await EdgeTangentFlowComputer.create();
     const etf = await etfComputer.compute(input, {
       iterations: DEFAULT_ETF_CONFIG.iterations,
       kernelSize: Math.ceil(params.sigmaC * 2.45) * 2 + 1,
     }, params.sigmaC);
 
-    const gradientBlur = new GradientAlignedBlur(etf);
+    const gradientBlur = await GradientAlignedBlur.create(etf);
     const processor = new DoGProcessor(gradientBlur, params);
 
     // Step 4: Process image (DoG + threshold)
     let result = await processor.process(input);
     processor.dispose();
 
-    const flowBlur = new FlowGuidedBlur(etf);
+    const flowBlur = await FlowGuidedBlur.create(etf);
 
     // Step 5: Flow-aligned smoothing
     if (params.sigmaM > 0) {
@@ -116,14 +116,14 @@ export class FDoG implements DoGImplementation {
     const params = { ...this.config, ...overrides };
     
     // Compute ETF
-    const etfComputer = new EdgeTangentFlowComputer();
+    const etfComputer = await EdgeTangentFlowComputer.create();
     const etf = await etfComputer.compute(input, {
       iterations: DEFAULT_ETF_CONFIG.iterations,
       kernelSize: Math.ceil(params.sigmaC * 2.45) * 2 + 1,
     }, params.sigmaC);
     
     // Create blur strategies
-    const gradientBlur = new GradientAlignedBlur(etf);
+    const gradientBlur = await GradientAlignedBlur.create(etf);
     const processor = new DoGProcessor(gradientBlur, params);
     
     // Get intermediate results
@@ -131,11 +131,12 @@ export class FDoG implements DoGImplementation {
       processor.processNoThreshold(input),
       processor.process(input)
     ]);
+    processor.dispose();
     
     // Flow-aligned smoothing
     let smoothed = thresholded;
     if (params.sigmaM > 0) {
-      const flowBlur = new FlowGuidedBlur(etf);
+      const flowBlur = await FlowGuidedBlur.create(etf);
       smoothed = await flowBlur.blur(thresholded, params.sigmaM);
       flowBlur.dispose()
     }
@@ -143,8 +144,7 @@ export class FDoG implements DoGImplementation {
     // Anti-aliasing
     let result = smoothed;
     if (params.sigmaA > 0) {
-      const flowCls = FlowGuidedBlur;
-      const aaBlur = new flowCls(etf);
+      const aaBlur = await FlowGuidedBlur.create(etf);
       result = await aaBlur.blur(smoothed, params.sigmaA);
       aaBlur.dispose();
     }
@@ -174,21 +174,20 @@ export class FDoG implements DoGImplementation {
   ): Promise<ChannelImage> {
     const params = { ...this.config, ...overrides };
     
-    const gradientBlur = new GradientAlignedBlur(etf);
+    const gradientBlur = await GradientAlignedBlur.create(etf);
     const processor = new DoGProcessor(gradientBlur, params);
     
     let result = await processor.process(input);
     processor.dispose();
 
-    const flowCls = FlowGuidedBlur;
     if (params.sigmaM > 0) {
-      const flowBlur = new flowCls(etf);
+      const flowBlur = await FlowGuidedBlur.create(etf);
       result = await flowBlur.blur(result, params.sigmaM);
       flowBlur.dispose();
     }
     
     if (params.sigmaA > 0) {
-      const aaBlur = new flowCls(etf);
+      const aaBlur = await FlowGuidedBlur.create(etf);
       result = await aaBlur.blur(result, params.sigmaA);
       aaBlur.dispose();
     }
@@ -209,7 +208,7 @@ export class FDoG implements DoGImplementation {
       return { data: new Float32Array(input.data), width: input.width, height: input.height };
     }
 
-    const aaBlur = new FlowGuidedBlur(etf);
+    const aaBlur = await FlowGuidedBlur.create(etf);
     const result = aaBlur.blur(input, sigma);
     aaBlur.dispose();
     return result;

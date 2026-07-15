@@ -14,7 +14,7 @@
  * Based on Section 5.2 of the XDoG paper.
  */
 
-import type { ChannelImage } from '../types.js';
+import type { ChannelImage } from '../interfaces/base.js';
 import type { RGBImage } from './base.js'
 
 // =============================================================================

@@ -8,7 +8,7 @@
  * pipeline and doesn't need to know anything about color science.
  */
 
-import type { ChannelImage, RGBImage } from '../types.js';
+import type { ChannelImage, RGBImage } from '../interfaces/base.js';
 import { createChannelImage } from './index.js';
 
 /**

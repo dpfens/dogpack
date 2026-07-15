@@ -9,12 +9,13 @@
  */
 
 import { 
+  type BlurStrategy,
   type ChannelImage,
-} from '../types.js';
+} from '../interfaces/base.js';
 import { DoGProcessor } from '../processor.js';
 import { imageDataToLuminance, luminanceToImageData } from '../utils/index.js';
 import { IsotropicBlur } from '../blur/isotropic.js';
-import { DEFAULT_DOG_CONFIG, STYLE_PRESETS, type DoGConfig, type DoGImplementation, type DoGProcessingResult, type XDoGConfig } from './types.js';
+import { DEFAULT_DOG_CONFIG, STYLE_PRESETS, type DoGConfig, type DoGImplementation, type DoGProcessingResult, type XDoGConfig } from '../interfaces/dog.js';
 
 /**
  * XDoG (Extended Difference of Gaussians)
@@ -26,23 +27,26 @@ import { DEFAULT_DOG_CONFIG, STYLE_PRESETS, type DoGConfig, type DoGImplementati
  * using Equation 7 for the sharpening computation.
  */
 export class XDoG implements DoGImplementation {
-  private processor: DoGProcessor;
   private config: XDoGConfig;
-  
-  constructor(config: Partial<XDoGConfig> = {}) {
-    const { kernelSizeMultiplier, ...dogConfig } = config;
-    
-    this.config = { ...DEFAULT_DOG_CONFIG, kernelSizeMultiplier: 6, ...config };
+  private dogConfig: Partial<DoGConfig>;
+  private blurStrategyPromise: Promise<BlurStrategy>;
 
-    const blurStrategy = config.blurStrategy ?? new IsotropicBlur({
-      kernelSizeMultiplier: this.config.kernelSizeMultiplier,
-    });
-    
-    this.processor = new DoGProcessor(blurStrategy, dogConfig);
+  constructor(config: Partial<XDoGConfig> = {}) {
+    const { kernelSizeMultiplier, blurStrategy, ...dogConfig } = config;
+
+    this.config = { ...DEFAULT_DOG_CONFIG, kernelSizeMultiplier: 6, ...config };
+    this.dogConfig = dogConfig;
+
+    // Not awaited here — just started. Anything that needs the resolved
+    // strategy (process*(), dispose()) awaits this promise itself.
+    this.blurStrategyPromise = Promise.resolve(
+      blurStrategy ??
+        IsotropicBlur.create({ kernelSizeMultiplier: this.config.kernelSizeMultiplier }),
+    );
   }
 
   dispose(): void {
-    this.processor.dispose();
+    this.blurStrategyPromise.then((strategy) => strategy.dispose()).catch(() => {});
   }
   
   /**
@@ -51,26 +55,46 @@ export class XDoG implements DoGImplementation {
   static withPreset(presetName: keyof typeof STYLE_PRESETS): XDoG {
     return new XDoG(STYLE_PRESETS[presetName]);
   }
+
+  private async getProcessor(): Promise<DoGProcessor> {
+    const strategy = await this.blurStrategyPromise;
+    return new DoGProcessor(strategy, this.dogConfig);
+  }
   
   /**
    * Process a grayscale image
    */
   async process(input: ChannelImage, overrides: Partial<DoGConfig> = {}): Promise<ChannelImage> {
-    return this.processor.process(input, overrides);
+    const processor = await this.getProcessor();
+    try {
+      return await processor.process(input, overrides);
+    } finally {
+      processor.dispose();
+    }
   }
   
   /**
    * Process without thresholding (returns sharpened image)
    */
   async processSharpened(input: ChannelImage, overrides: Partial<DoGConfig> = {}): Promise<ChannelImage> {
-    return this.processor.processNoThreshold(input, overrides);
+    const processor = await this.getProcessor();
+    try {
+      return await processor.processNoThreshold(input, overrides);
+    } finally {
+      processor.dispose();
+    }
   }
   
   /**
    * Get raw DoG response for visualization
    */
   async processRawDoG(input: ChannelImage, overrides: Partial<DoGConfig> = {}): Promise<ChannelImage> {
-    return this.processor.processRawDoG(input, overrides);
+    const processor = await this.getProcessor();
+    try {
+      return await processor.processRawDoG(input, overrides);
+    } finally {
+      processor.dispose();
+    }
   }
 
   /**
@@ -85,7 +109,12 @@ export class XDoG implements DoGImplementation {
    * - Custom post-processing pipelines
    */
   async processDetailed(input: ChannelImage, overrides: Partial<DoGConfig> = {}): Promise<DoGProcessingResult> {
-    return this.processor.processDetailed(input, overrides);
+    const processor = await this.getProcessor();
+    try {
+      return await processor.processDetailed(input, overrides);
+    } finally {
+      processor.dispose();
+    }
   }
   
   /**
@@ -98,26 +127,27 @@ export class XDoG implements DoGImplementation {
   }
   
   /**
-   * Get current configuration
+   * Get current configuration.
    */
   getConfig(): Readonly<XDoGConfig> {
-    return { ...this.config, ...this.processor.getConfig() };
+    return { ...this.config, ...this.dogConfig };
   }
   
-  /**
-   * Update configuration
-   */
   setConfig(config: Partial<XDoGConfig>): void {
-    const { kernelSizeMultiplier, ...dogConfig } = config;
-    
-    if (kernelSizeMultiplier !== undefined) {
-      this.config.kernelSizeMultiplier = kernelSizeMultiplier;
-      // Need to recreate blur strategy with new kernel size
-      const blurStrategy = new IsotropicBlur({ kernelSizeMultiplier });
-      this.processor.setBlurStrategy(blurStrategy);
+    const { kernelSizeMultiplier, blurStrategy, ...dogConfig } = config;
+
+    this.config = { ...this.config, ...config };
+    this.dogConfig = { ...this.dogConfig, ...dogConfig };
+
+    if (blurStrategy !== undefined) {
+      const oldStrategyPromise = this.blurStrategyPromise;
+      this.blurStrategyPromise = Promise.resolve(blurStrategy);
+      oldStrategyPromise.then((s) => s.dispose()).catch(() => {});
+    } else if (kernelSizeMultiplier !== undefined) {
+      const oldStrategyPromise = this.blurStrategyPromise;
+      this.blurStrategyPromise = IsotropicBlur.create({ kernelSizeMultiplier });
+      oldStrategyPromise.then((s) => s.dispose()).catch(() => {});
     }
-    
-    this.processor.setConfig(dogConfig);
   }
 }
 
@@ -129,7 +159,7 @@ export async function xdog(
   config: Partial<XDoGConfig> = {}
 ): Promise<ChannelImage> {
   const processor = new XDoG(config);
-  const result = processor.process(input);
+  const result = await processor.process(input);
   processor.dispose();
   return result;
 }

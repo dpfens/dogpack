@@ -39,11 +39,41 @@ export interface RGBImage {
   height: number;
 }
 
+export type GradientAlignedBlurBackendConfig = Partial<GradientAlignedBlurConfig> & {
+  flowField: FlowField;
+};
+
+/**
+ * Implemented by anything holding resources that must be explicitly
+ * released (e.g. GPU buffers/textures). CPU-only implementations may
+ * implement this as a no-op, but still implement it — callers that manage
+ * a mixed pipeline of strategies need to be able to dispose everything
+ * uniformly without checking which backend each instance happens to use.
+ */
+export interface Disposable {
+  dispose(): void;
+}
+
+/**
+ * Implemented by anything with a technology-specific backing
+ * implementation (CPU, WebGL, WebGPU, ...), exposing which one is
+ * actually in use.
+ *
+ * Lets callers/perf tooling tell what ran without guessing — relevant
+ * since backend selection can fall back silently after construction (e.g.
+ * on a lost WebGL context). Single-backend implementations (e.g. a
+ * CPU-only preprocessor with no GPU counterpart) still report it — just
+ * always the same value.
+ */
+export interface BackendIdentifiable {
+  readonly backend: 'webgpu' | 'webgl' | 'cpu';
+}
+
 /**
  * Abstract blur strategy interface
  * Implementations provide different blur algorithms (isotropic, flow-guided, etc.)
  */
-export interface BlurStrategy {
+export interface BlurStrategy extends Disposable, BackendIdentifiable {
   /**
    * Apply blur to an image with the given sigma
    * @param input Source image
@@ -51,27 +81,42 @@ export interface BlurStrategy {
    * @returns Blurred image
    */
   blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
-
-  dispose(): void;
 }
 
 /**
- * Static interface for blur strategy classes
- * Used to check runtime availability before instantiation
+ * Generic static (constructor) interface shared by every strategy family
+ * in this file (blur, preprocessing, ETF, ...).
+ *
+ * This is deliberately a separate interface from the instance interface
+ * (`T`) rather than statics bolted onto it: `implements` only constrains
+ * instance shape, not the statics on a class object, so runtime-
+ * availability checks have to live on their own constructor-shaped
+ * interface and get asserted with `satisfies` instead.
  */
-export interface BlurStrategyClass {
+export interface StrategyCtor<T> {
+  new (config: any): T;
+
   /**
-   * Check if this blur strategy is supported in the current environment
-   * @returns true if the strategy can be used, false otherwise
+   * Check if this backend is supported in the current environment. Async
+   * because GPU support checks (requestAdapter(), WebGL context creation)
+   * are inherently async.
+   * @returns true if the backend can be used, false otherwise
    */
-  isSupported(): boolean;
-  
+  isSupported(): Promise<boolean>;
+
   /**
-   * Get a human-readable reason if the strategy is not supported
+   * Get a human-readable reason if the backend is not supported. May be
+   * asynchronous: cheap synchronous API-surface checks can't confirm a GPU
+   * adapter is actually obtainable — that requires an async request.
    * @returns undefined if supported, or a string explaining why it's not
    */
-  getUnsupportedReason?(): string | undefined;
+  getUnsupportedReason?(): string | undefined | Promise<string | undefined>;
 }
+
+/**
+ * Static (constructor) interface for blur strategy classes.
+ */
+export type BlurStrategyCtor = StrategyCtor<BlurStrategy>;
 
 
 /**
@@ -81,14 +126,19 @@ export interface BlurStrategyClass {
  * Gaussian blur, contrast enhancement, quantization, etc.) applied to an
  * image before line detection.
  */
-export interface Preprocessor {
+export interface Preprocessor extends Disposable, BackendIdentifiable {
   /**
    * Apply this preprocessing operation to an image
    * @param input Source image
    * @returns Processed image
    */
-  process(input: ChannelImage): ChannelImage;
+  process(input: ChannelImage): Promise<ChannelImage>;
 }
+
+/**
+ * Static (constructor) interface for preprocessor classes.
+ */
+export type PreprocessorCtor = StrategyCtor<Preprocessor>;
 
 /**
  * Configuration for flow-guided blur
@@ -176,16 +226,17 @@ export const DEFAULT_ETF_CONFIG: ETFConfig = {
   kernelSize: 5,
 };
 
+
 /**
  * Structure tensor components at a pixel
  * The structure tensor is: | E  F |
  *                          | F  G |
- * where E = Ix², F = Ix*Iy, G = Iy²
+ * where E = Ix^2, F = Ix*Iy, G = Iy^2
  */
 export interface StructureTensor {
-  e: Float32Array; // Ix²
+  e: Float32Array; // Ix^2
   f: Float32Array; // Ix * Iy
-  g: Float32Array; // Iy²
+  g: Float32Array; // Iy^2
 }
 
 /**
@@ -224,7 +275,7 @@ export interface ChannelTensor {
  * caller's responsibility and happens before compute()/computeMultiChannel()
  * is called.
  */
-export interface ETFComputer {
+export interface ETFComputer extends Disposable, BackendIdentifiable {
   /**
    * Compute an Edge Tangent Flow from a single scalar channel.
    *
@@ -252,34 +303,9 @@ export interface ETFComputer {
     config?: Partial<ETFConfig>,
     sigmaC?: number
   ): Promise<FlowField>;
-
-  /**
-   * Release any resources (e.g. GPU buffers/textures) held by this
-   * computer. CPU implementations may implement this as a no-op.
-   */
-  dispose(): void;
 }
 
 /**
- * Static interface for ETFComputer classes, mirroring BlurStrategyClass.
- * Used to check runtime availability (e.g. WebGPU support) before
- * instantiation.
+ * Static (constructor) interface for ETFComputer classes.
  */
-export interface ETFComputerClass {
-  /**
-   * Check if this ETF computer backend is supported in the current
-   * environment.
-   * @returns true if the backend can be used, false otherwise
-   */
-  isSupported(): boolean;
- 
-  /**
-   * Get a human-readable reason if the backend is not supported.
-   * May be asynchronous: cheap synchronous API-surface checks (e.g. does
-   * `navigator.gpu` exist) can't confirm a GPU adapter is actually
-   * obtainable — that requires an async request. isSupported() above
-   * stays synchronous for a fast pre-check; this is the deeper check.
-   * @returns undefined if supported, or a string explaining why it's not
-   */
-  getUnsupportedReason?(): string | undefined | Promise<string | undefined>;
-}
+export type ETFComputerCtor = StrategyCtor<ETFComputer>;
