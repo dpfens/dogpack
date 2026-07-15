@@ -1,6 +1,7 @@
 import {
   Component,
   input,
+  output,
   forwardRef,
   signal,
 } from '@angular/core';
@@ -30,6 +31,11 @@ export class ParamSliderComponent implements ControlValueAccessor {
   hardMax = input.required<number>();
   step = input<number>(0.1);
 
+  // Emits the current value when the user "commits" it: releasing the
+  // slider thumb, or blurring the number field. Distinct from the live
+  // onChange stream, which fires on every intermediate drag/keystroke.
+  committed = output<number>();
+
   protected value = signal<number>(0);
   protected disabled = signal<boolean>(false);
 
@@ -58,5 +64,17 @@ export class ParamSliderComponent implements ControlValueAccessor {
 
   protected touched(): void {
     this.onTouched();
+  }
+
+  // Fired on the range input's `change` event (slider released).
+  protected commit(): void {
+    this.committed.emit(this.value());
+  }
+
+  // Fired on the number input's `blur`: mark touched (as before) and
+  // also treat it as a commit.
+  protected numberBlurred(): void {
+    this.onTouched();
+    this.commit();
   }
 }

@@ -78,10 +78,26 @@ export class DogComponent {
     }
   });
 
+  private initialEmitDone = false;
+
+  /**
+   * Applies the preset (if any) then, on this same first run, emits once
+   * so the parent immediately gets a valid config -- either the preset's
+   * values or, if no preset was given, the form's defaults. Only ever
+   * fires this initial emit once; later preset changes still just patch
+   * the form and wait for a user commit like everything else.
+   */
   __on_input = effect(() => {
     const p = this.preset();
-    if (!p) return;
-    untracked(() => this.applyPreset(p));
+    untracked(() => {
+      if (p) {
+        this.applyPreset(p);
+      }
+      if (!this.initialEmitDone) {
+        this.initialEmitDone = true;
+        this.emitIfValid();
+      }
+    });
   });
 
   private buildForm(): FormGroup<DogFormControls> {
@@ -156,7 +172,17 @@ export class DogComponent {
     return { kind };
   }
 
-  submit(): void {
+  /**
+   * Called whenever a control is "committed": a param-slider's range
+   * thumb is released or its number field is blurred, a hysteresis
+   * offset field is blurred, or the threshold strategy is changed.
+   * Applies the config immediately -- there's no separate Apply step.
+   */
+  onCommit(): void {
+    this.emitIfValid();
+  }
+
+  private emitIfValid(): void {
     if (this.form.invalid) return;
     const v = this.form.getRawValue();
     this.configChange.emit({

@@ -30,6 +30,7 @@ import {
   isConfig,
   isLayer,
 } from "../models/dog";
+import { multiScale } from "dogpack/extensions";
 
 
 export function isExecutionLayer(node: DogExecutionNode): node is DogExecutionLayer {
@@ -45,10 +46,10 @@ export function isExecutionLeaf(node: DogExecutionNode): node is DogExecutionLea
 // =============================================================================
 
 
-function createBlurStrategy(descriptor: BlurStrategyDescriptor): BlurStrategy {
+async function createBlurStrategy(descriptor: BlurStrategyDescriptor): Promise<BlurStrategy> {
   switch (descriptor.kind) {
     case "isotropic":
-      return new IsotropicBlur({ kernelSizeMultiplier: descriptor.kernelSizeMultiplier ?? 6 });
+      return IsotropicBlur.create({ kernelSizeMultiplier: descriptor.kernelSizeMultiplier ?? 6 });
     case "gradient-aligned":
     case "flow-guided":
       // These wrap a FlowField computed at runtime from the actual input
@@ -105,13 +106,13 @@ function hydrateADoGConfig(config: Partial<WireADoGConfig>) {
   };
 }
 
-function createDoGImplementation(node: DogConfigNode): DoGImplementation {
+async function createDoGImplementation(node: DogConfigNode): Promise<DoGImplementation> {
   switch (node.type) {
     case "xdog": {
       const { blurStrategy, ...rest } = node.config;
       return new XDoG({
         ...hydrateThresholdStrategy(rest),
-        ...(blurStrategy ? { blurStrategy: createBlurStrategy(blurStrategy) } : {}),
+        ...(blurStrategy ? { blurStrategy: await createBlurStrategy(blurStrategy) } : {}),
       });
     }
     case "fdog":
@@ -135,22 +136,22 @@ function createDoGImplementation(node: DogConfigNode): DoGImplementation {
 }
 
 
-function buildExecutionLeaf(node: DogConfigNode): DogExecutionLeaf {
-  return { kind: "dog", implementation: createDoGImplementation(node) };
+async function buildExecutionLeaf(node: DogConfigNode): Promise<DogExecutionLeaf> {
+  return { kind: "dog", implementation: await createDoGImplementation(node) };
 }
 
-function buildExecutionLayer(layer: DogLayer): DogExecutionLayer {
-  const components = layer.components.map(buildExecutionNode);
+async function buildExecutionLayer(layer: DogLayer): Promise<DogExecutionLayer> {
+  const components = await Promise.all(layer.components.map(buildExecutionNode));
   return {
     kind: "layer",
     name: layer.name,
     components,
     // Only carry the blend mode forward if it will actually be used.
-    blendMode: components.length > 1 ? layer.blendMode : undefined,
+    blendMode: components.length > 1 ? multiScale.BlendFunctions[layer.blendMode] : undefined,
   };
 }
 
-function buildExecutionNode(node: DogNode): DogExecutionNode {
+async function buildExecutionNode(node: DogNode): Promise<DogExecutionNode> {
   if (isConfig(node)) {
     return buildExecutionLeaf(node);
   }
@@ -164,14 +165,14 @@ function buildExecutionNode(node: DogNode): DogExecutionNode {
 }
 
 /** Convert a `DogNode[]` tree (e.g. `DogProcessingContext.dog`) into executables. */
-export function buildExecutionTree(nodes: DogNode[]): DogExecutionNode[] {
-  return nodes.map(buildExecutionNode);
+export async function buildExecutionTree(nodes: DogNode[]): Promise<DogExecutionNode[]> {
+  return Promise.all(nodes.map(buildExecutionNode));
 }
 
 /** Convert a full `DogProcessingContext` into an executable plan. */
-export function buildExecutablePlan(context: DogProcessingContext): DogExecutablePlan {
+export async function buildExecutablePlan(context: DogProcessingContext): Promise<DogExecutablePlan> {
   return {
-    dog: buildExecutionTree(context.dog),
+    dog: await buildExecutionTree(context.dog),
   };
 }
 
@@ -264,10 +265,6 @@ function executeDogPipeline(
     Promise.resolve(input),
   );
 }
- 
-function applyPreprocessing(preprocessors: Preprocessor[], input: ChannelImage): ChannelImage {
-  return preprocessors.reduce((image, preprocessor) => preprocessor.process(image), input);
-}
 
 /** Execute an already-built plan (preprocessing + dog tree) against an input image. */
 export async function executeDogExecutablePlan(
@@ -284,7 +281,7 @@ export async function executeDogProcessingContext(
 ): Promise<ChannelImage> {
   const plan = buildExecutablePlan(context);
   console.log(plan);
-  return executeDogExecutablePlan(buildExecutablePlan(context), input);
+  return executeDogExecutablePlan(await buildExecutablePlan(context), input);
 }
 
 /** Recursively dispose every DoG implementation instance in a built tree. */

@@ -71,8 +71,9 @@ export class PreprocessingComponent {
   // components do on their own explicit runPreview() - i.e. touching a
   // preprocessing control while looking at an xdog/etc. preview will pull
   // focus back to preprocessing. Flag if that's not the desired feel.
-  __on_change__ = effect(() => {
-      const { imageData, channel } = this.preprocessing.apply(this.steps(), this.image(), this.channelMode());
+  __on_change__ = effect(async () => {
+      console.log(this.steps());
+      const { imageData, channel } = await this.preprocessing.apply(this.steps(), this.image(), this.channelMode());
       this.channelImage.emit(imageData);
       this.lastOutput.set(imageData);
       this.dogService.show({ kind: 'preprocessing' }, imageData);
@@ -91,6 +92,7 @@ export class PreprocessingComponent {
   }
 
   addSelectedStep(): void {
+    console.log(this.addableSteps, this.selectedAddIndex());
     const template = this.addableSteps[this.selectedAddIndex()];
     // Clone so pushing the same template twice doesn't share config objects.
     this.steps.update((current) => [...current, structuredClone(template)]);

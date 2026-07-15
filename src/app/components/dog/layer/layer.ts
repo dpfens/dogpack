@@ -22,6 +22,7 @@ import { BlendFunction, ChannelImage, extensions } from 'dogpack';
 import { DogComponentType, DogLayer, DogModelProvider, DogNode } from '../../../models/dog';
 import { DoGService } from '../../../services/dog/dog-service';
 import { luminanceToImageData } from 'dogpack/utils';
+import { BuiltinBlendMode } from 'dogpack/extensions';
 
 type DogLeaf = XDogComponent | FDogComponent | ADogComponent | HDogComponent;
 type DogNodeInstance = DogLayerComponent | DogLeaf;
@@ -76,7 +77,7 @@ export class DogLayerComponent implements DogModelProvider<DogLayer> {
 
   readonly name: WritableSignal<string> = signal('');
   readonly instances: WritableSignal<DogEntry[]> = signal([]);
-  readonly blend: WritableSignal<BlendFunction | undefined> = signal(undefined);
+  readonly blend: WritableSignal<BuiltinBlendMode | undefined> = signal(undefined);
 
   /**
    * Result of running this layer's own composed model (this node plus every
@@ -105,7 +106,7 @@ export class DogLayerComponent implements DogModelProvider<DogLayer> {
    * `dogpack`. If it's actually a type-only union, replace this with an
    * explicit literal array of the modes you support.
    */
-  readonly blendModes: BlendFunction[] = Object.values(extensions.multiScale.BlendFunctions) as BlendFunction[];
+  readonly blendModes: BuiltinBlendMode[] = Object.keys(extensions.multiScale.BlendFunctions) as BuiltinBlendMode[];
 
   add<T extends DogNodeInstance>(cmp: Type<T>, kind: DogNodeKind): ComponentRef<T> {
     const ref = this.container.createComponent(cmp);

@@ -1,17 +1,17 @@
 <div class="container-fluid p-3">
-  <div class="row g-3">
+  <div class="row g-3 align-items-start">
     <!-- Shared canvas: always shows whatever DoGService says is active,
          regardless of whether that's preprocessing or a node anywhere in the
          pipeline tree below. -->
-    <div class="col-12 col-lg-5">
-      <div class="card h-100">
+    <div class="col-12 col-lg-5 sticky-top" style="top: 1rem;">
+      <div class="card">
         <div class="card-header d-flex align-items-center justify-content-between">
           <span>Preview</span>
           @if (activeLabelText(); as label) {
             <span class="badge text-bg-secondary">{{ label }}</span>
           }
         </div>
-        <div class="card-body p-2" style="min-height: 400px;">
+        <div class="card-body p-2" style="height: min(70vh, 600px);">
           <app-image-canvas
               [imageData]="activeImage()"
               [compareWith]="sourceImage()"

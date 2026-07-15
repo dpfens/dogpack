@@ -1,4 +1,5 @@
 import type { ADoGConfig, BlendFunction, ChannelImage, DoGConfig, DoGImplementation, FDoGConfig, GradientAlignedBlurConfig, HDoGConfig, XDoGConfig } from "dogpack";
+import { multiScale } from "dogpack/extensions";
 
 export type BlurStrategyDescriptor =
   | { readonly kind: "isotropic"; kernelSizeMultiplier?: number }
@@ -97,7 +98,7 @@ export interface HDogPresetConfig {
 export interface DogLayer {
   readonly kind: 'layer';
   name: string;
-  blendMode: BlendFunction;
+  blendMode: multiScale.BuiltinBlendMode;
   components: DogNode[];
 }
 

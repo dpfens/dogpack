@@ -1,8 +1,8 @@
 <div class="container-fluid p-3">
   <div class="row g-3">
     <!-- Preview column -->
-    <div class="col-12 col-lg-7">
-      <div class="row g-3">
+    <div class="col-12 col-lg-7 h-100">
+      <div class="row g-3 h-100">
         <div class="col-12 col-md-6">
           <div class="card h-100">
             <div class="card-header">Source</div>
@@ -198,7 +198,7 @@
           <select
             class="form-select"
             [value]="selectedAddIndex()"
-            (change)="onAddIndexChange($any($event.target).valueAsNumber)"
+            (change)="onAddIndexChange(+$any($event.target).value)"
           >
             @for (step of addableSteps; track $index; let idx = $index) {
               <option [value]="idx">{{ stepLabels[step.type] }}</option>

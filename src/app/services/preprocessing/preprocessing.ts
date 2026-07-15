@@ -131,33 +131,38 @@ export class PreprocessingService {
    *   DogRunRequest to carry more than one ChannelImage; this is a
    *   placeholder until that's built.
    */
-  apply(steps: PipelineStepConfig[], input: ImageData, mode: ChannelMode): PreprocessingResult {
+  async apply(steps: PipelineStepConfig[], input: ImageData, mode: ChannelMode): Promise<PreprocessingResult> {
     const pipeline = this.buildPipeline(steps);
 
     if (mode === 'luminance') {
       const { luminance, alpha } = this.imageDataToLuminanceChannel(input);
-      const channel = pipeline.apply(luminance);
+      const channel = await pipeline.apply(luminance);
       return { imageData: luminanceToImageData(channel, alpha), channel };
     }
 
     const { channels, alpha } = this.imageDataToRGBChannels(input);
-    const processed: RGBChannels = {
-      r: pipeline.apply(channels.r),
-      g: pipeline.apply(channels.g),
-      b: pipeline.apply(channels.b),
-    };
+    const [r, g, b] = await Promise.all([
+      pipeline.apply(channels.r),
+      pipeline.apply(channels.g),
+      pipeline.apply(channels.b)
+    ]);
+    const processed: RGBChannels = {r, g, b};
     const imageData = this.rgbChannelsToImageData(processed, alpha);
     const channel = imageDataToLuminance(imageData);
     return { imageData, channel };
   }
 
   /** Lower-level escape hatch for callers that already have a ChannelImage. */
-  applyToChannel(steps: PipelineStepConfig[], input: ChannelImage): ChannelImage {
+  async applyToChannel(steps: PipelineStepConfig[], input: ChannelImage): Promise<ChannelImage> {
     return this.buildPipeline(steps).apply(input);
   }
 
   private presetAsPreprocessor(name: keyof typeof PreprocessingPresets): Preprocessor {
-    return { process: (input: ChannelImage) => PreprocessingPresets[name](input) };
+    return {
+      process: (input: ChannelImage) => PreprocessingPresets[name](input),
+      backend: 'cpu',
+      dispose: () => {},
+    };
   }
 
   // --------------------------------------------------------------------

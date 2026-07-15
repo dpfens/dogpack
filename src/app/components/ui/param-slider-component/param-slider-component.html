@@ -8,6 +8,7 @@
     [value]="value()"
     [disabled]="disabled()"
     (input)="update($any($event.target).value)"
+    (change)="commit()"
     (blur)="touched()" />
   <input
     type="number"
@@ -19,5 +20,5 @@
     [value]="value()"
     [disabled]="disabled()"
     (input)="update($any($event.target).value)"
-    (blur)="touched()" />
+    (blur)="numberBlurred()" />
 </div>

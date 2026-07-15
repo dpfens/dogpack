@@ -1,9 +1,7 @@
 <div #host class="position-relative w-100 h-100 overflow-hidden bg-body-tertiary rounded"
+    style="touch-action: none; user-select: none;"
     (wheel)="onWheel($event)"
-    (pointerdown)="onPanStart($event)"
-    (pointermove)="onPanMove($event)"
-    (pointerup)="onPanEnd($event)"
-    (pointerleave)="onPanEnd($event)">
+    (pointerdown)="onPanStart($event)">
 
     <canvas #canvas class="w-100 h-100 d-block" [style.cursor]="cursorStyle()"></canvas>
 
@@ -13,9 +11,9 @@
         <div class="position-absolute top-50 start-50 translate-middle
                     bg-white border rounded-circle shadow-sm d-flex
                     align-items-center justify-content-center"
-            style="width: 32px; height: 32px; cursor: ew-resize;"
+            style="width: 32px; height: 32px; cursor: ew-resize; touch-action: none; user-select: none;"
             (pointerdown)="onDividerStart($event)">
-        <i class="bi bi-arrows-expand"></i>
+        <i class="bi bi-arrows-expand" style="pointer-events: none; user-select: none;"></i>
         </div>
     </div>
     }

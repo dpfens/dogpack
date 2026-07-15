@@ -33,6 +33,9 @@ export class ImageCanvasComponent {
   private panStart = { x: 0, y: 0 };
   private offsetStart = { x: 0, y: 0 };
 
+  private afterCache: { data: ImageData; canvas: OffscreenCanvas } | null = null;
+  private beforeCache: { data: ImageData; canvas: OffscreenCanvas } | null = null;
+
   cursorStyle = computed(() => (this.scale() > 1 ? 'grab' : 'default'));
 
   constructor() {
@@ -42,8 +45,12 @@ export class ImageCanvasComponent {
         const { width, height } = entry.contentRect;
         this.containerSize.set({ width, height });
       });
-      ro.observe(this.hostRef().nativeElement);
-      this.destroyRef.onDestroy(() => ro.disconnect());
+      const host = this.hostRef().nativeElement;
+      ro.observe(host);
+      this.destroyRef.onDestroy(() => {
+        ro.disconnect();
+        this.endWindowDragTracking();
+      });
     });
 
     effect(() => {
@@ -62,6 +69,8 @@ export class ImageCanvasComponent {
     });
   }
 
+  private lastCanvasSize = { w: 0, h: 0 };
+
   private draw(
     imageData: ImageData, compareWith: ImageData | null,
     size: { width: number; height: number }, fit: 'contain' | 'cover',
@@ -69,8 +78,13 @@ export class ImageCanvasComponent {
   ) {
     const canvas = this.canvasRef().nativeElement;
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = size.width * dpr;
-    canvas.height = size.height * dpr;
+    const canvasW = Math.round(size.width * dpr);
+    const canvasH = Math.round(size.height * dpr);
+    if (this.lastCanvasSize.w !== canvasW || this.lastCanvasSize.h !== canvasH) {
+      canvas.width = canvasW;
+      canvas.height = canvasH;
+      this.lastCanvasSize = { w: canvasW, h: canvasH };
+    }
 
     const ctx = this.ctx!;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -85,10 +99,12 @@ export class ImageCanvasComponent {
     const x = (canvas.width - w) / 2 + userOffset.x * dpr;
     const y = (canvas.height - h) / 2 + userOffset.y * dpr;
 
-    const after = this.toOffscreen(imageData);
+    this.afterCache = this.getOffscreen(imageData, this.afterCache);
+    const after = this.afterCache.canvas;
 
     if (compareWith) {
-      const before = this.toOffscreen(compareWith);
+      this.beforeCache = this.getOffscreen(compareWith, this.beforeCache);
+      const before = this.beforeCache.canvas;
       const splitX = (comparePct / 100) * canvas.width;
 
       ctx.save();
@@ -105,10 +121,14 @@ export class ImageCanvasComponent {
     }
   }
 
-  private toOffscreen(imageData: ImageData): OffscreenCanvas {
+  private getOffscreen(
+    imageData: ImageData,
+    cache: { data: ImageData; canvas: OffscreenCanvas } | null,
+  ): { data: ImageData; canvas: OffscreenCanvas } {
+    if (cache && cache.data === imageData) return cache;
     const off = new OffscreenCanvas(imageData.width, imageData.height);
     off.getContext('2d')!.putImageData(imageData, 0, 0);
-    return off;
+    return { data: imageData, canvas: off };
   }
 
   onWheel(event: WheelEvent) {
@@ -118,12 +138,32 @@ export class ImageCanvasComponent {
     this.scale.update(s => Math.min(5, Math.max(1, s + s * delta)));
   }
 
+  private windowMoveListener = (event: PointerEvent) => this.onPanMove(event);
+  private windowEndListener = (event: PointerEvent) => this.onPanEnd(event);
+
+  private beginWindowDragTracking() {
+    // Track the drag via window-level listeners instead of relying on
+    // element pointer capture, since capture can be released by the browser
+    // as soon as the pointer's coordinates leave the host's bounding box
+    // (even with the button still held). window never "loses" the pointer.
+    window.addEventListener('pointermove', this.windowMoveListener);
+    window.addEventListener('pointerup', this.windowEndListener);
+    window.addEventListener('pointercancel', this.windowEndListener);
+  }
+
+  private endWindowDragTracking() {
+    window.removeEventListener('pointermove', this.windowMoveListener);
+    window.removeEventListener('pointerup', this.windowEndListener);
+    window.removeEventListener('pointercancel', this.windowEndListener);
+  }
+
   onPanStart(event: PointerEvent) {
     if (this.draggingDivider) return;
+    event.preventDefault();
     this.panning = true;
     this.panStart = { x: event.clientX, y: event.clientY };
     this.offsetStart = this.offset();
-    (event.target as HTMLElement).setPointerCapture(event.pointerId);
+    this.beginWindowDragTracking();
   }
 
   onPanMove(event: PointerEvent) {
@@ -142,11 +182,14 @@ export class ImageCanvasComponent {
   onPanEnd(event: PointerEvent) {
     this.panning = false;
     this.draggingDivider = false;
+    this.endWindowDragTracking();
   }
 
   onDividerStart(event: PointerEvent) {
     event.stopPropagation();
+    event.preventDefault();
     this.draggingDivider = true;
+    this.beginWindowDragTracking();
   }
 
   resetView() {

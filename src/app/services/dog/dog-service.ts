@@ -96,7 +96,7 @@ export class DoGService implements OnDestroy {
     }
     const layer: DogLayer = isLayer(node)
       ? node
-      : { kind: 'layer', name: node.type, blendMode: multiScale.blendAverage, components: [node] };
+      : { kind: 'layer', name: node.type, blendMode: 'blendAverage', components: [node] };
     return await this.client.postMessage({ layer, image });
   }
 

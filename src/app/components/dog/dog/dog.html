@@ -1,4 +1,4 @@
-<form [formGroup]="form" (ngSubmit)="submit()">
+<form [formGroup]="form">
   <fieldset class="border rounded p-3 mb-3">
     <legend class="fs-6 fw-semibold w-auto px-2">Base DoG parameters</legend>
 
@@ -10,7 +10,8 @@
         [hardMin]="ranges().sigma.hardMin"
         [hardMax]="ranges().sigma.hardMax"
         [step]="ranges().sigma.step"
-        [formControl]="form.controls.sigma" />
+        [formControl]="form.controls.sigma"
+        (committed)="onCommit()" />
       <div class="form-text">{{ hint('sigma') }}</div>
     </div>
 
@@ -22,7 +23,8 @@
         [hardMin]="ranges().k.hardMin"
         [hardMax]="ranges().k.hardMax"
         [step]="ranges().k.step"
-        [formControl]="form.controls.k" />
+        [formControl]="form.controls.k"
+        (committed)="onCommit()" />
       <div class="form-text">{{ hint('k') }}</div>
     </div>
 
@@ -34,7 +36,8 @@
         [hardMin]="ranges().p.hardMin"
         [hardMax]="ranges().p.hardMax"
         [step]="ranges().p.step"
-        [formControl]="form.controls.p" />
+        [formControl]="form.controls.p"
+        (committed)="onCommit()" />
       <div class="form-text">{{ hint('p') }}</div>
     </div>
 
@@ -46,7 +49,8 @@
         [hardMin]="ranges().epsilon.hardMin"
         [hardMax]="ranges().epsilon.hardMax"
         [step]="ranges().epsilon.step"
-        [formControl]="form.controls.epsilon" />
+        [formControl]="form.controls.epsilon"
+        (committed)="onCommit()" />
       <div class="form-text">{{ hint('epsilon') }}</div>
     </div>
 
@@ -58,13 +62,14 @@
         [hardMin]="ranges().phi.hardMin"
         [hardMax]="ranges().phi.hardMax"
         [step]="ranges().phi.step"
-        [formControl]="form.controls.phi" />
+        [formControl]="form.controls.phi"
+        (committed)="onCommit()" />
       <div class="form-text">{{ hint('phi') }}</div>
     </div>
 
     <div class="mb-3">
       <label class="form-label">Threshold strategy</label>
-      <select class="form-select" [formControl]="form.controls.strategyKey">
+      <select class="form-select" [formControl]="form.controls.strategyKey" (change)="onCommit()">
         @for (opt of strategyOptions; track opt.key) {
           <option [value]="opt.key">{{ opt.label }}</option>
         }
@@ -75,15 +80,13 @@
       <div class="row g-2">
         <div class="col-6">
           <label class="form-label">High offset</label>
-          <input type="number" step="0.05" class="form-control" [formControl]="form.controls.highOffset" />
+          <input type="number" step="0.05" class="form-control" [formControl]="form.controls.highOffset" (blur)="onCommit()" />
         </div>
         <div class="col-6">
           <label class="form-label">Low offset</label>
-          <input type="number" step="0.05" class="form-control" [formControl]="form.controls.lowOffset" />
+          <input type="number" step="0.05" class="form-control" [formControl]="form.controls.lowOffset" (blur)="onCommit()" />
         </div>
       </div>
     }
   </fieldset>
-
-  <button type="submit" class="btn btn-primary" [disabled]="form.invalid">Apply</button>
 </form>
