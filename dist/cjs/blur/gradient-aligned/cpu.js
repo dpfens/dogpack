@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.GradientAlignedBlur = exports.CPUGradientAlignedBlur = void 0;
+exports.CPUGradientAlignedBlur = void 0;
 /**
  * Gradient-aligned blur for FDoG
  *
@@ -8,16 +8,21 @@ exports.GradientAlignedBlur = exports.CPUGradientAlignedBlur = void 0;
  * Used for the DoG computation in FDoG, where we want to blur across
  * edges but not along them.
  */
-const types_js_1 = require("../../types.js");
+const base_js_1 = require("../../interfaces/base.js");
 const index_js_1 = require("../../utils/index.js");
-const base_js_1 = require("../base.js");
-class CPUGradientAlignedBlur extends base_js_1.BaseCPUBlur {
-    flowField;
+const base_js_2 = require("../../base.js");
+class CPUGradientAlignedBlur extends base_js_2.BaseCPUStrategy {
+    backend = 'cpu';
     config;
-    constructor(flowField, config = {}) {
+    flowField;
+    constructor(config) {
         super();
-        this.flowField = flowField;
-        this.config = { ...types_js_1.DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, ...config };
+        this.flowField = config.flowField;
+        this.config = { ...base_js_1.DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, ...config };
+    }
+    /** CPU is always available — no environment capability to probe. */
+    static async isSupported() {
+        return true;
     }
     dispose() { }
     setFlowField(flowField) {
@@ -86,24 +91,4 @@ class CPUGradientAlignedBlur extends base_js_1.BaseCPUBlur {
     }
 }
 exports.CPUGradientAlignedBlur = CPUGradientAlignedBlur;
-class GradientAlignedBlur {
-    instance;
-    constructor(flowField, config = {}) {
-        this.instance = new CPUGradientAlignedBlur(flowField, config);
-    }
-    async blur(input, sigma) {
-        return this.instance.blur(input, sigma);
-    }
-    setFlowField(flowField) {
-        if (this.instance.setFlowField) {
-            this.instance.setFlowField(flowField);
-        }
-    }
-    dispose() {
-        if (this.instance.dispose) {
-            this.instance.dispose();
-        }
-    }
-}
-exports.GradientAlignedBlur = GradientAlignedBlur;
 //# sourceMappingURL=cpu.js.map

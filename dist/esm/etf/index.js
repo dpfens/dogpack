@@ -2,128 +2,89 @@ import { WebGpuEdgeTangentFlowComputer } from './webgpu.js';
 import { WebGLEdgeTangentFlowComputer } from './webgl.js';
 import { CpuEdgeTangentFlowComputer } from './cpu.js';
 /**
- * Edge Tangent Flow computer that automatically selects the best available
- * backend implementation.
+ * Edge Tangent Flow computer that automatically resolves to the best
+ * supported backend, with graceful single-retry fallback if that backend
+ * fails after selection (driver crash, lost context, etc).
  *
- * Preference order in 'auto' mode: WebGPU > WebGL > CPU. Backend selection
- * is stateful and happens at most once per instance: the first call to
- * compute()/computeMultiChannel() probes backends (honoring `forceImpl`,
- * or falling back WebGPU -> WebGL -> CPU) and caches whichever one
- * actually works; every later call on this instance reuses that same
- * backend directly. This avoids re-attempting WebGPU/WebGL acquisition on
- * every call, and means dispose() has a single, well-defined backend
- * instance to release GPU resources from.
  */
 export class EdgeTangentFlowComputer {
-    forceImpl;
-    computer = null;
-    constructor(forceImpl = 'auto') {
-        this.forceImpl = forceImpl;
+    instance;
+    currentCtor;
+    failedBackends = new Set();
+    constructor(instance, currentCtor) {
+        this.instance = instance;
+        this.currentCtor = currentCtor;
+    }
+    static candidates = [
+        WebGpuEdgeTangentFlowComputer,
+        WebGLEdgeTangentFlowComputer,
+        CpuEdgeTangentFlowComputer,
+    ];
+    static async create() {
+        for (const Ctor of EdgeTangentFlowComputer.candidates) {
+            if (await Ctor.isSupported()) {
+                try {
+                    return new EdgeTangentFlowComputer(new Ctor(), Ctor);
+                }
+                catch {
+                    continue; // isSupported() lied — try next
+                }
+            }
+        }
+        throw new Error('No supported ETF computer implementation available');
     }
     /**
-     * Check if WebGPU acceleration is available.
-     *
-     * Note: this is the same cheap synchronous check WebGpuEdgeTangentFlowComputer
-     * itself uses (navigator.gpu presence) — it doesn't guarantee an adapter
-     * can actually be obtained. Use WebGpuEdgeTangentFlowComputer.getUnsupportedReason()
-     * for a more thorough (async) check if needed.
+     * Which backend is actually running right now. Can change over the
+     * life of this instance if a fallback occurs mid-session.
      */
-    static isWebGPUSupported() {
-        return WebGpuEdgeTangentFlowComputer.isSupported();
+    get backend() {
+        return this.instance.backend;
     }
-    /**
-     * Check if WebGL acceleration is available.
-     */
-    static isWebGLSupported() {
-        return WebGLEdgeTangentFlowComputer.isSupported();
-    }
-    compute(input, config = {}, sigmaC) {
-        return this.run(computer => computer.compute(input, config, sigmaC));
-    }
-    computeMultiChannel(inputs, config = {}, sigmaC) {
-        return this.run(computer => computer.computeMultiChannel(inputs, config, sigmaC));
-    }
-    /**
-     * Release resources held by whichever backend this instance resolved to.
-     * No-op if compute()/computeMultiChannel() was never called, since
-     * nothing was ever instantiated.
-     */
     dispose() {
-        this.computer?.dispose();
-        this.computer = null;
+        this.instance.dispose();
     }
-    /**
-     * Run `op` against the resolved backend, resolving (and caching) it on
-     * first use. `op` is what actually drives selection in 'auto' mode: a
-     * backend only "wins" once it has successfully produced a result, not
-     * merely passed isSupported(), since WebGPU/WebGL can pass that cheap
-     * check and still fail at adapter/device/shader-compile time.
-     */
-    async run(op) {
-        if (this.computer) {
-            return op(this.computer);
-        }
-        if (this.forceImpl === 'webgpu') {
-            if (!WebGpuEdgeTangentFlowComputer.isSupported()) {
-                throw new Error('WebGPU not supported but webgpu implementation was forced');
-            }
-            console.log('[ETF] Using WebGPU implementation (forced)');
-            const computer = new WebGpuEdgeTangentFlowComputer();
-            const result = await op(computer);
-            this.computer = computer;
-            return result;
-        }
-        if (this.forceImpl === 'webgl') {
-            if (!WebGLEdgeTangentFlowComputer.isSupported()) {
-                throw new Error('WebGL not supported but webgl implementation was forced');
-            }
-            console.log('[ETF] Using WebGL implementation (forced)');
-            const computer = new WebGLEdgeTangentFlowComputer();
-            const result = await op(computer);
-            this.computer = computer;
-            return result;
-        }
-        if (this.forceImpl === 'cpu') {
-            console.log('[ETF] Using CPU implementation (forced)');
-            const computer = new CpuEdgeTangentFlowComputer();
-            const result = await op(computer);
-            this.computer = computer;
-            return result;
-        }
-        // 'auto': prefer WebGPU, then WebGL, then CPU. Each tier is disposed
-        // immediately if op() throws, so a failed attempt doesn't leak a GPU
-        // context while we move on to the next tier.
-        if (WebGpuEdgeTangentFlowComputer.isSupported()) {
-            const computer = new WebGpuEdgeTangentFlowComputer();
+    async compute(input, config = {}, sigmaC) {
+        return this.callWithFallback(computer => computer.compute(input, config, sigmaC));
+    }
+    async computeMultiChannel(inputs, config = {}, sigmaC) {
+        return this.callWithFallback(computer => computer.computeMultiChannel(inputs, config, sigmaC));
+    }
+    async callWithFallback(op) {
+        let current = this.instance;
+        while (true) {
             try {
-                console.log('[ETF] Using WebGPU implementation');
-                const result = await op(computer);
-                this.computer = computer;
-                return result;
+                console.log(`${this.constructor.name}: Running ${current.backend}`);
+                return await op(this.instance);
             }
             catch (err) {
-                console.warn('[ETF] WebGPU implementation failed, falling back:', err);
-                computer.dispose();
+                console.warn(`${this.constructor.name}: [${this.currentCtor.name}] process() failed, attempting fallback:`, err);
+                const fallback = await this.demoteAndFindNext();
+                if (!fallback)
+                    throw err;
+                current = fallback;
             }
         }
-        if (WebGLEdgeTangentFlowComputer.isSupported()) {
-            const computer = new WebGLEdgeTangentFlowComputer();
-            try {
-                console.log('[ETF] Using WebGL implementation');
-                const result = await op(computer);
-                this.computer = computer;
-                return result;
-            }
-            catch (err) {
-                console.warn('[ETF] WebGL implementation failed, falling back:', err);
-                computer.dispose();
+    }
+    async demoteAndFindNext() {
+        this.failedBackends.add(this.currentCtor);
+        this.instance.dispose();
+        for (const Ctor of EdgeTangentFlowComputer.candidates) {
+            if (this.failedBackends.has(Ctor))
+                continue;
+            if (await Ctor.isSupported()) {
+                try {
+                    this.instance = new Ctor();
+                    this.currentCtor = Ctor;
+                    console.warn(`Falling back to ${Ctor.name}`);
+                    return this.instance;
+                }
+                catch (err) {
+                    console.warn(`[${Ctor.name}] construction failed despite isSupported():`, err);
+                    this.failedBackends.add(Ctor); // isSupported() lied — try next
+                }
             }
         }
-        console.log('[ETF] Using CPU implementation');
-        const computer = new CpuEdgeTangentFlowComputer();
-        const result = await op(computer);
-        this.computer = computer;
-        return result;
+        return null;
     }
 }
 export default EdgeTangentFlowComputer;

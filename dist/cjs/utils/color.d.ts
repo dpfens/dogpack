@@ -7,7 +7,7 @@
  * so that flow.ts stays focused purely on the Di Zenzo / eigen-decomposition
  * pipeline and doesn't need to know anything about color science.
  */
-import type { ChannelImage, RGBImage } from '../types.js';
+import type { ChannelImage, RGBImage } from '../interfaces/base.js';
 /**
  * Which color space to decompose an RGBImage into before computing
  * a multi-channel Edge Tangent Flow.

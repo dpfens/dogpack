@@ -1,4 +1,4 @@
-import type { FlowField, ChannelImage } from '../types.js';
+import type { FlowField, ChannelImage } from '../interfaces/base.js';
 import type { ExtensionStrategy } from './base.js';
 /**
  * Anti-aliasing configuration

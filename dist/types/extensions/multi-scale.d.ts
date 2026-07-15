@@ -5,8 +5,8 @@
  * 1. Use the provided blend functions (average, min, max, multiply)
  * 2. Supply their own custom blend function
  */
-import type { DoGImplementation } from '../dog/types.js';
-import type { ChannelImage } from '../types.js';
+import type { DoGImplementation } from '../interfaces/dog.js';
+import type { ChannelImage } from '../interfaces/base.js';
 import type { ExtensionStrategy } from './base.js';
 /**
  * Context provided to blend functions for each pixel
@@ -133,22 +133,7 @@ export declare const blendPriority: BlendFunction;
 /**
  * Collection of all built-in blend functions for easy access
  */
-export declare const BlendFunctions: {
-    readonly average: BlendFunction;
-    readonly min: BlendFunction;
-    readonly max: BlendFunction;
-    readonly multiply: BlendFunction;
-    readonly screen: BlendFunction;
-    readonly softLight: BlendFunction;
-    readonly overlay: BlendFunction;
-    readonly geometricMean: BlendFunction;
-    readonly harmonicMean: BlendFunction;
-    readonly median: BlendFunction;
-    readonly softMin: BlendFunction;
-    readonly softMax: BlendFunction;
-    readonly difference: BlendFunction;
-    readonly priority: BlendFunction;
-};
+export declare const BlendFunctions: Record<string, BlendFunction>;
 /**
  * Type representing the names of built-in blend functions
  */

@@ -81,9 +81,9 @@
  * const result = await xdog.process(cleaned);
  * ```
  */
-export type { BlurStrategy, BlurStrategyClass } from './types.js';
+export type { BlurStrategy } from './interfaces/base.js';
 export * as dog from './dog/index.js';
-export type { DoGConfig, DoGImplementation, DogConfigParamType, XDoGConfig, FDoGConfig, FDogConfigParamType, ADoGConfig, ADogConfigParamType, HDoGConfig, HDogConfigParamType, ADoGProcessingResult, HDoGProcessingResult, ParamRange } from './dog/types.js';
+export type { DoGConfig, DoGImplementation, DogConfigParamType, XDoGConfig, FDoGConfig, FDogConfigParamType, ADoGConfig, ADogConfigParamType, HDoGConfig, HDogConfigParamType, ADoGProcessingResult, HDoGProcessingResult, ParamRange } from './interfaces/dog.js';
 export { DoGProcessor, ThresholdModes, applyCustomThreshold } from './processor.js';
 export * as blur from './blur/index.js';
 export type { IsotropicBlurConfig, FlowGuidedBlurConfig } from './blur/index.js';
@@ -92,8 +92,8 @@ export * as preprocess from './preprocess/index.js';
 export type { LocalVarianceConfig, BackendOptions } from './preprocess/index.js';
 export type { ThresholdConfig, ThresholdStrategy } from './threshold.js';
 export * as threshold from './threshold.js';
-export type { Vec2, ChannelImage, RGBImage, FlowField, ETFConfig, BilateralFilterConfig, GradientAlignedBlurConfig, MedianFilterConfig, KuwaharaFilterConfig, Preprocessor } from './types.js';
-export { DEFAULT_ETF_CONFIG } from './types.js';
+export type { Vec2, ChannelImage, RGBImage, FlowField, ETFConfig, BilateralFilterConfig, GradientAlignedBlurConfig, MedianFilterConfig, KuwaharaFilterConfig, Preprocessor } from './interfaces/base.js';
+export { DEFAULT_ETF_CONFIG } from './interfaces/base.js';
 export * as utilities from './utils/index.js';
 export * as extensions from './extensions/index.js';
 export type { ExtensionStrategy, DoGResult, AntiAliasingConfig, ColorRetentionConfig, ColorTransformFn, MaskTransformFn, PostProcessFn, BlendFunction, MultiScaleLayer, MultiScaleConfig, NaturalMediaConfig, NaturalMediaStyle, HatchingConfig, HatchTexture } from './extensions/index.js';

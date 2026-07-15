@@ -29,8 +29,9 @@
  * ChannelImage scalar fields. RGB/Lab/etc. splitting and conversion is
  * the caller's responsibility (see utils/color.ts).
  */
-import { DEFAULT_ETF_CONFIG, } from '../types.js';
+import { DEFAULT_ETF_CONFIG, } from '../interfaces/base.js';
 import { TangentFlowField } from './flow-field.js';
+import { BaseWebGPUStrategy } from '../base.js';
 // NOTE: isWebGPUComputeSupported() isn't assumed to exist in utils/index.js
 // yet (only isWebGLComputeSupported is referenced in webgl.ts), so a local
 // equivalent is defined at the bottom of this file. Feel free to hoist it
@@ -475,20 +476,23 @@ fn main(
  * count; per-call state (buffers) is still allocated fresh in
  * computeInternal().
  */
-export class WebGpuEdgeTangentFlowComputer {
+export class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy {
     static resources = null;
     static resourcesPromise = null;
     /**
-     * Cheap synchronous check — mirrors the shape of isWebGLComputeSupported().
-     * This only confirms the API surface exists; it can't confirm an adapter
-     * is actually obtainable (that requires the async requestAdapter() call
-     * made lazily inside initResources()/computeInternal()).
+     * Cheap check — mirrors the shape of isWebGLComputeSupported(), just
+     * wrapped in a resolved Promise to match the async `ETFComputerCtor`
+     * shape. This only confirms the API surface exists; it can't confirm
+     * an adapter is actually obtainable (that requires the async
+     * requestAdapter() call made lazily inside
+     * initResources()/computeInternal()) — use getUnsupportedReason() for
+     * that deeper check.
      */
-    static isSupported() {
+    static async isSupported() {
         return isWebGPUComputeSupported();
     }
     /**
-     * Optional richer diagnostic, matching the ETFComputerClass shape in
+     * Optional richer diagnostic, matching the ETFComputerCtor shape in
      * types.ts. Async, since it actually attempts to obtain an adapter.
      */
     static async getUnsupportedReason() {
@@ -525,8 +529,19 @@ export class WebGpuEdgeTangentFlowComputer {
                 throw new Error('Failed to obtain a WebGPU adapter');
             }
             const hasTimestampQuery = adapter.features.has('timestamp-query');
+            // Without explicit requiredLimits, WebGPU hands back the *default*
+            // limits (maxBufferSize/maxStorageBufferBindingSize commonly 256MB/
+            // 128MB) rather than what the adapter can actually do. This computer
+            // allocates several whole-image vec4<f32> buffers (16 bytes/pixel) —
+            // a ~12MP image already needs ~192MB per buffer — so requesting the
+            // real adapter limits raises the ceiling before that becomes a
+            // problem, rather than silently truncating/corrupting large images.
             const device = await adapter.requestDevice({
                 requiredFeatures: hasTimestampQuery ? ['timestamp-query'] : [],
+                requiredLimits: {
+                    maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
+                    maxBufferSize: adapter.limits.maxBufferSize,
+                },
             });
             device.lost.then((info) => {
                 // Invalidate the cache so the next call re-initializes.
@@ -637,265 +652,288 @@ export class WebGpuEdgeTangentFlowComputer {
         const pixelCount = width * height;
         const res = await WebGpuEdgeTangentFlowComputer.initResources();
         const { device } = res;
-        // ---- Buffers ----
-        // One accumulator, shared across all channels (Di Zenzo sum), plus one
-        // scratch gradient buffer reused sequentially per channel — safe
-        // because compute passes within a single command encoder execute in
-        // encoded order, so each channel's gradient pass fully completes
-        // before the next pass reads it, and before the next channel's
-        // gradient pass overwrites it.
-        const tensorAccumBuf = createEmptyVec4Buffer(device, pixelCount);
-        const gradientScratchBuf = createEmptyVec4Buffer(device, pixelCount);
-        const blurTempBuf = createEmptyVec4Buffer(device, pixelCount);
-        const blurOutputBuf = createEmptyVec4Buffer(device, pixelCount);
-        const tangentBuf1 = createEmptyVec4Buffer(device, pixelCount);
-        const tangentBuf2 = createEmptyVec4Buffer(device, pixelCount);
-        const channelInputBufs = inputs.map((channel) => createBufferWithData(device, channel.data, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST));
-        const smoothSigma = sigmaC ?? cfg.kernelSize / 2.45;
-        const radius = Math.min(MAX_BLUR_RADIUS, Math.max(1, Math.ceil(smoothSigma * 2.45)));
-        const kernelSize = radius * 2 + 1;
-        const kernel = generateGaussianKernel(smoothSigma, kernelSize);
-        const kernelBuf = createBufferWithData(device, kernel, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-        const dispatchX = Math.ceil(width / WORKGROUP_SIZE);
-        const dispatchY = Math.ceil(height / WORKGROUP_SIZE);
-        // ---- Optional per-pass GPU timing (requires 'timestamp-query') ----
-        // Two passes per input channel (gradient, tensorAccumulate), plus one
-        // finalize pass, plus 4 fixed passes (blurH, blurV, tangentExtract),
-        // plus one per refine iteration.
-        const passLabels = [];
-        const numPasses = inputs.length * 2 + 1 + 3 + cfg.iterations;
-        const querySet = res.hasTimestampQuery
-            ? device.createQuerySet({ type: 'timestamp', count: numPasses * 2 })
-            : null;
-        let passIdx = 0;
-        const nextTimestampWrites = (label) => {
-            if (!querySet)
-                return undefined;
-            const writes = {
-                querySet,
-                beginningOfPassWriteIndex: passIdx * 2,
-                endOfPassWriteIndex: passIdx * 2 + 1,
+        // Every intermediate buffer below (tensorAccumBuf, gradientScratchBuf,
+        // blurTempBuf, blurOutputBuf, tangentBuf1, tangentBuf2) is a whole-image
+        // vec4<f32> buffer — 16 bytes/pixel — bound as a storage buffer. Check
+        // that against maxStorageBufferBindingSize *and* maxBufferSize up front:
+        // exceeding either is a WebGPU validation failure that surfaces via
+        // 'uncapturederror' rather than a catchable exception at the call site,
+        // so left unchecked this doesn't throw — it just silently reads back
+        // zeros/garbage for whatever the GPU couldn't actually bind, producing a
+        // corrupted (incoherent, low-contrast) flow field with no visible error.
+        // Fail loud instead, so callers relying on the ETFComputer wrapper's
+        // fallback (see index.ts) get a chance to demote to WebGL/CPU.
+        const vec4BufferBytes = pixelCount * 4 * 4;
+        const { maxStorageBufferBindingSize, maxBufferSize } = device.limits;
+        if (vec4BufferBytes > maxStorageBufferBindingSize || vec4BufferBytes > maxBufferSize) {
+            throw new Error(`[EdgeTangentFlowWebGPU] ${width}x${height} image needs ${vec4BufferBytes} ` +
+                `bytes per intermediate buffer, exceeding this device's ` +
+                `maxStorageBufferBindingSize (${maxStorageBufferBindingSize}) / ` +
+                `maxBufferSize (${maxBufferSize}). Downscale the image, or reduce ` +
+                `pixel count until it fits — this implementation processes the ` +
+                `whole image per buffer with no row-band tiling.`);
+        }
+        return this.runGuarded(device, async () => {
+            // ---- Buffers ----
+            // One accumulator, shared across all channels (Di Zenzo sum), plus one
+            // scratch gradient buffer reused sequentially per channel — safe
+            // because compute passes within a single command encoder execute in
+            // encoded order, so each channel's gradient pass fully completes
+            // before the next pass reads it, and before the next channel's
+            // gradient pass overwrites it.
+            const tensorAccumBuf = createEmptyVec4Buffer(device, pixelCount);
+            const gradientScratchBuf = createEmptyVec4Buffer(device, pixelCount);
+            const blurTempBuf = createEmptyVec4Buffer(device, pixelCount);
+            const blurOutputBuf = createEmptyVec4Buffer(device, pixelCount);
+            const tangentBuf1 = createEmptyVec4Buffer(device, pixelCount);
+            const tangentBuf2 = createEmptyVec4Buffer(device, pixelCount);
+            const channelInputBufs = inputs.map((channel) => createBufferWithData(device, channel.data, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST));
+            const smoothSigma = sigmaC ?? cfg.kernelSize / 2.45;
+            const radius = Math.min(MAX_BLUR_RADIUS, Math.max(1, Math.ceil(smoothSigma * 2.45)));
+            const kernelSize = radius * 2 + 1;
+            const kernel = generateGaussianKernel(smoothSigma, kernelSize);
+            const kernelBuf = createBufferWithData(device, kernel, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
+            const dispatchX = Math.ceil(width / WORKGROUP_SIZE);
+            const dispatchY = Math.ceil(height / WORKGROUP_SIZE);
+            // ---- Optional per-pass GPU timing (requires 'timestamp-query') ----
+            // Two passes per input channel (gradient, tensorAccumulate), plus one
+            // finalize pass, plus 4 fixed passes (blurH, blurV, tangentExtract),
+            // plus one per refine iteration.
+            const passLabels = [];
+            const numPasses = inputs.length * 2 + 1 + 3 + cfg.iterations;
+            const querySet = res.hasTimestampQuery
+                ? device.createQuerySet({ type: 'timestamp', count: numPasses * 2 })
+                : null;
+            let passIdx = 0;
+            const nextTimestampWrites = (label) => {
+                if (!querySet)
+                    return undefined;
+                const writes = {
+                    querySet,
+                    beginningOfPassWriteIndex: passIdx * 2,
+                    endOfPassWriteIndex: passIdx * 2 + 1,
+                };
+                passLabels.push(label);
+                passIdx++;
+                return writes;
             };
-            passLabels.push(label);
-            passIdx++;
-            return writes;
-        };
-        const encoder = device.createCommandEncoder();
-        // Steps 1-2: per channel, compute gradients then accumulate the
-        // resulting structure tensor into tensorAccumBuf (Di Zenzo sum).
-        for (let k = 0; k < inputs.length; k++) {
-            const channelBuf = channelInputBufs[k];
+            const encoder = device.createCommandEncoder();
+            // Steps 1-2: per channel, compute gradients then accumulate the
+            // resulting structure tensor into tensorAccumBuf (Di Zenzo sum).
+            for (let k = 0; k < inputs.length; k++) {
+                const channelBuf = channelInputBufs[k];
+                {
+                    const params = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
+                    const bindGroup = device.createBindGroup({
+                        layout: res.gradientPipeline.getBindGroupLayout(0),
+                        entries: [
+                            { binding: 0, resource: { buffer: params } },
+                            { binding: 1, resource: { buffer: channelBuf } },
+                            { binding: 2, resource: { buffer: gradientScratchBuf } },
+                        ],
+                    });
+                    const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites(`gradient[${k}]`) });
+                    pass.setPipeline(res.gradientPipeline);
+                    pass.setBindGroup(0, bindGroup);
+                    pass.dispatchWorkgroups(dispatchX, dispatchY);
+                    pass.end();
+                }
+                {
+                    const params = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
+                    const bindGroup = device.createBindGroup({
+                        layout: res.structureTensorAccumulatePipeline.getBindGroupLayout(0),
+                        entries: [
+                            { binding: 0, resource: { buffer: params } },
+                            { binding: 1, resource: { buffer: gradientScratchBuf } },
+                            { binding: 2, resource: { buffer: tensorAccumBuf } },
+                        ],
+                    });
+                    const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites(`tensorAccumulate[${k}]`) });
+                    pass.setPipeline(res.structureTensorAccumulatePipeline);
+                    pass.setBindGroup(0, bindGroup);
+                    pass.dispatchWorkgroups(dispatchX, dispatchY);
+                    pass.end();
+                }
+            }
+            // Step 3: finalize magnitude from the combined trace (no-op for the
+            // single-channel case beyond recomputing the same value).
             {
                 const params = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
                 const bindGroup = device.createBindGroup({
-                    layout: res.gradientPipeline.getBindGroupLayout(0),
+                    layout: res.finalizeMagnitudePipeline.getBindGroupLayout(0),
                     entries: [
                         { binding: 0, resource: { buffer: params } },
-                        { binding: 1, resource: { buffer: channelBuf } },
-                        { binding: 2, resource: { buffer: gradientScratchBuf } },
+                        { binding: 1, resource: { buffer: tensorAccumBuf } },
                     ],
                 });
-                const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites(`gradient[${k}]`) });
-                pass.setPipeline(res.gradientPipeline);
+                const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites('finalizeMagnitude') });
+                pass.setPipeline(res.finalizeMagnitudePipeline);
                 pass.setBindGroup(0, bindGroup);
                 pass.dispatchWorkgroups(dispatchX, dispatchY);
                 pass.end();
             }
+            // Step 4: Gaussian blur the structure tensor (horizontal then vertical)
+            {
+                const params = createParamsBuffer(device, { width, height, radius, kernelSize });
+                // The tiled pipelines' workgroup-shared arrays are sized for
+                // TILE_RADIUS_CAP; above that we fall back to the original untiled
+                // pipelines rather than growing shared-memory usage further (see
+                // TILE_RADIUS_CAP's comment for the byte-budget math).
+                const useTiledBlur = radius <= TILE_RADIUS_CAP;
+                const blurHPipe = useTiledBlur ? res.blurHTiledPipeline : res.blurHPipeline;
+                const blurVPipe = useTiledBlur ? res.blurVTiledPipeline : res.blurVPipeline;
+                const tiledSuffix = useTiledBlur ? ' (tiled)' : ' (untiled, radius > cap)';
+                const bindGroupH = device.createBindGroup({
+                    layout: blurHPipe.getBindGroupLayout(0),
+                    entries: [
+                        { binding: 0, resource: { buffer: params } },
+                        { binding: 1, resource: { buffer: tensorAccumBuf } },
+                        { binding: 2, resource: { buffer: blurTempBuf } },
+                        { binding: 3, resource: { buffer: kernelBuf } },
+                    ],
+                });
+                const passH = encoder.beginComputePass({ timestampWrites: nextTimestampWrites(`blurH${tiledSuffix}`) });
+                passH.setPipeline(blurHPipe);
+                passH.setBindGroup(0, bindGroupH);
+                passH.dispatchWorkgroups(dispatchX, dispatchY);
+                passH.end();
+                const bindGroupV = device.createBindGroup({
+                    layout: blurVPipe.getBindGroupLayout(0),
+                    entries: [
+                        { binding: 0, resource: { buffer: params } },
+                        { binding: 1, resource: { buffer: blurTempBuf } },
+                        { binding: 2, resource: { buffer: blurOutputBuf } },
+                        { binding: 3, resource: { buffer: kernelBuf } },
+                    ],
+                });
+                const passV = encoder.beginComputePass({ timestampWrites: nextTimestampWrites(`blurV${tiledSuffix}`) });
+                passV.setPipeline(blurVPipe);
+                passV.setBindGroup(0, bindGroupV);
+                passV.dispatchWorkgroups(dispatchX, dispatchY);
+                passV.end();
+            }
+            // Step 5: Extract initial tangent field
             {
                 const params = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
                 const bindGroup = device.createBindGroup({
-                    layout: res.structureTensorAccumulatePipeline.getBindGroupLayout(0),
+                    layout: res.tangentExtractPipeline.getBindGroupLayout(0),
                     entries: [
                         { binding: 0, resource: { buffer: params } },
-                        { binding: 1, resource: { buffer: gradientScratchBuf } },
-                        { binding: 2, resource: { buffer: tensorAccumBuf } },
+                        { binding: 1, resource: { buffer: blurOutputBuf } },
+                        { binding: 2, resource: { buffer: tangentBuf1 } },
                     ],
                 });
-                const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites(`tensorAccumulate[${k}]`) });
-                pass.setPipeline(res.structureTensorAccumulatePipeline);
+                const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites('tangentExtract') });
+                pass.setPipeline(res.tangentExtractPipeline);
                 pass.setBindGroup(0, bindGroup);
                 pass.dispatchWorkgroups(dispatchX, dispatchY);
                 pass.end();
             }
-        }
-        // Step 3: finalize magnitude from the combined trace (no-op for the
-        // single-channel case beyond recomputing the same value).
-        {
-            const params = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
-            const bindGroup = device.createBindGroup({
-                layout: res.finalizeMagnitudePipeline.getBindGroupLayout(0),
-                entries: [
-                    { binding: 0, resource: { buffer: params } },
-                    { binding: 1, resource: { buffer: tensorAccumBuf } },
-                ],
-            });
-            const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites('finalizeMagnitude') });
-            pass.setPipeline(res.finalizeMagnitudePipeline);
-            pass.setBindGroup(0, bindGroup);
-            pass.dispatchWorkgroups(dispatchX, dispatchY);
-            pass.end();
-        }
-        // Step 4: Gaussian blur the structure tensor (horizontal then vertical)
-        {
-            const params = createParamsBuffer(device, { width, height, radius, kernelSize });
-            // The tiled pipelines' workgroup-shared arrays are sized for
-            // TILE_RADIUS_CAP; above that we fall back to the original untiled
-            // pipelines rather than growing shared-memory usage further (see
-            // TILE_RADIUS_CAP's comment for the byte-budget math).
-            const useTiledBlur = radius <= TILE_RADIUS_CAP;
-            const blurHPipe = useTiledBlur ? res.blurHTiledPipeline : res.blurHPipeline;
-            const blurVPipe = useTiledBlur ? res.blurVTiledPipeline : res.blurVPipeline;
-            const tiledSuffix = useTiledBlur ? ' (tiled)' : ' (untiled, radius > cap)';
-            const bindGroupH = device.createBindGroup({
-                layout: blurHPipe.getBindGroupLayout(0),
-                entries: [
-                    { binding: 0, resource: { buffer: params } },
-                    { binding: 1, resource: { buffer: tensorAccumBuf } },
-                    { binding: 2, resource: { buffer: blurTempBuf } },
-                    { binding: 3, resource: { buffer: kernelBuf } },
-                ],
-            });
-            const passH = encoder.beginComputePass({ timestampWrites: nextTimestampWrites(`blurH${tiledSuffix}`) });
-            passH.setPipeline(blurHPipe);
-            passH.setBindGroup(0, bindGroupH);
-            passH.dispatchWorkgroups(dispatchX, dispatchY);
-            passH.end();
-            const bindGroupV = device.createBindGroup({
-                layout: blurVPipe.getBindGroupLayout(0),
-                entries: [
-                    { binding: 0, resource: { buffer: params } },
-                    { binding: 1, resource: { buffer: blurTempBuf } },
-                    { binding: 2, resource: { buffer: blurOutputBuf } },
-                    { binding: 3, resource: { buffer: kernelBuf } },
-                ],
-            });
-            const passV = encoder.beginComputePass({ timestampWrites: nextTimestampWrites(`blurV${tiledSuffix}`) });
-            passV.setPipeline(blurVPipe);
-            passV.setBindGroup(0, bindGroupV);
-            passV.dispatchWorkgroups(dispatchX, dispatchY);
-            passV.end();
-        }
-        // Step 5: Extract initial tangent field
-        {
-            const params = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
-            const bindGroup = device.createBindGroup({
-                layout: res.tangentExtractPipeline.getBindGroupLayout(0),
-                entries: [
-                    { binding: 0, resource: { buffer: params } },
-                    { binding: 1, resource: { buffer: blurOutputBuf } },
-                    { binding: 2, resource: { buffer: tangentBuf1 } },
-                ],
-            });
-            const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites('tangentExtract') });
-            pass.setPipeline(res.tangentExtractPipeline);
-            pass.setBindGroup(0, bindGroup);
-            pass.dispatchWorkgroups(dispatchX, dispatchY);
-            pass.end();
-        }
-        // Step 6: Refine tangent field iteratively (ping-pong between buffers)
-        let readBuf = tangentBuf1;
-        let writeBuf = tangentBuf2;
-        const refineParams = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
-        for (let i = 0; i < cfg.iterations; i++) {
-            const bindGroup = device.createBindGroup({
-                layout: res.tangentRefinePipeline.getBindGroupLayout(0),
-                entries: [
-                    { binding: 0, resource: { buffer: refineParams } },
-                    { binding: 1, resource: { buffer: readBuf } },
-                    { binding: 2, resource: { buffer: writeBuf } },
-                ],
-            });
-            const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites(`refine[${i}]`) });
-            pass.setPipeline(res.tangentRefinePipeline);
-            pass.setBindGroup(0, bindGroup);
-            pass.dispatchWorkgroups(dispatchX, dispatchY);
-            pass.end();
-            [readBuf, writeBuf] = [writeBuf, readBuf];
-        }
-        // ---- Phase A: submit compute passes only, wait for GPU completion ----
-        // (No buffer copies here yet — resolveQuerySet writes GPU-side only,
-        // it doesn't require a CPU-readable buffer.)
-        let queryResolveBuf = null;
-        if (querySet) {
-            queryResolveBuf = device.createBuffer({
-                size: numPasses * 2 * 8, // one u64 timestamp per write index
-                usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC,
-            });
-            encoder.resolveQuerySet(querySet, 0, numPasses * 2, queryResolveBuf, 0);
-        }
-        device.queue.submit([encoder.finish()]);
-        await device.queue.onSubmittedWorkDone();
-        // ---- Phase B: copy results into mappable buffers, then map+read ----
-        const byteSize = pixelCount * 4 * 4; // vec4<f32>
-        const stagingBuf = device.createBuffer({
-            size: byteSize,
-            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-        });
-        let queryReadBuf = null;
-        const copyEncoder = device.createCommandEncoder();
-        copyEncoder.copyBufferToBuffer(readBuf, 0, stagingBuf, 0, byteSize);
-        if (querySet && queryResolveBuf) {
-            queryReadBuf = device.createBuffer({
-                size: queryResolveBuf.size,
+            // Step 6: Refine tangent field iteratively (ping-pong between buffers)
+            let readBuf = tangentBuf1;
+            let writeBuf = tangentBuf2;
+            const refineParams = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
+            for (let i = 0; i < cfg.iterations; i++) {
+                const bindGroup = device.createBindGroup({
+                    layout: res.tangentRefinePipeline.getBindGroupLayout(0),
+                    entries: [
+                        { binding: 0, resource: { buffer: refineParams } },
+                        { binding: 1, resource: { buffer: readBuf } },
+                        { binding: 2, resource: { buffer: writeBuf } },
+                    ],
+                });
+                const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites(`refine[${i}]`) });
+                pass.setPipeline(res.tangentRefinePipeline);
+                pass.setBindGroup(0, bindGroup);
+                pass.dispatchWorkgroups(dispatchX, dispatchY);
+                pass.end();
+                [readBuf, writeBuf] = [writeBuf, readBuf];
+            }
+            // ---- Phase A: submit compute passes only, wait for GPU completion ----
+            // (No buffer copies here yet — resolveQuerySet writes GPU-side only,
+            // it doesn't require a CPU-readable buffer.)
+            let queryResolveBuf = null;
+            if (querySet) {
+                queryResolveBuf = device.createBuffer({
+                    size: numPasses * 2 * 8, // one u64 timestamp per write index
+                    usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC,
+                });
+                encoder.resolveQuerySet(querySet, 0, numPasses * 2, queryResolveBuf, 0);
+            }
+            device.queue.submit([encoder.finish()]);
+            await device.queue.onSubmittedWorkDone();
+            // ---- Phase B: copy results into mappable buffers, then map+read ----
+            const byteSize = pixelCount * 4 * 4; // vec4<f32>
+            const stagingBuf = device.createBuffer({
+                size: byteSize,
                 usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
             });
-            copyEncoder.copyBufferToBuffer(queryResolveBuf, 0, queryReadBuf, 0, queryResolveBuf.size);
-        }
-        device.queue.submit([copyEncoder.finish()]);
-        const mapPromises = [stagingBuf.mapAsync(GPUMapMode.READ)];
-        if (queryReadBuf)
-            mapPromises.push(queryReadBuf.mapAsync(GPUMapMode.READ));
-        await Promise.all(mapPromises);
-        if (queryReadBuf) {
-            const raw = new BigUint64Array(queryReadBuf.getMappedRange().slice(0));
-            queryReadBuf.unmap();
-            queryReadBuf.destroy();
-            queryResolveBuf.destroy();
-            querySet.destroy();
-            const gpuPassTimings = {};
-            for (let i = 0; i < passLabels.length; i++) {
-                const beginNs = raw[i * 2];
-                const endNs = raw[i * 2 + 1];
-                // Aggregate refine[i] and per-channel entries under one key each
-                // so a large `iterations` or channel count doesn't spam the log
-                // with per-iteration/per-channel lines.
-                let label = passLabels[i];
-                if (label.startsWith('refine['))
-                    label = 'refine (sum)';
-                else if (label.startsWith('gradient['))
-                    label = 'gradient (sum)';
-                else if (label.startsWith('tensorAccumulate['))
-                    label = 'tensorAccumulate (sum)';
-                const ms = Number(endNs - beginNs) / 1e6;
-                gpuPassTimings[label] = (gpuPassTimings[label] ?? 0) + ms;
+            let queryReadBuf = null;
+            const copyEncoder = device.createCommandEncoder();
+            copyEncoder.copyBufferToBuffer(readBuf, 0, stagingBuf, 0, byteSize);
+            if (querySet && queryResolveBuf) {
+                queryReadBuf = device.createBuffer({
+                    size: queryResolveBuf.size,
+                    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+                });
+                copyEncoder.copyBufferToBuffer(queryResolveBuf, 0, queryReadBuf, 0, queryResolveBuf.size);
             }
-        }
-        else if (res.hasTimestampQuery === false) {
-            // Only warn once per session-ish; cheap enough to just always note it.
-            console.debug('[EdgeTangentFlowWebGPU] timestamp-query unsupported on this device — ' +
-                'submitAndGpuWait is a single coarse number, not broken down by pass.');
-        }
-        const mapped = new Float32Array(stagingBuf.getMappedRange().slice(0));
-        stagingBuf.unmap();
-        // Flat stride-2 copy — no per-pixel object allocation. `mapped` is
-        // stride-4 (x,y,mag,1); we only keep (x,y) per pixel.
-        const tangents = new Float32Array(pixelCount * 2);
-        for (let i = 0; i < pixelCount; i++) {
-            tangents[i * 2] = mapped[i * 4];
-            tangents[i * 2 + 1] = mapped[i * 4 + 1];
-        }
-        // Cleanup temporary (per-call) resources — pipelines/device are cached.
-        for (const buf of channelInputBufs)
-            buf.destroy();
-        gradientScratchBuf.destroy();
-        tensorAccumBuf.destroy();
-        blurTempBuf.destroy();
-        blurOutputBuf.destroy();
-        tangentBuf1.destroy();
-        tangentBuf2.destroy();
-        kernelBuf.destroy();
-        stagingBuf.destroy();
-        return TangentFlowField.fromFloat32Array(tangents, width, height);
+            device.queue.submit([copyEncoder.finish()]);
+            const mapPromises = [stagingBuf.mapAsync(GPUMapMode.READ)];
+            if (queryReadBuf)
+                mapPromises.push(queryReadBuf.mapAsync(GPUMapMode.READ));
+            await Promise.all(mapPromises);
+            if (queryReadBuf) {
+                const raw = new BigUint64Array(queryReadBuf.getMappedRange().slice(0));
+                queryReadBuf.unmap();
+                queryReadBuf.destroy();
+                queryResolveBuf.destroy();
+                querySet.destroy();
+                const gpuPassTimings = {};
+                for (let i = 0; i < passLabels.length; i++) {
+                    const beginNs = raw[i * 2];
+                    const endNs = raw[i * 2 + 1];
+                    // Aggregate refine[i] and per-channel entries under one key each
+                    // so a large `iterations` or channel count doesn't spam the log
+                    // with per-iteration/per-channel lines.
+                    let label = passLabels[i];
+                    if (label.startsWith('refine['))
+                        label = 'refine (sum)';
+                    else if (label.startsWith('gradient['))
+                        label = 'gradient (sum)';
+                    else if (label.startsWith('tensorAccumulate['))
+                        label = 'tensorAccumulate (sum)';
+                    const ms = Number(endNs - beginNs) / 1e6;
+                    gpuPassTimings[label] = (gpuPassTimings[label] ?? 0) + ms;
+                }
+            }
+            else if (res.hasTimestampQuery === false) {
+                // Only warn once per session-ish; cheap enough to just always note it.
+                console.debug('[EdgeTangentFlowWebGPU] timestamp-query unsupported on this device — ' +
+                    'submitAndGpuWait is a single coarse number, not broken down by pass.');
+            }
+            const mapped = new Float32Array(stagingBuf.getMappedRange().slice(0));
+            stagingBuf.unmap();
+            // Flat stride-2 copy — no per-pixel object allocation. `mapped` is
+            // stride-4 (x,y,mag,1); we only keep (x,y) per pixel.
+            const tangents = new Float32Array(pixelCount * 2);
+            for (let i = 0; i < pixelCount; i++) {
+                tangents[i * 2] = mapped[i * 4];
+                tangents[i * 2 + 1] = mapped[i * 4 + 1];
+            }
+            // Cleanup temporary (per-call) resources — pipelines/device are cached.
+            for (const buf of channelInputBufs)
+                buf.destroy();
+            gradientScratchBuf.destroy();
+            tensorAccumBuf.destroy();
+            blurTempBuf.destroy();
+            blurOutputBuf.destroy();
+            tangentBuf1.destroy();
+            tangentBuf2.destroy();
+            kernelBuf.destroy();
+            stagingBuf.destroy();
+            return TangentFlowField.fromFloat32Array(tangents, width, height);
+        });
     }
 }
 // ============== Helper Functions ==============

@@ -12,16 +12,11 @@
  * accumulator framebuffer, rather than reading tensors back to JS and
  * summing them there. Everything from the Gaussian blur pass onward is
  * identical whether the accumulated tensor came from one channel or many.
- *
- * This module has no knowledge of color spaces. It operates purely on
- * ChannelImage scalar fields uploaded as single-channel textures; RGB/Lab/
- * etc. splitting and conversion is the caller's responsibility (see
- * utils/color.ts) and happens before compute()/computeMultiChannel() is
- * ever called.
  */
-import { DEFAULT_ETF_CONFIG } from '../types.js';
+import { DEFAULT_ETF_CONFIG } from '../interfaces/base.js';
 import { isWebGLComputeSupported, generateGaussianKernel } from '../utils/index.js';
 import { TangentFlowField } from './flow-field.js';
+import { BaseWebGLStrategy } from '../base.js';
 /**
  * Shader source code
  */
@@ -237,13 +232,15 @@ void main() {
  * WebGL-backed ETFComputer. Holds a lazily-initialized GPU context and
  * shader programs; call dispose() when done to release them.
  */
-export class WebGLEdgeTangentFlowComputer {
+export class WebGLEdgeTangentFlowComputer extends BaseWebGLStrategy {
     resources = null;
     /**
      * Check if WebGL2 with the required float texture extensions is
-     * supported in the current environment.
+     * supported in the current environment. Async to match the
+     * `ETFComputerCtor` shape shared with the WebGPU backend, even though
+     * this particular check is cheap and synchronous under the hood.
      */
-    static isSupported() {
+    static async isSupported() {
         return isWebGLComputeSupported();
     }
     static getUnsupportedReason() {
@@ -268,124 +265,126 @@ export class WebGLEdgeTangentFlowComputer {
         const cfg = { ...DEFAULT_ETF_CONFIG, ...config };
         const res = this.initResources(width, height);
         const { gl } = res;
-        gl.viewport(0, 0, width, height);
-        // Per-channel scratch (overwritten each iteration) and the tensor
-        // accumulator that channels are additively blended into.
-        const gradientFB = createFramebuffer(gl, width, height, gl.RGBA32F);
-        const tensorAccumFB = createFramebuffer(gl, width, height, gl.RGBA32F);
-        const blurTempFB = createFramebuffer(gl, width, height, gl.RGBA32F);
-        const blurOutputFB = createFramebuffer(gl, width, height, gl.RGBA32F);
-        const tangentFB1 = createFramebuffer(gl, width, height, gl.RGBA32F);
-        const tangentFB2 = createFramebuffer(gl, width, height, gl.RGBA32F);
-        const channelTextures = [];
-        try {
-            // Step 1 & 2 (Di Zenzo summation): for each channel, compute its
-            // gradients, then build its structure tensor and additively blend
-            // it into tensorAccumFB. E, F, G, and magnitude (the tensor's
-            // trace-derived sqrt(E+G)) are all additive across channels, so
-            // hardware ONE+ONE blending performs exactly the same summation
-            // the CPU backend does in JS, without a readback per channel.
-            gl.bindFramebuffer(gl.FRAMEBUFFER, tensorAccumFB.fb);
-            gl.clearColor(0, 0, 0, 0);
-            gl.clear(gl.COLOR_BUFFER_BIT);
-            for (const channel of inputs) {
-                const inputTex = createTexture(gl, width, height, gl.R32F, gl.RED, channel.data);
-                channelTextures.push(inputTex);
-                // Gradient pass: plain overwrite, no blending.
-                gl.disable(gl.BLEND);
-                gl.bindFramebuffer(gl.FRAMEBUFFER, gradientFB.fb);
-                gl.useProgram(res.gradientProgram);
-                gl.activeTexture(gl.TEXTURE0);
-                gl.bindTexture(gl.TEXTURE_2D, inputTex);
-                gl.uniform1i(gl.getUniformLocation(res.gradientProgram, 'u_input'), 0);
-                gl.uniform2f(gl.getUniformLocation(res.gradientProgram, 'u_resolution'), width, height);
-                drawQuad(gl, res.quadVAO);
-                // Tensor pass: additively blend this channel's tensor into the accumulator.
-                gl.enable(gl.BLEND);
-                gl.blendFunc(gl.ONE, gl.ONE);
-                gl.blendEquation(gl.FUNC_ADD);
+        return this.runGuarded(gl, () => {
+            gl.viewport(0, 0, width, height);
+            // Per-channel scratch (overwritten each iteration) and the tensor
+            // accumulator that channels are additively blended into.
+            const gradientFB = createFramebuffer(gl, width, height, gl.RGBA32F);
+            const tensorAccumFB = createFramebuffer(gl, width, height, gl.RGBA32F);
+            const blurTempFB = createFramebuffer(gl, width, height, gl.RGBA32F);
+            const blurOutputFB = createFramebuffer(gl, width, height, gl.RGBA32F);
+            const tangentFB1 = createFramebuffer(gl, width, height, gl.RGBA32F);
+            const tangentFB2 = createFramebuffer(gl, width, height, gl.RGBA32F);
+            const channelTextures = [];
+            try {
+                // Step 1 & 2 (Di Zenzo summation): for each channel, compute its
+                // gradients, then build its structure tensor and additively blend
+                // it into tensorAccumFB. E, F, G, and magnitude (the tensor's
+                // trace-derived sqrt(E+G)) are all additive across channels, so
+                // hardware ONE+ONE blending performs exactly the same summation
+                // the CPU backend does in JS, without a readback per channel.
                 gl.bindFramebuffer(gl.FRAMEBUFFER, tensorAccumFB.fb);
-                gl.useProgram(res.structureTensorProgram);
-                gl.activeTexture(gl.TEXTURE0);
-                gl.bindTexture(gl.TEXTURE_2D, gradientFB.tex);
-                gl.uniform1i(gl.getUniformLocation(res.structureTensorProgram, 'u_gradients'), 0);
-                drawQuad(gl, res.quadVAO);
+                gl.clearColor(0, 0, 0, 0);
+                gl.clear(gl.COLOR_BUFFER_BIT);
+                for (const channel of inputs) {
+                    const inputTex = createTexture(gl, width, height, gl.R32F, gl.RED, channel.data);
+                    channelTextures.push(inputTex);
+                    // Gradient pass: plain overwrite, no blending.
+                    gl.disable(gl.BLEND);
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, gradientFB.fb);
+                    gl.useProgram(res.gradientProgram);
+                    gl.activeTexture(gl.TEXTURE0);
+                    gl.bindTexture(gl.TEXTURE_2D, inputTex);
+                    gl.uniform1i(gl.getUniformLocation(res.gradientProgram, 'u_input'), 0);
+                    gl.uniform2f(gl.getUniformLocation(res.gradientProgram, 'u_resolution'), width, height);
+                    drawQuad(gl, res.quadVAO);
+                    // Tensor pass: additively blend this channel's tensor into the accumulator.
+                    gl.enable(gl.BLEND);
+                    gl.blendFunc(gl.ONE, gl.ONE);
+                    gl.blendEquation(gl.FUNC_ADD);
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, tensorAccumFB.fb);
+                    gl.useProgram(res.structureTensorProgram);
+                    gl.activeTexture(gl.TEXTURE0);
+                    gl.bindTexture(gl.TEXTURE_2D, gradientFB.tex);
+                    gl.uniform1i(gl.getUniformLocation(res.structureTensorProgram, 'u_gradients'), 0);
+                    drawQuad(gl, res.quadVAO);
+                }
             }
-        }
-        finally {
-            gl.disable(gl.BLEND);
-            for (const tex of channelTextures) {
-                gl.deleteTexture(tex);
+            finally {
+                gl.disable(gl.BLEND);
+                for (const tex of channelTextures) {
+                    gl.deleteTexture(tex);
+                }
             }
-        }
-        // Step 3: Gaussian blur the (possibly channel-summed) structure tensor
-        const smoothSigma = sigmaC ?? (cfg.kernelSize / 2.45);
-        const radius = Math.min(16, Math.ceil(smoothSigma * 2.45)); // Cap at 16 for shader array limit
-        const kernelSize = radius * 2 + 1;
-        const kernel = generateGaussianKernel(smoothSigma, kernelSize);
-        // Horizontal blur
-        gl.bindFramebuffer(gl.FRAMEBUFFER, blurTempFB.fb);
-        gl.useProgram(res.gaussianBlurHProgram);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, tensorAccumFB.tex);
-        gl.uniform1i(gl.getUniformLocation(res.gaussianBlurHProgram, 'u_input'), 0);
-        gl.uniform2f(gl.getUniformLocation(res.gaussianBlurHProgram, 'u_resolution'), width, height);
-        gl.uniform1fv(gl.getUniformLocation(res.gaussianBlurHProgram, 'u_kernel'), kernel);
-        gl.uniform1i(gl.getUniformLocation(res.gaussianBlurHProgram, 'u_kernelSize'), kernelSize);
-        gl.uniform1i(gl.getUniformLocation(res.gaussianBlurHProgram, 'u_radius'), radius);
-        drawQuad(gl, res.quadVAO);
-        // Vertical blur
-        gl.bindFramebuffer(gl.FRAMEBUFFER, blurOutputFB.fb);
-        gl.useProgram(res.gaussianBlurVProgram);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, blurTempFB.tex);
-        gl.uniform1i(gl.getUniformLocation(res.gaussianBlurVProgram, 'u_input'), 0);
-        gl.uniform2f(gl.getUniformLocation(res.gaussianBlurVProgram, 'u_resolution'), width, height);
-        gl.uniform1fv(gl.getUniformLocation(res.gaussianBlurVProgram, 'u_kernel'), kernel);
-        gl.uniform1i(gl.getUniformLocation(res.gaussianBlurVProgram, 'u_kernelSize'), kernelSize);
-        gl.uniform1i(gl.getUniformLocation(res.gaussianBlurVProgram, 'u_radius'), radius);
-        drawQuad(gl, res.quadVAO);
-        // Step 4: Extract initial tangent field
-        gl.bindFramebuffer(gl.FRAMEBUFFER, tangentFB1.fb);
-        gl.useProgram(res.tangentExtractProgram);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, blurOutputFB.tex);
-        gl.uniform1i(gl.getUniformLocation(res.tangentExtractProgram, 'u_tensor'), 0);
-        drawQuad(gl, res.quadVAO);
-        // Step 5: Refine tangent field iteratively (ping-pong between framebuffers)
-        let readFB = tangentFB1;
-        let writeFB = tangentFB2;
-        for (let i = 0; i < cfg.iterations; i++) {
-            gl.bindFramebuffer(gl.FRAMEBUFFER, writeFB.fb);
-            gl.useProgram(res.tangentRefineProgram);
+            // Step 3: Gaussian blur the (possibly channel-summed) structure tensor
+            const smoothSigma = sigmaC ?? (cfg.kernelSize / 2.45);
+            const radius = Math.min(16, Math.ceil(smoothSigma * 2.45)); // Cap at 16 for shader array limit
+            const kernelSize = radius * 2 + 1;
+            const kernel = generateGaussianKernel(smoothSigma, kernelSize);
+            // Horizontal blur
+            gl.bindFramebuffer(gl.FRAMEBUFFER, blurTempFB.fb);
+            gl.useProgram(res.gaussianBlurHProgram);
             gl.activeTexture(gl.TEXTURE0);
-            gl.bindTexture(gl.TEXTURE_2D, readFB.tex);
-            gl.uniform1i(gl.getUniformLocation(res.tangentRefineProgram, 'u_tangents'), 0);
-            gl.uniform2f(gl.getUniformLocation(res.tangentRefineProgram, 'u_resolution'), width, height);
+            gl.bindTexture(gl.TEXTURE_2D, tensorAccumFB.tex);
+            gl.uniform1i(gl.getUniformLocation(res.gaussianBlurHProgram, 'u_input'), 0);
+            gl.uniform2f(gl.getUniformLocation(res.gaussianBlurHProgram, 'u_resolution'), width, height);
+            gl.uniform1fv(gl.getUniformLocation(res.gaussianBlurHProgram, 'u_kernel'), kernel);
+            gl.uniform1i(gl.getUniformLocation(res.gaussianBlurHProgram, 'u_kernelSize'), kernelSize);
+            gl.uniform1i(gl.getUniformLocation(res.gaussianBlurHProgram, 'u_radius'), radius);
             drawQuad(gl, res.quadVAO);
-            // Swap
-            [readFB, writeFB] = [writeFB, readFB];
-        }
-        // Read back results
-        gl.bindFramebuffer(gl.FRAMEBUFFER, readFB.fb);
-        const pixels = new Float32Array(width * height * 4);
-        gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, pixels);
-        // Convert to Vec2 array
-        const tangents = new Array(width * height);
-        for (let i = 0; i < width * height; i++) {
-            tangents[i] = {
-                x: pixels[i * 4],
-                y: pixels[i * 4 + 1],
-            };
-        }
-        // Cleanup temporary resources (channel textures already freed above)
-        deleteFramebuffer(gl, gradientFB);
-        deleteFramebuffer(gl, tensorAccumFB);
-        deleteFramebuffer(gl, blurTempFB);
-        deleteFramebuffer(gl, blurOutputFB);
-        deleteFramebuffer(gl, tangentFB1);
-        deleteFramebuffer(gl, tangentFB2);
-        return TangentFlowField.fromVec2Array(tangents, width, height);
+            // Vertical blur
+            gl.bindFramebuffer(gl.FRAMEBUFFER, blurOutputFB.fb);
+            gl.useProgram(res.gaussianBlurVProgram);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, blurTempFB.tex);
+            gl.uniform1i(gl.getUniformLocation(res.gaussianBlurVProgram, 'u_input'), 0);
+            gl.uniform2f(gl.getUniformLocation(res.gaussianBlurVProgram, 'u_resolution'), width, height);
+            gl.uniform1fv(gl.getUniformLocation(res.gaussianBlurVProgram, 'u_kernel'), kernel);
+            gl.uniform1i(gl.getUniformLocation(res.gaussianBlurVProgram, 'u_kernelSize'), kernelSize);
+            gl.uniform1i(gl.getUniformLocation(res.gaussianBlurVProgram, 'u_radius'), radius);
+            drawQuad(gl, res.quadVAO);
+            // Step 4: Extract initial tangent field
+            gl.bindFramebuffer(gl.FRAMEBUFFER, tangentFB1.fb);
+            gl.useProgram(res.tangentExtractProgram);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, blurOutputFB.tex);
+            gl.uniform1i(gl.getUniformLocation(res.tangentExtractProgram, 'u_tensor'), 0);
+            drawQuad(gl, res.quadVAO);
+            // Step 5: Refine tangent field iteratively (ping-pong between framebuffers)
+            let readFB = tangentFB1;
+            let writeFB = tangentFB2;
+            for (let i = 0; i < cfg.iterations; i++) {
+                gl.bindFramebuffer(gl.FRAMEBUFFER, writeFB.fb);
+                gl.useProgram(res.tangentRefineProgram);
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, readFB.tex);
+                gl.uniform1i(gl.getUniformLocation(res.tangentRefineProgram, 'u_tangents'), 0);
+                gl.uniform2f(gl.getUniformLocation(res.tangentRefineProgram, 'u_resolution'), width, height);
+                drawQuad(gl, res.quadVAO);
+                // Swap
+                [readFB, writeFB] = [writeFB, readFB];
+            }
+            // Read back results
+            gl.bindFramebuffer(gl.FRAMEBUFFER, readFB.fb);
+            const pixels = new Float32Array(width * height * 4);
+            gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, pixels);
+            // Convert to Vec2 array
+            const tangents = new Array(width * height);
+            for (let i = 0; i < width * height; i++) {
+                tangents[i] = {
+                    x: pixels[i * 4],
+                    y: pixels[i * 4 + 1],
+                };
+            }
+            // Cleanup temporary resources (channel textures already freed above)
+            deleteFramebuffer(gl, gradientFB);
+            deleteFramebuffer(gl, tensorAccumFB);
+            deleteFramebuffer(gl, blurTempFB);
+            deleteFramebuffer(gl, blurOutputFB);
+            deleteFramebuffer(gl, tangentFB1);
+            deleteFramebuffer(gl, tangentFB2);
+            return TangentFlowField.fromVec2Array(tangents, width, height);
+        });
     }
     /**
      * Release WebGL resources held by this computer (programs, VAO/VBO,

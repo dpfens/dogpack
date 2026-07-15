@@ -2,35 +2,20 @@
  * WebGPU-accelerated gradient-aligned blur for FDoG
  *
  * Compute-shader version of the same perpendicular-to-flow sampling as
- * CPUGradientAlignedBlur / WebGLGradientAlignedBlur. Prefer this backend
- * when available — no readback-forced sync via drawing, explicit control
- * over the copy timeline, and generally faster on the same hardware.
+ * CPUGradientAlignedBlur / WebGLGradientAlignedBlur.
  *
- * ASSUMPTIONS — same as the WebGL file:
- * - `FlowField` only exposes `getTangent(x, y): Vec2`; we bake perpendicular
- *   direction into an rg32float texture once per FlowField instance.
- * - `ChannelImage.data` is a single-channel Float32Array, row-major.
- *
- * TYPES: this file assumes `@webgpu/types` is installed (or `lib.dom` in a
- * recent TS/tsconfig that includes WebGPU types). If GPUDevice/GPUBuffer
- * etc. aren't recognized, add `@webgpu/types` as a devDependency and either
- * add it to tsconfig `types`, or drop a `/// <reference types="@webgpu/types" />`
- * at the top of this file.
- *
- * NOTE ON TIMING:
- * Like the WebGL version, `queue.submit()` doesn't block — the actual GPU
- * wait happens at `mapAsync()`. So "Dispatch" below measures submission
- * only; "Readback" is where the real cost will show up. For true GPU-side
- * timing, add a `GPUQuerySet` with 'timestamp' queries around the compute
- * pass (needs the 'timestamp-query' feature) — can wire that in if you
- * want harder numbers than JS-side wall time.
  */
-import { type BlurStrategy, type ChannelImage, type FlowField, type GradientAlignedBlurConfig } from '../../types.js';
+import { type BlurStrategy, type ChannelImage, type FlowField, type GradientAlignedBlurBackendConfig } from '../../interfaces/base.js';
 export declare class WebGPUGradientAlignedBlur implements BlurStrategy {
-    private flowField;
+    readonly backend: "webgpu";
     private config;
     private device;
     private pipeline;
+    private flowField;
+    private static cachedDevice;
+    private static deviceInitPromise;
+    private static lastUnsupportedReason;
+    private static errorListenerAttached;
     private flowTexture;
     private flowFieldWidth;
     private flowFieldHeight;
@@ -39,18 +24,27 @@ export declare class WebGPUGradientAlignedBlur implements BlurStrategy {
     private maxTileBytes;
     private static readonly CPU_BAKE_ROWS_PER_CHUNK;
     private static readonly TILE_MEMORY_SAFETY_FACTOR;
-    private constructor();
-    /** WebGPU device creation is async, so use this instead of `new`. */
-    static create(flowField: FlowField, config?: Partial<GradientAlignedBlurConfig>): Promise<WebGPUGradientAlignedBlur>;
+    constructor(config: GradientAlignedBlurBackendConfig);
+    /**
+     * Acquires (and caches) the shared GPUDevice. Concurrent callers await
+     * the same in-flight request rather than each requesting their own
+     * adapter/device. Re-acquires automatically after a `device.lost` clears
+     * the cache.
+     */
+    private static acquireDevice;
+    static isSupported(): Promise<boolean>;
+    static getUnsupportedReason(): string | undefined;
     private initPipeline;
     setFlowField(flowField: FlowField): void;
     private assertWithinTextureLimits;
     /**
-     * NOTE: only safe to call once no `blur()` calls are in flight — it
-     * destroys the device itself, which would invalidate any in-progress
-     * GPU work. Per-call buffers/textures created inside blur() are already
-     * cleaned up in their own try/finally, so there's nothing else to
-     * release here besides the flow texture and the device.
+     * Releases this instance's own GPU resources (flow texture). Deliberately
+     * does NOT destroy `this.device`. The device is shared/cached at the
+     * class level (see file header), and other instances (or a future
+     * instance created after a fallback-and-retry) may still be using it.
+     * If you need to fully release the device (e.g. on app shutdown), that's
+     * out of scope for a per-instance dispose() and would need an explicit
+     * class-level teardown method instead.
      */
     dispose(): void;
     private bakeFlowTexture;

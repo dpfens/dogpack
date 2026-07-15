@@ -83,7 +83,7 @@
  */
 
 // High-level API
-export type {BlurStrategy, BlurStrategyClass} from './types.js';
+export type {BlurStrategy} from './interfaces/base.js';
 export * as dog from './dog/index.js';
 export type {
   DoGConfig,
@@ -99,7 +99,7 @@ export type {
   ADoGProcessingResult,
   HDoGProcessingResult,
   ParamRange
-} from './dog/types.js';
+} from './interfaces/dog.js';
 
 // Core processor (for advanced usage)
 export { DoGProcessor, ThresholdModes, applyCustomThreshold } from './processor.js';
@@ -137,11 +137,11 @@ export type {
   MedianFilterConfig,
   KuwaharaFilterConfig,
   Preprocessor
-} from './types.js';
+} from './interfaces/base.js';
 
 export {
   DEFAULT_ETF_CONFIG
-} from './types.js';
+} from './interfaces/base.js';
 
 // Utilities
 export * as utilities from './utils/index.js';

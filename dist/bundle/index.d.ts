@@ -31,10 +31,34 @@ interface RGBImage$1 {
     height: number;
 }
 /**
+ * Implemented by anything holding resources that must be explicitly
+ * released (e.g. GPU buffers/textures). CPU-only implementations may
+ * implement this as a no-op, but still implement it — callers that manage
+ * a mixed pipeline of strategies need to be able to dispose everything
+ * uniformly without checking which backend each instance happens to use.
+ */
+interface Disposable {
+    dispose(): void;
+}
+/**
+ * Implemented by anything with a technology-specific backing
+ * implementation (CPU, WebGL, WebGPU, ...), exposing which one is
+ * actually in use.
+ *
+ * Lets callers/perf tooling tell what ran without guessing — relevant
+ * since backend selection can fall back silently after construction (e.g.
+ * on a lost WebGL context). Single-backend implementations (e.g. a
+ * CPU-only preprocessor with no GPU counterpart) still report it — just
+ * always the same value.
+ */
+interface BackendIdentifiable {
+    readonly backend: 'webgpu' | 'webgl' | 'cpu';
+}
+/**
  * Abstract blur strategy interface
  * Implementations provide different blur algorithms (isotropic, flow-guided, etc.)
  */
-interface BlurStrategy {
+interface BlurStrategy extends Disposable, BackendIdentifiable {
     /**
      * Apply blur to an image with the given sigma
      * @param input Source image
@@ -42,23 +66,33 @@ interface BlurStrategy {
      * @returns Blurred image
      */
     blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
-    dispose(): void;
 }
 /**
- * Static interface for blur strategy classes
- * Used to check runtime availability before instantiation
+ * Generic static (constructor) interface shared by every strategy family
+ * in this file (blur, preprocessing, ETF, ...).
+ *
+ * This is deliberately a separate interface from the instance interface
+ * (`T`) rather than statics bolted onto it: `implements` only constrains
+ * instance shape, not the statics on a class object, so runtime-
+ * availability checks have to live on their own constructor-shaped
+ * interface and get asserted with `satisfies` instead.
  */
-interface BlurStrategyClass {
+interface StrategyCtor<T> {
+    new (config: any): T;
     /**
-     * Check if this blur strategy is supported in the current environment
-     * @returns true if the strategy can be used, false otherwise
+     * Check if this backend is supported in the current environment. Async
+     * because GPU support checks (requestAdapter(), WebGL context creation)
+     * are inherently async.
+     * @returns true if the backend can be used, false otherwise
      */
-    isSupported(): boolean;
+    isSupported(): Promise<boolean>;
     /**
-     * Get a human-readable reason if the strategy is not supported
+     * Get a human-readable reason if the backend is not supported. May be
+     * asynchronous: cheap synchronous API-surface checks can't confirm a GPU
+     * adapter is actually obtainable — that requires an async request.
      * @returns undefined if supported, or a string explaining why it's not
      */
-    getUnsupportedReason?(): string | undefined;
+    getUnsupportedReason?(): string | undefined | Promise<string | undefined>;
 }
 /**
  * Abstract preprocessing strategy interface
@@ -67,14 +101,18 @@ interface BlurStrategyClass {
  * Gaussian blur, contrast enhancement, quantization, etc.) applied to an
  * image before line detection.
  */
-interface Preprocessor {
+interface Preprocessor extends Disposable, BackendIdentifiable {
     /**
      * Apply this preprocessing operation to an image
      * @param input Source image
      * @returns Processed image
      */
-    process(input: ChannelImage): ChannelImage;
+    process(input: ChannelImage): Promise<ChannelImage>;
 }
+/**
+ * Static (constructor) interface for preprocessor classes.
+ */
+type PreprocessorCtor = StrategyCtor<Preprocessor>;
 /**
  * Configuration for flow-guided blur
  */
@@ -157,7 +195,7 @@ declare const DEFAULT_ETF_CONFIG: ETFConfig;
  * caller's responsibility and happens before compute()/computeMultiChannel()
  * is called.
  */
-interface ETFComputer {
+interface ETFComputer extends Disposable, BackendIdentifiable {
     /**
      * Compute an Edge Tangent Flow from a single scalar channel.
      *
@@ -176,11 +214,6 @@ interface ETFComputer {
      * @param sigmaC Structure tensor smoothing sigma (optional override)
      */
     computeMultiChannel(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
-    /**
-     * Release any resources (e.g. GPU buffers/textures) held by this
-     * computer. CPU implementations may implement this as a no-op.
-     */
-    dispose(): void;
 }
 
 interface ThresholdStrategy {
@@ -557,14 +590,16 @@ declare const HDOG_STYLE_PRESETS: Record<string, HDoGConfig>;
  * using Equation 7 for the sharpening computation.
  */
 declare class XDoG implements DoGImplementation {
-    private processor;
     private config;
+    private dogConfig;
+    private blurStrategyPromise;
     constructor(config?: Partial<XDoGConfig>);
     dispose(): void;
     /**
      * Create XDoG with a preset style
      */
     static withPreset(presetName: keyof typeof STYLE_PRESETS): XDoG;
+    private getProcessor;
     /**
      * Process a grayscale image
      */
@@ -594,11 +629,31 @@ declare class XDoG implements DoGImplementation {
      */
     processGrayscaleImageData(input: ImageData, overrides?: Partial<DoGConfig>): Promise<ImageData>;
     /**
-     * Get current configuration
+     * Get current configuration.
+     *
+     * NOTE: the original merged in `this.processor.getConfig()`, which may
+     * have applied its own internal defaulting on top of the raw dogConfig
+     * we constructed it with. Without a persistent processor to ask, this
+     * returns XDoG's own resolved config plus the raw (possibly
+     * not-fully-defaulted) dogConfig. If DoGProcessor.getConfig() does
+     * meaningful default-filling beyond what's here, please point me to
+     * processor.ts and I'll fold that logic in.
      */
     getConfig(): Readonly<XDoGConfig>;
     /**
-     * Update configuration
+     * Update configuration. Stays synchronous — a kernelSizeMultiplier
+     * change starts a new `IsotropicBlur.create()` and swaps in the new
+     * promise immediately, without waiting for it to resolve. The old
+     * strategy is disposed once it (already long-since resolved, in
+     * practice) settles.
+     *
+     * KNOWN RACE: if a process*() call is in flight — meaning it already
+     * awaited the *old* blurStrategyPromise and is mid-call on that
+     * strategy — and setConfig() runs before that call's `finally`
+     * completes, the old strategy could be disposed out from under it.
+     * This existed in some form in the original code too (no serialization
+     * between setConfig and in-flight process() calls). If that matters for
+     * your usage, serialize calls at the call site.
      */
     setConfig(config: Partial<XDoGConfig>): void;
 }
@@ -704,16 +759,6 @@ declare class ADoG implements DoGImplementation {
     dispose(): void;
     /**
      * Process a grayscale image through the ADoG pipeline.
-     *
-     * Note on the DoGImplementation interface: this method's `overrides` is
-     * typed against Partial<ADoGConfig> (a superset of DoGConfig), which
-     * satisfies DoGImplementation's Partial<DoGConfig> parameter type via
-     * TypeScript's bivariant method-parameter checking. A caller holding this
-     * instance through the DoGImplementation interface type (rather than the
-     * concrete ADoG type) can only type-check overrides for fields that exist
-     * on DoGConfig (sigma, k, epsilon, phi, ...) -- tau/s/noiseScaleC are only
-     * overridable when the caller has a concrete ADoG reference. No data is
-     * lost; this only affects what's type-checkable through the narrower view.
      */
     process(input: ChannelImage, overrides?: Partial<ADoGConfig>): Promise<ChannelImage>;
     processDetailed(input: ChannelImage, overrides?: Partial<ADoGConfig>): Promise<ADoGProcessingResult>;
@@ -729,7 +774,7 @@ declare class ADoG implements DoGImplementation {
     /**
      * Update configuration
      */
-    setConfig(config: Partial<ADoGConfig>): void;
+    setConfig(config: Partial<ADoGConfig>): Promise<void>;
     /** Eq. (5): rho(x) = tau + (1 - tau) * (1 - tanh(s * I(x))) */
     private computeRhoMap;
     /** Eq. (6): sigma(x) = c * (1 - tanh(s * I(x))); sampled noise ~ N(0,1) * sigma(x) added to I(x) */
@@ -838,7 +883,7 @@ declare namespace index$4 {
  * Difference of Gaussians processor
  *
  * Uses the reparameterized formulation (Equation 7):
- * S_σ,k,p(x) = G_σ(x) + p · D_σ,k(x) = (1 + p) · G_σ(x) - p · G_kσ(x)
+ * S_σ,k,p(x) = G_σ(x) + p x D_σ,k(x) = (1 + p) x G_σ(x) - p x G_kσ(x)
  *
  * This is equivalent to unsharp masking of the blurred image, which
  * decouples edge sharpening strength (p) from threshold parameters.
@@ -907,7 +952,7 @@ declare class DoGProcessor {
     private computeDoG;
     /**
      * Compute sharpened image using Equation 7 from the paper:
-     * S_σ,k,p(x) = G_σ(x) + p · D_σ,k(x) = (1 + p) · G_σ(x) - p · G_kσ(x)
+     * S_σ,k,p(x) = G_σ(x) + p x D_σ,k(x) = (1 + p) x G_σ(x) - p x G_kσ(x)
      *
      * This can be understood as unsharp masking of the blurred image.
      * The parameter p controls the edge sharpening strength independently
@@ -971,29 +1016,34 @@ declare const ThresholdModes: {
  */
 declare function applyCustomThreshold(input: ChannelImage, thresholdFn: (value: number) => number): ChannelImage;
 
-declare class BaseCPUBlur {
+declare class BaseCPUStrategy {
+    readonly backend: "cpu";
     dispose(): void;
-    /**
-   * Check if isotropic blur is supported
-   * Always returns true as this is a pure JavaScript implementation
-   */
-    static isSupported(): boolean;
-    /**
-     * Get reason if unsupported (always undefined for this implementation)
-     */
+    static isSupported(): Promise<boolean>;
     static getUnsupportedReason(): string | undefined;
 }
-declare class BaseWebGLBlur {
+declare class BaseWebGLStrategy {
+    readonly backend: "webgl";
+    dispose(): void;
+    static isSupported(): Promise<boolean>;
     /**
-     * Check if WebGL2 is supported in the current environment
+     * Get reason if WebGL2 is not supported.
+     *
+     * Declared to allow an async return (per StrategyCtor in interfaces/base.ts)
+     * even though this base implementation itself is synchronous, so that
+     * subclasses that need to probe the shared/module-level GL context
+     * asynchronously can override it without a static-side type conflict.
      */
-    static isSupported(): boolean;
+    static getUnsupportedReason(): string | undefined | Promise<string | undefined>;
     /**
-     * Get reason if WebGL2 is not supported
+     * WebGL errors are synchronous — no scopes, just drain-then-check.
+     * See discussion in webgl.ts for why this is needed.
      */
-    static getUnsupportedReason(): string | undefined;
+    protected runGuarded<T>(gl: WebGL2RenderingContext, fn: () => T): T;
 }
-declare class BaseWebGPUBlur {
+declare class BaseWebGPUStrategy {
+    readonly backend: "webgpu";
+    dispose(): void;
     protected static cachedAdapter: GPUAdapter | null;
     protected static cachedDevice: GPUDevice | null;
     protected static devicePromise: Promise<GPUDevice | null> | null;
@@ -1002,11 +1052,16 @@ declare class BaseWebGPUBlur {
     /**
      * Check if WebGPU is supported (sync check - just API availability)
      */
-    static isSupported(): boolean;
+    static isSupported(): Promise<boolean>;
     /**
-     * Get reason if WebGPU is not supported
+     * Get reason if WebGPU is not supported.
+     *
+     * Declared to allow an async return (per StrategyCtor in interfaces/base.ts)
+     * even though this base implementation itself is synchronous, so that
+     * subclasses that need to request an adapter to confirm availability
+     * can override it without a static-side type conflict.
      */
-    static getUnsupportedReason(): string | undefined;
+    static getUnsupportedReason(): string | undefined | Promise<string | undefined>;
     /**
      * Check if the adapter is a software/fallback renderer (call after getWebGPUDevice)
      */
@@ -1028,6 +1083,11 @@ declare class BaseWebGPUBlur {
      * Get or create WebGPU device (shared)
      */
     static getWebGPUDevice(): Promise<GPUDevice | null>;
+    /**
+     * WebGPU errors are async (error scopes). See discussion in
+     * webgpu.ts for why try/catch alone misses these.
+     */
+    protected runGuarded<T>(device: GPUDevice, fn: () => T | Promise<T>): Promise<T>;
 }
 
 /**
@@ -1036,7 +1096,7 @@ declare class BaseWebGPUBlur {
  * Provides both isotropic (standard) and anisotropic (flow-guided) blur
  * implementations for use in XDoG and FDoG pipelines.
  *
- * FIXED: WebGPUIsotropicBlur now supports parallel/concurrent blur operations
+ * Supports parallel/concurrent blur operations
  */
 
 /**
@@ -1053,9 +1113,11 @@ interface BaseIsotropicBlurConfig {
  * Standard isotropic Gaussian blur using separable convolution
  * This is the blur used in basic XDoG
  */
-declare class CPUIsotropicBlur extends BaseCPUBlur implements BlurStrategy {
+declare class CPUIsotropicBlur extends BaseCPUStrategy implements BlurStrategy {
     private config;
     constructor(config?: Partial<BaseIsotropicBlurConfig>);
+    /** CPU is always available — it's the universal fallback. */
+    static isSupported(): Promise<boolean>;
     dispose(): void;
     blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
 }
@@ -1072,7 +1134,7 @@ interface WebGLBlurConfig {
  * WebGL2-accelerated isotropic Gaussian blur
  * Uses separable convolution with two passes (horizontal + vertical)
  */
-declare class WebGLIsotropicBlur extends BaseWebGLBlur implements BlurStrategy {
+declare class WebGLIsotropicBlur extends BaseWebGLStrategy implements BlurStrategy {
     private config;
     private resources;
     private currentWidth;
@@ -1080,6 +1142,12 @@ declare class WebGLIsotropicBlur extends BaseWebGLBlur implements BlurStrategy {
     private framebuffer;
     private textures;
     constructor(config?: Partial<WebGLBlurConfig>);
+    /**
+     * Cheap synchronous-in-spirit check (wrapped in a resolved Promise to
+     * satisfy `BlurStrategyCtor`) Excludes software
+     * rasterizers, which are too slow to be a useful GPU fallback.
+     */
+    static isSupported(): Promise<boolean>;
     private initResources;
     blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
     private blurPass;
@@ -1098,10 +1166,10 @@ interface WebGPUBlurConfig {
  * WebGPU-accelerated isotropic Gaussian blur
  * Uses compute shaders with separable convolution
  *
- * FIXED: Now supports concurrent/parallel blur calls by creating
+ * Supports concurrent/parallel blur calls by creating
  * separate staging buffers for each operation instead of reusing one.
  */
-declare class WebGPUIsotropicBlur extends BaseWebGPUBlur implements BlurStrategy {
+declare class WebGPUIsotropicBlur extends BaseWebGPUStrategy implements BlurStrategy {
     private config;
     private resources;
     private paramsBuffer;
@@ -1113,6 +1181,11 @@ declare class WebGPUIsotropicBlur extends BaseWebGPUBlur implements BlurStrategy
     private currentKernelSize;
     constructor(config?: Partial<WebGPUBlurConfig>);
     /**
+     * Confirms an adapter is actually obtainable, not just that
+     * `navigator.gpu` exists as an API surface.
+     */
+    static isSupported(): Promise<boolean>;
+    /**
      * Initialize WebGPU resources
      */
     private initResources;
@@ -1123,8 +1196,8 @@ declare class WebGPUIsotropicBlur extends BaseWebGPUBlur implements BlurStrategy
     /**
      * Blur implementation - supports concurrent/parallel calls
      *
-     * KEY FIX: Creates a new staging buffer for each operation instead of
-     * reusing a single one. This prevents "Buffer already has an outstanding
+     * CCreates a new staging buffer for each operation instead of
+     * reusing a single one, preventing "Buffer already has an outstanding
      * map pending" errors when blur() is called in parallel.
      */
     blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
@@ -1134,11 +1207,39 @@ declare class WebGPUIsotropicBlur extends BaseWebGPUBlur implements BlurStrategy
     dispose(): void;
 }
 type IsotropicBlurConfig = BaseIsotropicBlurConfig | WebGLBlurConfig | WebGPUBlurConfig;
+/**
+ * Backend-agnostic isotropic blur. Picks the best backend this device
+ * actually supports for *this algorithm* (not a global session-wide
+ * choice), and falls back to the next-best backend if the active one
+ * fails mid-session (lost context, driver crash, etc.).
+ *
+ * Construction is async (`IsotropicBlur.create()`) because backend
+ * detection is inherently async; constructors can't be async, so a
+ * private constructor plus a static factory forces detection to
+ * complete before the instance is usable.
+ */
 declare class IsotropicBlur implements BlurStrategy {
-    instance: BlurStrategy;
-    constructor(config: Partial<IsotropicBlurConfig>);
+    private instance;
+    private currentCtor;
+    private config;
+    private failedBackends;
+    private constructor();
+    private static readonly candidates;
+    static create(config?: Partial<IsotropicBlurConfig>): Promise<IsotropicBlur>;
+    get backend(): "webgpu" | "webgl" | "cpu";
     dispose(): void;
     blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
+    /**
+     * Demotes the current backend and activates the next untried, supported
+     * candidate. A single-step retry, not a cascading loop through every
+     * remaining backend: cascading on one call risks masking a real input
+     * bug (e.g. a bad sigma) as a backend problem.
+     *
+     * `failedBackends` is per-instance, not module-global — a transient
+     * driver hiccup shouldn't permanently blacklist a backend for the whole
+     * session.
+     */
+    private demoteAndFindNext;
 }
 
 /**
@@ -1167,10 +1268,13 @@ interface CPUFlowGuidedBlurConfig {
      */
     stepSize: number;
 }
-declare class CPUFlowGuidedBlur extends BaseCPUBlur implements BlurStrategy, FlowGuidedBlurStrategy {
+declare class CPUFlowGuidedBlur extends BaseCPUStrategy implements BlurStrategy, FlowGuidedBlurStrategy {
     private flowField;
     private config;
     constructor(flowField: FlowField, config?: Partial<CPUFlowGuidedBlurConfig>);
+    /** CPU is always available — it's the universal fallback. */
+    static isSupported(): Promise<boolean>;
+    dispose(): void;
     /**
      * Update the flow field (e.g., when processing a new image)
      */
@@ -1188,7 +1292,7 @@ declare class CPUFlowGuidedBlur extends BaseCPUBlur implements BlurStrategy, Flo
  * WebGL2-accelerated flow-guided blur
  * Uses line integral convolution along edge tangent directions
  */
-declare class WebGLFlowGuidedBlur extends BaseWebGLBlur implements BlurStrategy, FlowGuidedBlurStrategy {
+declare class WebGLFlowGuidedBlur extends BaseWebGLStrategy implements BlurStrategy, FlowGuidedBlurStrategy {
     private config;
     private flowField;
     private resources;
@@ -1198,6 +1302,11 @@ declare class WebGLFlowGuidedBlur extends BaseWebGLBlur implements BlurStrategy,
     private textures;
     private flowTexture;
     constructor(flowField: FlowField, config?: Partial<GLGPUBlurConfig>);
+    /**
+     * Same check as WebGLIsotropicBlur: a real, hardware-accelerated WebGL2
+     * context with float render targets, excluding software rasterizers.
+     */
+    static isSupported(): Promise<boolean>;
     private initResources;
     private ensureTextureSize;
     /**
@@ -1228,60 +1337,118 @@ interface GLGPUBlurConfig {
 /**
  * WebGPU-accelerated flow-guided blur
  */
-declare class WebGPUFlowGuidedBlur extends BaseWebGPUBlur implements BlurStrategy, FlowGuidedBlurStrategy {
+declare class WebGPUFlowGuidedBlur extends BaseWebGPUStrategy implements BlurStrategy, FlowGuidedBlurStrategy {
     private config;
     private flowField;
     private resources;
-    private paramsBuffer;
     private kernelBuffer;
-    private inputBuffer;
-    private flowBuffer;
-    private outputBuffer;
-    private stagingBuffer;
-    private currentBufferSize;
     private currentKernelSize;
+    private flowTexture;
+    private flowFieldWidth;
+    private flowFieldHeight;
+    private flowDirty;
+    private static readonly CPU_BAKE_ROWS_PER_CHUNK;
+    private maxTileBytes;
+    private static readonly TILE_MEMORY_SAFETY_FACTOR;
     constructor(flowField: FlowField, config?: Partial<GLGPUBlurConfig>);
-    private initResources;
-    private ensureBuffers;
     /**
-     * Update the flow field (e.g., when processing a new image)
+     * Confirms an adapter is actually obtainable, not just that
+     * `navigator.gpu` exists as an API surface.
+     */
+    static isSupported(): Promise<boolean>;
+    private initResources;
+    /**
+     * Textures are bound by maxTextureDimension2D (typically 8192-16384),
+     * not the storage-buffer binding limit — but that ceiling still exists,
+     * and silently exceeding it is exactly the failure mode this fix is
+     * closing off. Throw a clear, catchable error instead, so the
+     * FlowGuidedBlur wrapper's fallback logic gets a chance to demote to
+     * WebGL/CPU rather than the caller getting corrupted output.
+     */
+    private assertWithinTextureLimits;
+    /**
+     * (Re)builds the flow-field texture for the given dimensions if it's
+     * missing, stale (setFlowField() was called), or the wrong size. Built
+     * in row-chunks rather than one Float32Array(width*height*2) for the
+     * whole image, so preparing this for a large image doesn't itself blow
+     * up JS heap before any GPU work happens.
+     */
+    private bakeFlowTexture;
+    private getFlowTexture;
+    /**
+     * Update the flow field (e.g., when processing a new image). Marks the
+     * cached flow texture dirty rather than rebuilding immediately — the
+     * next blur() call rebuilds it (and only then, against the dimensions
+     * that call actually needs).
      */
     setFlowField(flowField: FlowField): void;
+    /**
+     * MEMORY: the output/readback path is processed in row-band tiles
+     * bounded by `maxTileBytes`, not one whole-image buffer — this is what
+     * keeps memory flat for large images instead of scaling linearly with
+     * width*height, and is what prevents the silent corruption/blank-out
+     * described above. The input/flow textures are still one full-image
+     * texture each (bounded by `maxTextureDimension2D`, checked via
+     * `assertWithinTextureLimits`), which is a far higher ceiling than the
+     * storage-buffer limit the old version was implicitly subject to.
+     */
     blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
     dispose(): void;
 }
 type FlowGuidedBlurConfig = CPUFlowGuidedBlurConfig | GLGPUBlurConfig;
-declare class FlowGuidedBlur implements BlurStrategy {
-    instance: BlurStrategy & FlowGuidedBlurStrategy;
-    constructor(flowField: FlowField, config?: Partial<FlowGuidedBlurConfig>);
+/**
+ * Backend-agnostic flow-guided blur. Same per-algorithm backend selection
+ * and single-retry fallback as `IsotropicBlur` — see that file for the
+ * rationale on `create()`/`satisfies`/per-instance `failedBackends`/
+ * single-step retry.
+ *
+ * One addition here: the flow field is mutable state (`setFlowField` swaps
+ * it for a new frame), so it has to be tracked on the wrapper too — a
+ * fallback needs to construct the next backend with the *current* flow
+ * field, not the one from construction time.
+ */
+declare class FlowGuidedBlur implements BlurStrategy, FlowGuidedBlurStrategy {
+    private instance;
+    private currentCtor;
+    private config;
+    private flowField;
+    private failedBackends;
+    private constructor();
+    private static readonly candidates;
+    static create(flowField: FlowField, config?: Partial<FlowGuidedBlurConfig>): Promise<FlowGuidedBlur>;
+    get backend(): "webgpu" | "webgl" | "cpu";
     dispose(): void;
     blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
     /**
-     * Update the flow field (e.g., when processing a new image)
+     * Update the flow field (e.g., when processing a new frame). Stored on
+     * the wrapper too, so a later backend fallback hands the new instance
+     * the current flow field rather than a stale one from construction time.
      */
     setFlowField(flowField: FlowField): void;
+    private demoteAndFindNext;
 }
 
-type GradientAlignedBackend = 'webgpu' | 'webgl' | 'cpu';
 declare class GradientAlignedBlur implements BlurStrategy {
+    private instance;
+    private currentCtor;
     private flowField;
     private config;
-    private instance;
-    private backend;
-    private initPromise;
-    constructor(flowField: FlowField, config?: Partial<GradientAlignedBlurConfig>);
-    /**
-     * Preferred construction path — resolves only once backend detection has
-     * finished, so `getBackend()` is meaningful immediately.
-     */
+    private failedBackends;
+    private constructor();
+    private static readonly candidates;
     static create(flowField: FlowField, config?: Partial<GradientAlignedBlurConfig>): Promise<GradientAlignedBlur>;
-    /** Resolves once GPU backend detection/initialization has settled (including CPU fallback). */
-    ready(): Promise<void>;
-    getBackend(): GradientAlignedBackend;
-    private upgradeBackend;
-    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
-    setFlowField(flowField: FlowField): void;
+    get backend(): "webgpu" | "webgl" | "cpu";
     dispose(): void;
+    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
+    /**
+     * Propagates to whatever backend is currently running, and is also
+     * remembered for any future backend constructed by demoteAndFindNext()
+     * (fallback instances are built fresh via `new Ctor(config)`, so the
+     * current flow field has to be threaded through `config` each time
+     * rather than mutated on an existing instance).
+     */
+    setFlowField(flowField: FlowField): void;
+    private demoteAndFindNext;
 }
 
 type index$3_CPUFlowGuidedBlur = CPUFlowGuidedBlur;
@@ -1309,53 +1476,29 @@ declare namespace index$3 {
   export type { index$3_FlowGuidedBlurConfig as FlowGuidedBlurConfig, index$3_IsotropicBlurConfig as IsotropicBlurConfig };
 }
 
-type ETFImpl = 'cpu' | 'webgl' | 'webgpu' | 'auto';
 /**
- * Edge Tangent Flow computer that automatically selects the best available
- * backend implementation.
+ * Edge Tangent Flow computer that automatically resolves to the best
+ * supported backend, with graceful single-retry fallback if that backend
+ * fails after selection (driver crash, lost context, etc).
  *
- * Preference order in 'auto' mode: WebGPU > WebGL > CPU. Backend selection
- * is stateful and happens at most once per instance: the first call to
- * compute()/computeMultiChannel() probes backends (honoring `forceImpl`,
- * or falling back WebGPU -> WebGL -> CPU) and caches whichever one
- * actually works; every later call on this instance reuses that same
- * backend directly. This avoids re-attempting WebGPU/WebGL acquisition on
- * every call, and means dispose() has a single, well-defined backend
- * instance to release GPU resources from.
  */
 declare class EdgeTangentFlowComputer implements ETFComputer {
-    private readonly forceImpl;
-    private computer;
-    constructor(forceImpl?: ETFImpl);
+    private instance;
+    private currentCtor;
+    private failedBackends;
+    private constructor();
+    private static readonly candidates;
+    static create(): Promise<EdgeTangentFlowComputer>;
     /**
-     * Check if WebGPU acceleration is available.
-     *
-     * Note: this is the same cheap synchronous check WebGpuEdgeTangentFlowComputer
-     * itself uses (navigator.gpu presence) — it doesn't guarantee an adapter
-     * can actually be obtained. Use WebGpuEdgeTangentFlowComputer.getUnsupportedReason()
-     * for a more thorough (async) check if needed.
+     * Which backend is actually running right now. Can change over the
+     * life of this instance if a fallback occurs mid-session.
      */
-    static isWebGPUSupported(): boolean;
-    /**
-     * Check if WebGL acceleration is available.
-     */
-    static isWebGLSupported(): boolean;
+    get backend(): "webgpu" | "webgl" | "cpu";
+    dispose(): void;
     compute(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
     computeMultiChannel(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
-    /**
-     * Release resources held by whichever backend this instance resolved to.
-     * No-op if compute()/computeMultiChannel() was never called, since
-     * nothing was ever instantiated.
-     */
-    dispose(): void;
-    /**
-     * Run `op` against the resolved backend, resolving (and caching) it on
-     * first use. `op` is what actually drives selection in 'auto' mode: a
-     * backend only "wins" once it has successfully produced a result, not
-     * merely passed isSupported(), since WebGPU/WebGL can pass that cheap
-     * check and still fail at adapter/device/shader-compile time.
-     */
-    private run;
+    callWithFallback<T>(op: (computer: ETFComputer) => Promise<T>): Promise<T>;
+    private demoteAndFindNext;
 }
 
 /**
@@ -1369,38 +1512,6 @@ declare class EdgeTangentFlowComputer implements ETFComputer {
  * structure) to `1` (pure texture) — from the local variance in a window
  * around each pixel, optionally normalized by the local gradient so that
  * subtle structural edges (e.g. wrinkles) aren't mistaken for texture.
- *
- * The map is not consumed directly by XDoG/FDoG. Callers instead derive
- * adaptive `p`/`epsilon` {@link ChannelImage} overrides from it
- * (`p_adaptive = p_base + alpha * textureStrength`, and similarly for
- * `epsilon`) and pass those into `DoGConfig`. Per Winnemöller et al. (2012),
- * `p` and `epsilon` should generally be varied together, since `p` alone
- * also shifts local brightness.
- *
- * This module only produces the texture map; it is not integrated into any
- * DoG implementation. See {@link LocalVariancePreprocessor} for the
- * reference implementation and {@link LocalVariancePreprocessorOptimized}
- * for a faster, separable-convolution variant suited to real-time use.
- *
- * @example
- * ```typescript
- * import { dog, preprocess } from 'dogpack';
- *
- * const preprocessor = new preprocess.LocalVariancePreprocessor({
- *   windowRadius: 2,
- *   normalizeByGradient: true,
- * });
- * const textureMap = preprocessor.process(grayImage);
- *
- * const pMap = buildAdaptiveMap(textureMap, { base: 20, sensitivity: -10 });
- * const epsilonMap = buildAdaptiveMap(textureMap, { base: 0.5, sensitivity: 0.3 });
- *
- * const xdog = new dog.XDoG({ sigma: 1.0, k: 1.6, phi: 10 });
- * const edgeMap = await xdog.process(grayImage, { p: pMap, epsilon: epsilonMap });
- * xdog.dispose();
- * ```
- *
- * @packageDocumentation
  */
 
 /**
@@ -1478,7 +1589,10 @@ interface LocalVarianceConfig {
  */
 declare class LocalVariancePreprocessor implements Preprocessor {
     private config;
+    /** CPU-only — no WebGL/WebGPU counterpart exists for this preprocessor. */
+    readonly backend: "cpu";
     constructor(config?: Partial<LocalVarianceConfig>);
+    dispose(): void;
     /**
      * Compute texture strength map from image
      *
@@ -1488,7 +1602,7 @@ declare class LocalVariancePreprocessor implements Preprocessor {
      *                     1 = pure texture (patterns, fine details)
      *          Developer uses these values to adapt XDoG parameters
      */
-    process(image: ChannelImage): ChannelImage;
+    process(image: ChannelImage): Promise<ChannelImage>;
     /**
      * Compute variance of pixel values in a window
      * @private
@@ -1521,13 +1635,16 @@ declare class LocalVariancePreprocessor implements Preprocessor {
  */
 declare class LocalVariancePreprocessorOptimized implements Preprocessor {
     private config;
+    /** CPU-only — no WebGL/WebGPU counterpart exists for this preprocessor. */
+    readonly backend: "cpu";
     constructor(config?: Partial<LocalVarianceConfig>);
+    dispose(): void;
     /**
      * Process using separable convolution (faster for large windows)
      * Variance = E[X^2] - E[X]^2
      * Compute box blur of X and X^2 separately, then combine
      */
-    process(image: ChannelImage): ChannelImage;
+    process(image: ChannelImage): Promise<ChannelImage>;
     /**
      * Fast box blur using separable convolution + a sliding-window running sum.
      *
@@ -1554,51 +1671,89 @@ declare class LocalVariancePreprocessorOptimized implements Preprocessor {
 }
 
 /**
+ * Shared machinery for "pick the best supported backend, fall back
+ * gracefully if it fails later" preprocessors.
+ */
+
+declare abstract class ResilientPreprocessor<TConfig> implements Preprocessor {
+    private readonly candidates;
+    private readonly config;
+    private readonly failedBackends;
+    private instance;
+    private currentCtor;
+    /**
+     * Subclasses resolve their instance via `resolve()` *before* calling
+     * this (in their own async static `create()`), then hand the result in
+     * here. The constructor itself stays synchronous, as constructors must.
+     */
+    protected constructor(candidates: readonly PreprocessorCtor[], resolved: {
+        instance: Preprocessor;
+        ctor: PreprocessorCtor;
+    }, config: TConfig);
+    /**
+     * Try each candidate in order, skipping unsupported ones. If a
+     * candidate reports supported but throws on construction anyway
+     * (isSupported() lied), move on to the next.
+     */
+    protected static resolve<TConfig>(candidates: readonly PreprocessorCtor[], config: TConfig): Promise<{
+        instance: Preprocessor;
+        ctor: PreprocessorCtor;
+    }>;
+    get backend(): "webgpu" | "webgl" | "cpu";
+    dispose(): void;
+    process(input: ChannelImage): Promise<ChannelImage>;
+    private demoteAndFindNext;
+}
+
+/**
  * WebGL-Accelerated Preprocessing Module for XDoG/FDoG
  *
  * High-performance GPU implementations of image preprocessing filters.
  * Achieves 50-100x speedup over CPU implementations for large images.
- *
- * Filters included:
- * - Bilateral Filter (edge-preserving smoothing)
- * - Median Filter (noise removal) - approximated via weighted histogram
- * - Kuwahara Filter (painterly effect)
- * - Gaussian Blur (separable, very fast)
- * - Contrast Enhancement
- * - Quantization
- *
  */
 
-declare class BilateralFilterWebGL implements Preprocessor {
+declare class BilateralFilterWebGL extends BaseWebGLStrategy implements Preprocessor {
     private readonly config;
+    static isSupported(): Promise<boolean>;
+    static getUnsupportedReason(): Promise<string | undefined>;
     constructor(config?: Partial<BilateralFilterConfig>);
-    process(input: ChannelImage): ChannelImage;
+    process(input: ChannelImage): Promise<ChannelImage>;
 }
-declare class GaussianBlurWebGL implements Preprocessor {
+declare class GaussianBlurWebGL extends BaseWebGLStrategy implements Preprocessor {
     private readonly sigma;
+    static isSupported(): Promise<boolean>;
+    static getUnsupportedReason(): Promise<string | undefined>;
     constructor(sigma?: number);
-    process(input: ChannelImage): ChannelImage;
+    process(input: ChannelImage): Promise<ChannelImage>;
 }
-declare class MedianFilterWebGL implements Preprocessor {
+declare class MedianFilterWebGL extends BaseWebGLStrategy implements Preprocessor {
     private readonly config;
+    static isSupported(): Promise<boolean>;
+    static getUnsupportedReason(): Promise<string | undefined>;
     constructor(config?: Partial<MedianFilterConfig>);
-    process(input: ChannelImage): ChannelImage;
+    process(input: ChannelImage): Promise<ChannelImage>;
 }
-declare class KuwaharaFilterWebGL implements Preprocessor {
+declare class KuwaharaFilterWebGL extends BaseWebGLStrategy implements Preprocessor {
     private readonly config;
+    static isSupported(): Promise<boolean>;
+    static getUnsupportedReason(): Promise<string | undefined>;
     constructor(config?: Partial<KuwaharaFilterConfig>);
-    process(input: ChannelImage): ChannelImage;
+    process(input: ChannelImage): Promise<ChannelImage>;
 }
-declare class ContrastEnhancerWebGL implements Preprocessor {
+declare class ContrastEnhancerWebGL extends BaseWebGLStrategy implements Preprocessor {
     private readonly blackPoint;
     private readonly whitePoint;
+    static isSupported(): Promise<boolean>;
+    static getUnsupportedReason(): Promise<string | undefined>;
     constructor(blackPoint?: number, whitePoint?: number);
-    process(input: ChannelImage): ChannelImage;
+    process(input: ChannelImage): Promise<ChannelImage>;
 }
-declare class QuantizerWebGL implements Preprocessor {
+declare class QuantizerWebGL extends BaseWebGLStrategy implements Preprocessor {
     private readonly levels;
+    static isSupported(): Promise<boolean>;
+    static getUnsupportedReason(): Promise<string | undefined>;
     constructor(levels?: number);
-    process(input: ChannelImage): ChannelImage;
+    process(input: ChannelImage): Promise<ChannelImage>;
 }
 /**
  * Check if WebGL 2.0 is available
@@ -1643,122 +1798,139 @@ declare namespace webgl {
 }
 
 /**
+ * WebGPU-accelerated preprocessing module for XDoG/FDoG
+ *
+ * Even faster than WebGL implementations
+ */
+
+/** Release the cached device. Mainly useful for tests / hot reload. */
+declare function disposeWebGPU(): void;
+
+/**
  * Composed Preprocessing Module for XDoG/FDoG
  *
  * This module is the single entry point the rest of the codebase should
- * import from. Each exported class picks its backend ONCE, at
- * construction time:
+ * import from. Each exported class resolves its OWN best-supported
+ * backend independently (WebGPU > WebGL > CPU), the first time it's
+ * created:
  *
- *   - WebGL 2.0 available  -> delegates to the GPU implementation (webgl.ts)
- *   - WebGL 2.0 unavailable -> delegates to the CPU implementation (cpu.ts)
+ *   BilateralFilter.create(...)  // may end up WebGPU on this device
+ *   MedianFilter.create(...)     // may end up WebGL on this device, if
+ *                                // e.g. it needs a storage texture format
+ *                                // WebGPU can't provide here
+ *
+ * A device can support WebGPU for one algorithm and not another, so
+ * resolution happens per class, not once globally for the whole module —
+ * this follows the same pattern used for BlurStrategy/ETFComputer.
+ *
+ * If a backend fails mid-session (driver crash, lost context), each
+ * instance demotes itself to the next supported candidate once and
+ * retries the call that failed; that shared retry/demote machinery lives
+ * in `ResilientPreprocessor`, not duplicated per filter.
  */
 
-/**
- * Optional override for backend selection. Useful for tests (deterministic
- * CPU output, or running in a Node environment with no WebGL at all) or for
- * explicitly forcing a backend regardless of what the environment supports.
- */
 interface BackendOptions {
-    /** Force CPU even if WebGL is available. Default: false. */
+    /** Force CPU even if WebGL/WebGPU are available. Default: false. */
     forceCPU?: boolean;
 }
 /**
- * Edge-preserving smoothing filter. Uses the GPU implementation when
- * available, otherwise falls back to the CPU implementation.
+ * Edge-preserving smoothing filter. Resolves the best supported backend
+ * at creation time; falls back once if that backend fails later.
  */
-declare class BilateralFilter implements Preprocessor {
-    private readonly instance;
-    constructor(config?: Partial<BilateralFilterConfig>, options?: BackendOptions);
-    process(input: ChannelImage): ChannelImage;
+declare class BilateralFilter extends ResilientPreprocessor<Partial<BilateralFilterConfig>> {
+    private static readonly candidates;
+    private constructor();
+    static create(config?: Partial<BilateralFilterConfig>, options?: BackendOptions): Promise<BilateralFilter>;
 }
 /**
  * Median filter for salt-and-pepper noise removal.
  */
-declare class MedianFilter implements Preprocessor {
-    private readonly instance;
-    constructor(config?: Partial<MedianFilterConfig>, options?: BackendOptions);
-    process(input: ChannelImage): ChannelImage;
+declare class MedianFilter extends ResilientPreprocessor<Partial<MedianFilterConfig>> {
+    private static readonly candidates;
+    private constructor();
+    static create(config?: Partial<MedianFilterConfig>, options?: BackendOptions): Promise<MedianFilter>;
 }
 /**
  * Kuwahara filter for a painterly, stylized effect.
  */
-declare class KuwaharaFilter implements Preprocessor {
-    private readonly instance;
-    constructor(config?: Partial<KuwaharaFilterConfig>, options?: BackendOptions);
-    process(input: ChannelImage): ChannelImage;
+declare class KuwaharaFilter extends ResilientPreprocessor<Partial<KuwaharaFilterConfig>> {
+    private static readonly candidates;
+    private constructor();
+    static create(config?: Partial<KuwaharaFilterConfig>, options?: BackendOptions): Promise<KuwaharaFilter>;
 }
 /**
  * Separable Gaussian blur.
+ *
+ * Config here is just `number` (sigma), not an object — candidates'
+ * constructors all take `(sigma: number)` directly, so `TConfig` is
+ * `number` rather than a `Partial<...>` shape.
  */
-declare class GaussianBlur implements Preprocessor {
-    private readonly instance;
-    constructor(sigma?: number, options?: BackendOptions);
-    process(input: ChannelImage): ChannelImage;
+declare class GaussianBlur extends ResilientPreprocessor<number> {
+    private static readonly candidates;
+    private constructor();
+    static create(sigma?: number, options?: BackendOptions): Promise<GaussianBlur>;
 }
-/**
- * Histogram-percentile contrast stretch.
- */
-declare class ContrastEnhancer implements Preprocessor {
-    private readonly instance;
-    constructor(blackPoint?: number, whitePoint?: number, options?: BackendOptions);
-    process(input: ChannelImage): ChannelImage;
+interface ContrastPoints {
+    blackPoint: number;
+    whitePoint: number;
+}
+declare class ContrastEnhancer extends ResilientPreprocessor<ContrastPoints> {
+    private static readonly candidates;
+    private constructor();
+    static create(blackPoint?: number, whitePoint?: number, options?: BackendOptions): Promise<ContrastEnhancer>;
 }
 /**
  * Posterize/quantize intensity levels.
  */
-declare class Quantizer implements Preprocessor {
-    private readonly instance;
-    constructor(levels?: number, options?: BackendOptions);
-    process(input: ChannelImage): ChannelImage;
+declare class Quantizer extends ResilientPreprocessor<number> {
+    private static readonly candidates;
+    private constructor();
+    static create(levels?: number, options?: BackendOptions): Promise<Quantizer>;
 }
 declare const PreprocessingPresets: {
     /**
      * Light preprocessing - minimal smoothing
      * Good for: Clean studio photos, illustrations
      */
-    light: (input: ChannelImage) => ChannelImage;
+    light: (input: ChannelImage) => Promise<ChannelImage>;
     /**
      * Standard preprocessing - balanced smoothing
      * Good for: Most outdoor photos, portraits
      */
-    standard: (input: ChannelImage) => ChannelImage;
+    standard: (input: ChannelImage) => Promise<ChannelImage>;
     /**
      * Heavy preprocessing - aggressive noise removal
      * Good for: Very textured images (grass, foliage, fabric)
      */
-    heavy: (input: ChannelImage) => ChannelImage;
+    heavy: (input: ChannelImage) => Promise<ChannelImage>;
     /**
      * Artistic preprocessing - painterly smoothing
      * Good for: Stylized/artistic output
      */
-    artistic: (input: ChannelImage) => ChannelImage;
+    artistic: (input: ChannelImage) => Promise<ChannelImage>;
     /**
      * Photo preprocessing - for photos with grass/nature
      * Good for: Landscape, outdoor scenes
      */
-    nature: (input: ChannelImage) => ChannelImage;
+    nature: (input: ChannelImage) => Promise<ChannelImage>;
 };
-/**
- * Convenience class for chaining preprocessing operations. Each stage picks
- * its backend (GPU vs CPU) independently at the time it's added, using
- * whatever `isWebGLAvailable()` reports at that moment.
- */
 declare class PreprocessingPipeline {
     private readonly options?;
     private operations;
     constructor(options?: BackendOptions | undefined);
-    bilateral(config?: Partial<BilateralFilterConfig>): this;
-    median(config?: Partial<MedianFilterConfig>): this;
-    kuwahara(config?: Partial<KuwaharaFilterConfig>): this;
-    gaussian(sigma?: number): this;
-    contrast(blackPoint?: number, whitePoint?: number): this;
-    quantize(levels?: number): this;
+    bilateral(config?: Partial<BilateralFilterConfig>): Promise<this>;
+    median(config?: Partial<MedianFilterConfig>): Promise<this>;
+    kuwahara(config?: Partial<KuwaharaFilterConfig>): Promise<this>;
+    gaussian(sigma?: number): Promise<this>;
+    contrast(blackPoint?: number, whitePoint?: number): Promise<this>;
+    quantize(levels?: number): Promise<this>;
     /**
      * Add an arbitrary custom preprocessing strategy to the pipeline.
      * Bring your own backend selection if needed.
      */
     use(preprocessor: Preprocessor): this;
-    apply(input: ChannelImage): ChannelImage;
+    apply(input: ChannelImage): Promise<ChannelImage>;
+    /** Disposes every staged operation's resources and clears the pipeline. */
     clear(): this;
 }
 
@@ -1784,10 +1956,11 @@ declare const index$2_PreprocessingPresets: typeof PreprocessingPresets;
 type index$2_Quantizer = Quantizer;
 declare const index$2_Quantizer: typeof Quantizer;
 declare const index$2_disposeWebGL: typeof disposeWebGL;
+declare const index$2_disposeWebGPU: typeof disposeWebGPU;
 declare const index$2_isWebGLAvailable: typeof isWebGLAvailable;
 declare const index$2_webgl: typeof webgl;
 declare namespace index$2 {
-  export { index$2_BilateralFilter as BilateralFilter, index$2_ContrastEnhancer as ContrastEnhancer, index$2_GaussianBlur as GaussianBlur, index$2_KuwaharaFilter as KuwaharaFilter, index$2_LocalVariancePreprocessor as LocalVariancePreprocessor, index$2_LocalVariancePreprocessorOptimized as LocalVariancePreprocessorOptimized, index$2_MedianFilter as MedianFilter, index$2_PreprocessingPipeline as PreprocessingPipeline, index$2_PreprocessingPresets as PreprocessingPresets, index$2_Quantizer as Quantizer, index$2_disposeWebGL as disposeWebGL, index$2_isWebGLAvailable as isWebGLAvailable, index$2_webgl as webgl };
+  export { index$2_BilateralFilter as BilateralFilter, index$2_ContrastEnhancer as ContrastEnhancer, index$2_GaussianBlur as GaussianBlur, index$2_KuwaharaFilter as KuwaharaFilter, index$2_LocalVariancePreprocessor as LocalVariancePreprocessor, index$2_LocalVariancePreprocessorOptimized as LocalVariancePreprocessorOptimized, index$2_MedianFilter as MedianFilter, index$2_PreprocessingPipeline as PreprocessingPipeline, index$2_PreprocessingPresets as PreprocessingPresets, index$2_Quantizer as Quantizer, index$2_disposeWebGL as disposeWebGL, index$2_disposeWebGPU as disposeWebGPU, index$2_isWebGLAvailable as isWebGLAvailable, index$2_webgl as webgl };
   export type { index$2_BackendOptions as BackendOptions, index$2_LocalVarianceConfig as LocalVarianceConfig };
 }
 
@@ -2838,22 +3011,7 @@ declare const blendPriority: BlendFunction;
 /**
  * Collection of all built-in blend functions for easy access
  */
-declare const BlendFunctions: {
-    readonly average: BlendFunction;
-    readonly min: BlendFunction;
-    readonly max: BlendFunction;
-    readonly multiply: BlendFunction;
-    readonly screen: BlendFunction;
-    readonly softLight: BlendFunction;
-    readonly overlay: BlendFunction;
-    readonly geometricMean: BlendFunction;
-    readonly harmonicMean: BlendFunction;
-    readonly median: BlendFunction;
-    readonly softMin: BlendFunction;
-    readonly softMax: BlendFunction;
-    readonly difference: BlendFunction;
-    readonly priority: BlendFunction;
-};
+declare const BlendFunctions: Record<string, BlendFunction>;
 /**
  * Type representing the names of built-in blend functions
  */
@@ -3117,4 +3275,4 @@ declare namespace index {
 }
 
 export { DEFAULT_ETF_CONFIG, DoGProcessor, EdgeTangentFlowComputer, ThresholdModes, applyCustomThreshold, index$3 as blur, index$4 as dog, index as extensions, index$2 as preprocess, threshold, index$1 as utilities };
-export type { ADoGConfig, ADoGProcessingResult, ADogConfigParamType, AntiAliasingConfig, BackendOptions, BilateralFilterConfig, BlendFunction, BlurStrategy, BlurStrategyClass, ChannelImage, ColorRetentionConfig, ColorTransformFn, DoGConfig, DoGImplementation, DoGResult, DogConfigParamType, ETFConfig, ExtensionStrategy, FDoGConfig, FDogConfigParamType, FlowField, FlowGuidedBlurConfig, GradientAlignedBlurConfig, HDoGConfig, HDoGProcessingResult, HDogConfigParamType, HatchTexture, HatchingConfig, IsotropicBlurConfig, KuwaharaFilterConfig, LocalVarianceConfig, MaskTransformFn, MedianFilterConfig, MultiScaleConfig, MultiScaleLayer, NaturalMediaConfig, NaturalMediaStyle, ParamRange, PostProcessFn, Preprocessor, RGBImage$1 as RGBImage, ThresholdConfig, ThresholdStrategy, Vec2, XDoGConfig };
+export type { ADoGConfig, ADoGProcessingResult, ADogConfigParamType, AntiAliasingConfig, BackendOptions, BilateralFilterConfig, BlendFunction, BlurStrategy, ChannelImage, ColorRetentionConfig, ColorTransformFn, DoGConfig, DoGImplementation, DoGResult, DogConfigParamType, ETFConfig, ExtensionStrategy, FDoGConfig, FDogConfigParamType, FlowField, FlowGuidedBlurConfig, GradientAlignedBlurConfig, HDoGConfig, HDoGProcessingResult, HDogConfigParamType, HatchTexture, HatchingConfig, IsotropicBlurConfig, KuwaharaFilterConfig, LocalVarianceConfig, MaskTransformFn, MedianFilterConfig, MultiScaleConfig, MultiScaleLayer, NaturalMediaConfig, NaturalMediaStyle, ParamRange, PostProcessFn, Preprocessor, RGBImage$1 as RGBImage, ThresholdConfig, ThresholdStrategy, Vec2, XDoGConfig };

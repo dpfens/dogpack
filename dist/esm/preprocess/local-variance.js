@@ -9,38 +9,6 @@
  * structure) to `1` (pure texture) — from the local variance in a window
  * around each pixel, optionally normalized by the local gradient so that
  * subtle structural edges (e.g. wrinkles) aren't mistaken for texture.
- *
- * The map is not consumed directly by XDoG/FDoG. Callers instead derive
- * adaptive `p`/`epsilon` {@link ChannelImage} overrides from it
- * (`p_adaptive = p_base + alpha * textureStrength`, and similarly for
- * `epsilon`) and pass those into `DoGConfig`. Per Winnemöller et al. (2012),
- * `p` and `epsilon` should generally be varied together, since `p` alone
- * also shifts local brightness.
- *
- * This module only produces the texture map; it is not integrated into any
- * DoG implementation. See {@link LocalVariancePreprocessor} for the
- * reference implementation and {@link LocalVariancePreprocessorOptimized}
- * for a faster, separable-convolution variant suited to real-time use.
- *
- * @example
- * ```typescript
- * import { dog, preprocess } from 'dogpack';
- *
- * const preprocessor = new preprocess.LocalVariancePreprocessor({
- *   windowRadius: 2,
- *   normalizeByGradient: true,
- * });
- * const textureMap = preprocessor.process(grayImage);
- *
- * const pMap = buildAdaptiveMap(textureMap, { base: 20, sensitivity: -10 });
- * const epsilonMap = buildAdaptiveMap(textureMap, { base: 0.5, sensitivity: 0.3 });
- *
- * const xdog = new dog.XDoG({ sigma: 1.0, k: 1.6, phi: 10 });
- * const edgeMap = await xdog.process(grayImage, { p: pMap, epsilon: epsilonMap });
- * xdog.dispose();
- * ```
- *
- * @packageDocumentation
  */
 /**
  * Computes local variance as texture detection preprocessing
@@ -72,6 +40,8 @@
  */
 export class LocalVariancePreprocessor {
     config;
+    /** CPU-only — no WebGL/WebGPU counterpart exists for this preprocessor. */
+    backend = 'cpu';
     constructor(config = {}) {
         this.config = {
             windowRadius: config.windowRadius ?? 2, // 5x5 window by default
@@ -79,6 +49,9 @@ export class LocalVariancePreprocessor {
             varianceScale: config.varianceScale ?? 1.0,
             maxVariance: config.maxVariance,
         };
+    }
+    dispose() {
+        // No resources to release.
     }
     /**
      * Compute texture strength map from image
@@ -89,7 +62,7 @@ export class LocalVariancePreprocessor {
      *                     1 = pure texture (patterns, fine details)
      *          Developer uses these values to adapt XDoG parameters
      */
-    process(image) {
+    async process(image) {
         const result = new Float32Array(image.data.length);
         const { width, height, data } = image;
         const { windowRadius, normalizeByGradient, varianceScale, maxVariance } = this.config;
@@ -203,6 +176,8 @@ export class LocalVariancePreprocessor {
  */
 export class LocalVariancePreprocessorOptimized {
     config;
+    /** CPU-only — no WebGL/WebGPU counterpart exists for this preprocessor. */
+    backend = 'cpu';
     constructor(config = {}) {
         this.config = {
             windowRadius: config.windowRadius ?? 2,
@@ -211,12 +186,15 @@ export class LocalVariancePreprocessorOptimized {
             maxVariance: config.maxVariance,
         };
     }
+    dispose() {
+        // No resources to release.
+    }
     /**
      * Process using separable convolution (faster for large windows)
      * Variance = E[X^2] - E[X]^2
      * Compute box blur of X and X^2 separately, then combine
      */
-    process(image) {
+    async process(image) {
         const { width, height, data } = image;
         const { windowRadius, normalizeByGradient, varianceScale, maxVariance } = this.config;
         // Step 1: Compute E[X] (mean) via box filter

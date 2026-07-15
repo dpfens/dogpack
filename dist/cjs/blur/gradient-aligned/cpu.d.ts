@@ -5,12 +5,15 @@
  * Used for the DoG computation in FDoG, where we want to blur across
  * edges but not along them.
  */
-import { type BlurStrategy, type ChannelImage, type FlowField, type GradientAlignedBlurConfig } from '../../types.js';
-import { BaseCPUBlur } from '../base.js';
-export declare class CPUGradientAlignedBlur extends BaseCPUBlur implements BlurStrategy {
-    private flowField;
+import { type BlurStrategy, type ChannelImage, type FlowField, type GradientAlignedBlurBackendConfig } from '../../interfaces/base.js';
+import { BaseCPUStrategy } from '../../base.js';
+export declare class CPUGradientAlignedBlur extends BaseCPUStrategy implements BlurStrategy {
+    readonly backend: "cpu";
     private config;
-    constructor(flowField: FlowField, config?: Partial<GradientAlignedBlurConfig>);
+    private flowField;
+    constructor(config: GradientAlignedBlurBackendConfig);
+    /** CPU is always available — no environment capability to probe. */
+    static isSupported(): Promise<boolean>;
     dispose(): void;
     setFlowField(flowField: FlowField): void;
     blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
@@ -18,12 +21,5 @@ export declare class CPUGradientAlignedBlur extends BaseCPUBlur implements BlurS
      * Sample perpendicular to the flow direction
      */
     private sampleAcrossFlow;
-}
-export declare class GradientAlignedBlur implements BlurStrategy {
-    private instance;
-    constructor(flowField: FlowField, config?: Partial<GradientAlignedBlurConfig>);
-    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
-    setFlowField(flowField: FlowField): void;
-    dispose(): void;
 }
 //# sourceMappingURL=cpu.d.ts.map

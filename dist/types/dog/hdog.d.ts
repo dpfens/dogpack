@@ -4,8 +4,8 @@
  * This class provides a convenient wrapper that compose the blur strategies
  * and DoG processor together.
  */
-import { type ChannelImage } from '../types.js';
-import { type DoGImplementation, type HDoGConfig, type HDoGProcessingResult } from './types.js';
+import { type ChannelImage } from '../interfaces/base.js';
+import { type DoGImplementation, type HDoGConfig, type HDoGProcessingResult } from '../interfaces/dog.js';
 export declare class HDoG implements DoGImplementation {
     private fdog;
     private adogPrimary;

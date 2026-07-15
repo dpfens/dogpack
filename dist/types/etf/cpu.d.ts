@@ -20,19 +20,15 @@
  * the caller's responsibility (see utils/color.ts) and happens before
  * compute()/computeMultiChannel() is ever called.
  */
-import type { ChannelImage, FlowField, ETFConfig, ETFComputer } from '../types.js';
+import type { ChannelImage, FlowField, ETFConfig, ETFComputer } from '../interfaces/base.js';
+import { BaseCPUStrategy } from '../base.js';
 /**
  * CPU-backed ETFComputer. Synchronous under the hood, but exposes the
  * same async ETFComputer contract as the WebGL/WebGPU backends so callers
  * can swap implementations without caring which one they have.
  */
-export declare class CpuEdgeTangentFlowComputer implements ETFComputer {
-    /**
-     * The CPU backend has no environment dependency and is always available.
-     */
-    static isSupported(): boolean;
+export declare class CpuEdgeTangentFlowComputer extends BaseCPUStrategy implements ETFComputer {
     compute(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
     computeMultiChannel(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
-    dispose(): void;
 }
 //# sourceMappingURL=cpu.d.ts.map

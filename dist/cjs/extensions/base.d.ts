@@ -1,4 +1,4 @@
-import type { ChannelImage, FlowField } from '../types.js';
+import type { ChannelImage, FlowField } from '../interfaces/base.js';
 /**
  * Base interface for all extension strategies
  */

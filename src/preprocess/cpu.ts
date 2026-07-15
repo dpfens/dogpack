@@ -10,8 +10,9 @@
  */
 
 
-import type { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig, Preprocessor } from '../types.js';
+import type { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig, Preprocessor } from '../interfaces/base.js';
 import { createChannelImage, getPixel, generateGaussianKernel } from '../utils/index.js';
+import { BaseCPUStrategy } from '../base.js';
 
 
 const DEFAULT_BILATERAL_CONFIG: BilateralFilterConfig = {
@@ -41,15 +42,19 @@ const DEFAULT_KUWAHARA_CONFIG: KuwaharaFilterConfig = {
  * As mentioned in Section 3.2, bilateral filtering can serve as a
  * "prioritization mechanism" for indication - attenuating weak edges
  * while supporting strong edges.
+ *
+ * CPU is always available (BaseCPUStrategy.isSupported() / dispose() /
+ * backend all apply unchanged) — this is the universal fallback.
  */
-export class BilateralFilter implements Preprocessor {
+export class BilateralFilter extends BaseCPUStrategy implements Preprocessor {
   private readonly config: BilateralFilterConfig;
 
   constructor(config: Partial<BilateralFilterConfig> = {}) {
+    super();
     this.config = { ...DEFAULT_BILATERAL_CONFIG, ...config };
   }
 
-  process(input: ChannelImage): ChannelImage {
+  async process(input: ChannelImage): Promise<ChannelImage> {
     const cfg = this.config;
     const { width, height } = input;
     const output = createChannelImage(width, height);
@@ -108,14 +113,15 @@ export class BilateralFilter implements Preprocessor {
  * Replaces each pixel with the median of its neighborhood.
  * Excellent for removing salt-and-pepper noise and small texture details.
  */
-export class MedianFilter implements Preprocessor {
+export class MedianFilter extends BaseCPUStrategy implements Preprocessor {
   private readonly config: MedianFilterConfig;
 
   constructor(config: Partial<MedianFilterConfig> = {}) {
+    super();
     this.config = { ...DEFAULT_MEDIAN_CONFIG, ...config };
   }
 
-  process(input: ChannelImage): ChannelImage {
+  async process(input: ChannelImage): Promise<ChannelImage> {
     const { width, height } = input;
     const output = createChannelImage(width, height);
 
@@ -151,14 +157,15 @@ export class MedianFilter implements Preprocessor {
  * lowest variance, and uses its mean. Creates flat regions with
  * preserved edges - great for a more stylized look.
  */
-export class KuwaharaFilter implements Preprocessor {
+export class KuwaharaFilter extends BaseCPUStrategy implements Preprocessor {
   private readonly config: KuwaharaFilterConfig;
 
   constructor(config: Partial<KuwaharaFilterConfig> = {}) {
+    super();
     this.config = { ...DEFAULT_KUWAHARA_CONFIG, ...config };
   }
 
-  process(input: ChannelImage): ChannelImage {
+  async process(input: ChannelImage): Promise<ChannelImage> {
     const { width, height } = input;
     const output = createChannelImage(width, height);
 
@@ -214,14 +221,15 @@ export class KuwaharaFilter implements Preprocessor {
  * Simple Gaussian smoothing. Less edge-preserving than bilateral,
  * but faster. Good for very noisy images or when used with small sigma.
  */
-export class GaussianBlur implements Preprocessor {
+export class GaussianBlur extends BaseCPUStrategy implements Preprocessor {
   private readonly sigma: number;
 
   constructor(sigma: number = 1.0) {
+    super();
     this.sigma = sigma;
   }
 
-  process(input: ChannelImage): ChannelImage {
+  async process(input: ChannelImage): Promise<ChannelImage> {
     const { width, height } = input;
     const sigma = this.sigma;
 
@@ -267,16 +275,17 @@ export class GaussianBlur implements Preprocessor {
  * Stretches the histogram to use the full 0-1 range.
  * Can help make edges more distinct before processing.
  */
-export class ContrastEnhancer implements Preprocessor {
+export class ContrastEnhancer extends BaseCPUStrategy implements Preprocessor {
   private readonly blackPoint: number;
   private readonly whitePoint: number;
 
   constructor(blackPoint: number = 0.01, whitePoint: number = 0.99) {
+    super();
     this.blackPoint = blackPoint;
     this.whitePoint = whitePoint;
   }
 
-  process(input: ChannelImage): ChannelImage {
+  async process(input: ChannelImage): Promise<ChannelImage> {
     const { width, height, data } = input;
     const output = createChannelImage(width, height);
     const size = width * height;
@@ -305,14 +314,15 @@ export class ContrastEnhancer implements Preprocessor {
  * Reduces the number of intensity levels, creating a posterized effect.
  * Can help reduce noise by grouping similar intensities together.
  */
-export class Quantizer implements Preprocessor {
+export class Quantizer extends BaseCPUStrategy implements Preprocessor {
   private readonly levels: number;
 
   constructor(levels: number = 8) {
+    super();
     this.levels = levels;
   }
 
-  process(input: ChannelImage): ChannelImage {
+  async process(input: ChannelImage): Promise<ChannelImage> {
     const { width, height, data } = input;
     const output = createChannelImage(width, height);
     const size = width * height;
@@ -335,15 +345,15 @@ export const PreprocessingPresets = {
    * Light preprocessing - minimal smoothing
    * Good for: Clean studio photos, illustrations
    */
-  light: (input: ChannelImage): ChannelImage => {
-    return new BilateralFilter({ sigmaSpatial: 2, sigmaRange: 0.08 }).process(input);
+  light: async (input: ChannelImage): Promise<ChannelImage> => {
+    return await new BilateralFilter({ sigmaSpatial: 2, sigmaRange: 0.08 }).process(input);
   },
 
   /**
    * Standard preprocessing - balanced smoothing
    * Good for: Most outdoor photos, portraits
    */
-  standard: (input: ChannelImage): ChannelImage => {
+  standard: async (input: ChannelImage): Promise<ChannelImage> => {
     return new BilateralFilter({ sigmaSpatial: 4, sigmaRange: 0.1 }).process(input);
   },
 
@@ -351,9 +361,9 @@ export const PreprocessingPresets = {
    * Heavy preprocessing - aggressive noise removal
    * Good for: Very textured images (grass, foliage, fabric)
    */
-  heavy: (input: ChannelImage): ChannelImage => {
-    let result = new BilateralFilter({ sigmaSpatial: 5, sigmaRange: 0.12 }).process(input);
-    result = new BilateralFilter({ sigmaSpatial: 3, sigmaRange: 0.1 }).process(result);
+  heavy: async (input: ChannelImage): Promise<ChannelImage> => {
+    let result = await new BilateralFilter({ sigmaSpatial: 5, sigmaRange: 0.12 }).process(input);
+    result = await new BilateralFilter({ sigmaSpatial: 3, sigmaRange: 0.1 }).process(result);
     return result;
   },
 
@@ -361,9 +371,9 @@ export const PreprocessingPresets = {
    * Artistic preprocessing - painterly smoothing
    * Good for: Stylized/artistic output
    */
-  artistic: (input: ChannelImage): ChannelImage => {
-    let result = new KuwaharaFilter({ radius: 4 }).process(input);
-    result = new BilateralFilter({ sigmaSpatial: 2, sigmaRange: 0.08 }).process(result);
+  artistic: async (input: ChannelImage): Promise<ChannelImage> => {
+    let result = await new KuwaharaFilter({ radius: 4 }).process(input);
+    result = await new BilateralFilter({ sigmaSpatial: 2, sigmaRange: 0.08 }).process(result);
     return result;
   },
 
@@ -371,11 +381,11 @@ export const PreprocessingPresets = {
    * Photo preprocessing - for photos with grass/nature
    * Good for: Landscape, outdoor scenes
    */
-  nature: (input: ChannelImage): ChannelImage => {
+  nature: async (input: ChannelImage): Promise<ChannelImage> => {
     // First pass: aggressive bilateral to smooth texture
-    let result = new BilateralFilter({ sigmaSpatial: 6, sigmaRange: 0.15 }).process(input);
+    let result = await new BilateralFilter({ sigmaSpatial: 6, sigmaRange: 0.15 }).process(input);
     // Second pass: lighter bilateral to clean up
-    result = new BilateralFilter({ sigmaSpatial: 3, sigmaRange: 0.08 }).process(result);
+    result = await new BilateralFilter({ sigmaSpatial: 3, sigmaRange: 0.08 }).process(result);
     return result;
   },
 };
@@ -445,10 +455,10 @@ export class PreprocessingPipeline {
   /**
    * Apply all operations in sequence
    */
-  apply(input: ChannelImage): ChannelImage {
+  async apply(input: ChannelImage): Promise<ChannelImage> {
     let result = input;
     for (const op of this.operations) {
-      result = op.process(result);
+      result = await op.process(result);
     }
     return result;
   }

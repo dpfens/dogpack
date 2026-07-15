@@ -14,12 +14,12 @@ exports.ThresholdModes = exports.DoGProcessor = void 0;
 exports.applyCustomThreshold = applyCustomThreshold;
 const index_js_1 = require("./utils/index.js");
 const threshold_js_1 = require("./threshold.js");
-const types_js_1 = require("./dog/types.js");
+const dog_js_1 = require("./interfaces/dog.js");
 /**
  * Difference of Gaussians processor
  *
  * Uses the reparameterized formulation (Equation 7):
- * S_σ,k,p(x) = G_σ(x) + p · D_σ,k(x) = (1 + p) · G_σ(x) - p · G_kσ(x)
+ * S_σ,k,p(x) = G_σ(x) + p x D_σ,k(x) = (1 + p) x G_σ(x) - p x G_kσ(x)
  *
  * This is equivalent to unsharp masking of the blurred image, which
  * decouples edge sharpening strength (p) from threshold parameters.
@@ -35,7 +35,7 @@ class DoGProcessor {
     thresholdStrategy;
     constructor(blurStrategy, config = {}) {
         this.blurStrategy = blurStrategy;
-        this.config = { ...types_js_1.DEFAULT_DOG_CONFIG, ...config };
+        this.config = { ...dog_js_1.DEFAULT_DOG_CONFIG, ...config };
         this.thresholdStrategy = config.thresholdStrategy ?? new threshold_js_1.SoftThresholdStrategy();
     }
     dispose() {
@@ -149,7 +149,7 @@ class DoGProcessor {
     }
     /**
      * Compute sharpened image using Equation 7 from the paper:
-     * S_σ,k,p(x) = G_σ(x) + p · D_σ,k(x) = (1 + p) · G_σ(x) - p · G_kσ(x)
+     * S_σ,k,p(x) = G_σ(x) + p x D_σ,k(x) = (1 + p) x G_σ(x) - p x G_kσ(x)
      *
      * This can be understood as unsharp masking of the blurred image.
      * The parameter p controls the edge sharpening strength independently

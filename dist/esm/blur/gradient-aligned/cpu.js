@@ -5,16 +5,21 @@
  * Used for the DoG computation in FDoG, where we want to blur across
  * edges but not along them.
  */
-import { DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG } from '../../types.js';
+import { DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, } from '../../interfaces/base.js';
 import { createChannelImage, getPixelBilinear, generateGaussianKernel } from '../../utils/index.js';
-import { BaseCPUBlur } from '../base.js';
-export class CPUGradientAlignedBlur extends BaseCPUBlur {
-    flowField;
+import { BaseCPUStrategy } from '../../base.js';
+export class CPUGradientAlignedBlur extends BaseCPUStrategy {
+    backend = 'cpu';
     config;
-    constructor(flowField, config = {}) {
+    flowField;
+    constructor(config) {
         super();
-        this.flowField = flowField;
+        this.flowField = config.flowField;
         this.config = { ...DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, ...config };
+    }
+    /** CPU is always available — no environment capability to probe. */
+    static async isSupported() {
+        return true;
     }
     dispose() { }
     setFlowField(flowField) {
@@ -80,25 +85,6 @@ export class CPUGradientAlignedBlur extends BaseCPUBlur {
             weightSum += weights[idx];
         }
         return weightSum > 0 ? sum / weightSum : 0;
-    }
-}
-export class GradientAlignedBlur {
-    instance;
-    constructor(flowField, config = {}) {
-        this.instance = new CPUGradientAlignedBlur(flowField, config);
-    }
-    async blur(input, sigma) {
-        return this.instance.blur(input, sigma);
-    }
-    setFlowField(flowField) {
-        if (this.instance.setFlowField) {
-            this.instance.setFlowField(flowField);
-        }
-    }
-    dispose() {
-        if (this.instance.dispose) {
-            this.instance.dispose();
-        }
     }
 }
 //# sourceMappingURL=cpu.js.map

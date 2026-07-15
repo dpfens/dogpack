@@ -9,6 +9,7 @@
  * preserving strong edges.
  */
 import { createChannelImage, getPixel, generateGaussianKernel } from '../utils/index.js';
+import { BaseCPUStrategy } from '../base.js';
 const DEFAULT_BILATERAL_CONFIG = {
     sigmaSpatial: 3,
     sigmaRange: 0.1,
@@ -32,13 +33,17 @@ const DEFAULT_KUWAHARA_CONFIG = {
  * As mentioned in Section 3.2, bilateral filtering can serve as a
  * "prioritization mechanism" for indication - attenuating weak edges
  * while supporting strong edges.
+ *
+ * CPU is always available (BaseCPUStrategy.isSupported() / dispose() /
+ * backend all apply unchanged) — this is the universal fallback.
  */
-export class BilateralFilter {
+export class BilateralFilter extends BaseCPUStrategy {
     config;
     constructor(config = {}) {
+        super();
         this.config = { ...DEFAULT_BILATERAL_CONFIG, ...config };
     }
-    process(input) {
+    async process(input) {
         const cfg = this.config;
         const { width, height } = input;
         const output = createChannelImage(width, height);
@@ -86,12 +91,13 @@ export class BilateralFilter {
  * Replaces each pixel with the median of its neighborhood.
  * Excellent for removing salt-and-pepper noise and small texture details.
  */
-export class MedianFilter {
+export class MedianFilter extends BaseCPUStrategy {
     config;
     constructor(config = {}) {
+        super();
         this.config = { ...DEFAULT_MEDIAN_CONFIG, ...config };
     }
-    process(input) {
+    async process(input) {
         const { width, height } = input;
         const output = createChannelImage(width, height);
         const radius = this.config.radius;
@@ -121,12 +127,13 @@ export class MedianFilter {
  * lowest variance, and uses its mean. Creates flat regions with
  * preserved edges - great for a more stylized look.
  */
-export class KuwaharaFilter {
+export class KuwaharaFilter extends BaseCPUStrategy {
     config;
     constructor(config = {}) {
+        super();
         this.config = { ...DEFAULT_KUWAHARA_CONFIG, ...config };
     }
-    process(input) {
+    async process(input) {
         const { width, height } = input;
         const output = createChannelImage(width, height);
         const r = this.config.radius;
@@ -172,12 +179,13 @@ export class KuwaharaFilter {
  * Simple Gaussian smoothing. Less edge-preserving than bilateral,
  * but faster. Good for very noisy images or when used with small sigma.
  */
-export class GaussianBlur {
+export class GaussianBlur extends BaseCPUStrategy {
     sigma;
     constructor(sigma = 1.0) {
+        super();
         this.sigma = sigma;
     }
-    process(input) {
+    async process(input) {
         const { width, height } = input;
         const sigma = this.sigma;
         if (sigma < 0.1) {
@@ -217,14 +225,15 @@ export class GaussianBlur {
  * Stretches the histogram to use the full 0-1 range.
  * Can help make edges more distinct before processing.
  */
-export class ContrastEnhancer {
+export class ContrastEnhancer extends BaseCPUStrategy {
     blackPoint;
     whitePoint;
     constructor(blackPoint = 0.01, whitePoint = 0.99) {
+        super();
         this.blackPoint = blackPoint;
         this.whitePoint = whitePoint;
     }
-    process(input) {
+    async process(input) {
         const { width, height, data } = input;
         const output = createChannelImage(width, height);
         const size = width * height;
@@ -248,12 +257,13 @@ export class ContrastEnhancer {
  * Reduces the number of intensity levels, creating a posterized effect.
  * Can help reduce noise by grouping similar intensities together.
  */
-export class Quantizer {
+export class Quantizer extends BaseCPUStrategy {
     levels;
     constructor(levels = 8) {
+        super();
         this.levels = levels;
     }
-    process(input) {
+    async process(input) {
         const { width, height, data } = input;
         const output = createChannelImage(width, height);
         const size = width * height;
@@ -272,43 +282,43 @@ export const PreprocessingPresets = {
      * Light preprocessing - minimal smoothing
      * Good for: Clean studio photos, illustrations
      */
-    light: (input) => {
-        return new BilateralFilter({ sigmaSpatial: 2, sigmaRange: 0.08 }).process(input);
+    light: async (input) => {
+        return await new BilateralFilter({ sigmaSpatial: 2, sigmaRange: 0.08 }).process(input);
     },
     /**
      * Standard preprocessing - balanced smoothing
      * Good for: Most outdoor photos, portraits
      */
-    standard: (input) => {
+    standard: async (input) => {
         return new BilateralFilter({ sigmaSpatial: 4, sigmaRange: 0.1 }).process(input);
     },
     /**
      * Heavy preprocessing - aggressive noise removal
      * Good for: Very textured images (grass, foliage, fabric)
      */
-    heavy: (input) => {
-        let result = new BilateralFilter({ sigmaSpatial: 5, sigmaRange: 0.12 }).process(input);
-        result = new BilateralFilter({ sigmaSpatial: 3, sigmaRange: 0.1 }).process(result);
+    heavy: async (input) => {
+        let result = await new BilateralFilter({ sigmaSpatial: 5, sigmaRange: 0.12 }).process(input);
+        result = await new BilateralFilter({ sigmaSpatial: 3, sigmaRange: 0.1 }).process(result);
         return result;
     },
     /**
      * Artistic preprocessing - painterly smoothing
      * Good for: Stylized/artistic output
      */
-    artistic: (input) => {
-        let result = new KuwaharaFilter({ radius: 4 }).process(input);
-        result = new BilateralFilter({ sigmaSpatial: 2, sigmaRange: 0.08 }).process(result);
+    artistic: async (input) => {
+        let result = await new KuwaharaFilter({ radius: 4 }).process(input);
+        result = await new BilateralFilter({ sigmaSpatial: 2, sigmaRange: 0.08 }).process(result);
         return result;
     },
     /**
      * Photo preprocessing - for photos with grass/nature
      * Good for: Landscape, outdoor scenes
      */
-    nature: (input) => {
+    nature: async (input) => {
         // First pass: aggressive bilateral to smooth texture
-        let result = new BilateralFilter({ sigmaSpatial: 6, sigmaRange: 0.15 }).process(input);
+        let result = await new BilateralFilter({ sigmaSpatial: 6, sigmaRange: 0.15 }).process(input);
         // Second pass: lighter bilateral to clean up
-        result = new BilateralFilter({ sigmaSpatial: 3, sigmaRange: 0.08 }).process(result);
+        result = await new BilateralFilter({ sigmaSpatial: 3, sigmaRange: 0.08 }).process(result);
         return result;
     },
 };
@@ -369,10 +379,10 @@ export class PreprocessingPipeline {
     /**
      * Apply all operations in sequence
      */
-    apply(input) {
+    async apply(input) {
         let result = input;
         for (const op of this.operations) {
-            result = op.process(result);
+            result = await op.process(result);
         }
         return result;
     }

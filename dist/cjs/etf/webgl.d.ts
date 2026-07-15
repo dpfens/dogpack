@@ -12,25 +12,22 @@
  * accumulator framebuffer, rather than reading tensors back to JS and
  * summing them there. Everything from the Gaussian blur pass onward is
  * identical whether the accumulated tensor came from one channel or many.
- *
- * This module has no knowledge of color spaces. It operates purely on
- * ChannelImage scalar fields uploaded as single-channel textures; RGB/Lab/
- * etc. splitting and conversion is the caller's responsibility (see
- * utils/color.ts) and happens before compute()/computeMultiChannel() is
- * ever called.
  */
-import type { ChannelImage, FlowField, ETFConfig, ETFComputer } from '../types.js';
+import type { ChannelImage, FlowField, ETFConfig, ETFComputer } from '../interfaces/base.js';
+import { BaseWebGLStrategy } from '../base.js';
 /**
  * WebGL-backed ETFComputer. Holds a lazily-initialized GPU context and
  * shader programs; call dispose() when done to release them.
  */
-export declare class WebGLEdgeTangentFlowComputer implements ETFComputer {
+export declare class WebGLEdgeTangentFlowComputer extends BaseWebGLStrategy implements ETFComputer {
     private resources;
     /**
      * Check if WebGL2 with the required float texture extensions is
-     * supported in the current environment.
+     * supported in the current environment. Async to match the
+     * `ETFComputerCtor` shape shared with the WebGPU backend, even though
+     * this particular check is cheap and synchronous under the hood.
      */
-    static isSupported(): boolean;
+    static isSupported(): Promise<boolean>;
     static getUnsupportedReason(): string | undefined;
     compute(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
     computeMultiChannel(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;

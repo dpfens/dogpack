@@ -2,7 +2,7 @@
 // Utility Functions
 // =============================================================================
 
-import type { ChannelImage } from '../types.js';
+import type { ChannelImage } from '../interfaces/base.js';
 import { createChannelImage } from '../utils/index.js';
 import type { RGBImage } from './base.js';
 

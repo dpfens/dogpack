@@ -98,8 +98,8 @@ Object.defineProperty(exports, "EdgeTangentFlowComputer", { enumerable: true, ge
 // Preprocessing
 exports.preprocess = require("./preprocess/index.js");
 exports.threshold = require("./threshold.js");
-var types_js_1 = require("./types.js");
-Object.defineProperty(exports, "DEFAULT_ETF_CONFIG", { enumerable: true, get: function () { return types_js_1.DEFAULT_ETF_CONFIG; } });
+var base_js_1 = require("./interfaces/base.js");
+Object.defineProperty(exports, "DEFAULT_ETF_CONFIG", { enumerable: true, get: function () { return base_js_1.DEFAULT_ETF_CONFIG; } });
 // Utilities
 exports.utilities = require("./utils/index.js");
 // Extensions (composable strategies for advanced stylization)

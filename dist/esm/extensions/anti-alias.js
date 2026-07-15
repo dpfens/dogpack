@@ -32,7 +32,7 @@ export class AntiAliasingStrategy {
         if (cfg.sigma <= 0) {
             return { data: new Float32Array(image.data), width: image.width, height: image.height };
         }
-        const flowBlur = new FlowGuidedBlur(etf, { stepSize: cfg.stepSize });
+        const flowBlur = await FlowGuidedBlur.create(etf, { stepSize: cfg.stepSize });
         const result = flowBlur.blur(image, cfg.sigma);
         flowBlur.dispose();
         return result;

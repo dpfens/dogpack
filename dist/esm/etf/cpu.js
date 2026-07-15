@@ -20,21 +20,16 @@
  * the caller's responsibility (see utils/color.ts) and happens before
  * compute()/computeMultiChannel() is ever called.
  */
-import { DEFAULT_ETF_CONFIG } from '../types.js';
+import { DEFAULT_ETF_CONFIG } from '../interfaces/base.js';
 import { normalizeVec2, dotVec2, generateGaussianKernel } from '../utils/index.js';
 import { TangentFlowField } from './flow-field.js';
+import { BaseCPUStrategy } from '../base.js';
 /**
  * CPU-backed ETFComputer. Synchronous under the hood, but exposes the
  * same async ETFComputer contract as the WebGL/WebGPU backends so callers
  * can swap implementations without caring which one they have.
  */
-export class CpuEdgeTangentFlowComputer {
-    /**
-     * The CPU backend has no environment dependency and is always available.
-     */
-    static isSupported() {
-        return true;
-    }
+export class CpuEdgeTangentFlowComputer extends BaseCPUStrategy {
     async compute(input, config = {}, sigmaC) {
         const channelTensor = computeChannelTensor(input);
         return buildFlowField(channelTensor, input.width, input.height, config, sigmaC);
@@ -52,9 +47,6 @@ export class CpuEdgeTangentFlowComputer {
         const channelTensors = inputs.map(computeChannelTensor);
         const combined = sumChannelTensors(channelTensors, width, height);
         return buildFlowField(combined, width, height, config, sigmaC);
-    }
-    dispose() {
-        // No GPU resources to release for the CPU backend.
     }
 }
 /**

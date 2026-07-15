@@ -4,8 +4,8 @@
  * These classes provide convenient wrappers that compose the blur strategies
  * and DoG processor together.
  */
-import { type ChannelImage } from '../types.js';
-import { type ADoGConfig, type ADoGProcessingResult, type DoGImplementation } from './types.js';
+import { type ChannelImage } from '../interfaces/base.js';
+import { type ADoGConfig, type ADoGProcessingResult, type DoGImplementation } from '../interfaces/dog.js';
 export declare class ADoG implements DoGImplementation {
     private config;
     private blurStrategy;
@@ -13,16 +13,6 @@ export declare class ADoG implements DoGImplementation {
     dispose(): void;
     /**
      * Process a grayscale image through the ADoG pipeline.
-     *
-     * Note on the DoGImplementation interface: this method's `overrides` is
-     * typed against Partial<ADoGConfig> (a superset of DoGConfig), which
-     * satisfies DoGImplementation's Partial<DoGConfig> parameter type via
-     * TypeScript's bivariant method-parameter checking. A caller holding this
-     * instance through the DoGImplementation interface type (rather than the
-     * concrete ADoG type) can only type-check overrides for fields that exist
-     * on DoGConfig (sigma, k, epsilon, phi, ...) -- tau/s/noiseScaleC are only
-     * overridable when the caller has a concrete ADoG reference. No data is
-     * lost; this only affects what's type-checkable through the narrower view.
      */
     process(input: ChannelImage, overrides?: Partial<ADoGConfig>): Promise<ChannelImage>;
     processDetailed(input: ChannelImage, overrides?: Partial<ADoGConfig>): Promise<ADoGProcessingResult>;
@@ -38,7 +28,7 @@ export declare class ADoG implements DoGImplementation {
     /**
      * Update configuration
      */
-    setConfig(config: Partial<ADoGConfig>): void;
+    setConfig(config: Partial<ADoGConfig>): Promise<void>;
     /** Eq. (5): rho(x) = tau + (1 - tau) * (1 - tanh(s * I(x))) */
     private computeRhoMap;
     /** Eq. (6): sigma(x) = c * (1 - tanh(s * I(x))); sampled noise ~ N(0,1) * sigma(x) added to I(x) */

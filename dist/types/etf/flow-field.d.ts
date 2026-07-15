@@ -12,7 +12,7 @@
  * stride-2 Float32Array either way, so getTangent/getTangentArray/
  * visualize/visualizeColor are implemented exactly once.
  */
-import type { ChannelImage, FlowField, Vec2 } from '../types.js';
+import type { ChannelImage, FlowField, Vec2 } from '../interfaces/base.js';
 export declare class TangentFlowField implements FlowField {
     private readonly tangents;
     readonly width: number;

@@ -1,4 +1,4 @@
-import type { ChannelImage } from '../types.js';
+import type { ChannelImage } from '../interfaces/base.js';
 import { FDoG, XDoG, type FDoGConfig } from '../dog/index.js';
 import type { ExtensionStrategy } from './base.js';
 

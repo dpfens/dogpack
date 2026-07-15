@@ -879,8 +879,7 @@
             dog,
             utilities,
             preprocess,
-            extensions,
-            EdgeTangentFlow
+            extensions
         } from './dist/bundle/index.mjs';
 
         // State
@@ -1113,7 +1112,7 @@
                 let luminance = utilities.imageDataToLuminance(imageData);
                 
                 // Apply preprocessing
-                luminance = applyPreprocessing(luminance);
+                luminance = await applyPreprocessing(luminance);
                 
                 let result;
                 let resultImageData;

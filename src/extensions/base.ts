@@ -1,7 +1,7 @@
 import type { 
   ChannelImage,
   FlowField, 
-} from '../types.js';
+} from '../interfaces/base.js';
 
 // =============================================================================
 // Core Types

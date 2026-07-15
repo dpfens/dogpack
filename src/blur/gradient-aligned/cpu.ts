@@ -5,20 +5,32 @@
  * Used for the DoG computation in FDoG, where we want to blur across
  * edges but not along them.
  */
-import { DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, type BlurStrategy, type ChannelImage, type FlowField, type GradientAlignedBlurConfig } from '../../types.js';
+import {
+  DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG,
+  type BlurStrategy,
+  type ChannelImage,
+  type FlowField,
+  type GradientAlignedBlurBackendConfig,
+  type GradientAlignedBlurConfig,
+} from '../../interfaces/base.js';
 import { createChannelImage, getPixelBilinear, generateGaussianKernel } from '../../utils/index.js';
-import { BaseCPUBlur } from '../base.js';
+import { BaseCPUStrategy } from '../../base.js';
 
 
-export class CPUGradientAlignedBlur extends BaseCPUBlur implements BlurStrategy {
+export class CPUGradientAlignedBlur extends BaseCPUStrategy implements BlurStrategy {
+  readonly backend = 'cpu' as const;
   private config: GradientAlignedBlurConfig;
-  
-  constructor(
-    private flowField: FlowField,
-    config: Partial<GradientAlignedBlurConfig> = {}
-  ) {
+  private flowField: FlowField;
+
+  constructor(config: GradientAlignedBlurBackendConfig) {
     super();
+    this.flowField = config.flowField;
     this.config = { ...DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, ...config };
+  }
+
+  /** CPU is always available — no environment capability to probe. */
+  static async isSupported(): Promise<boolean> {
+    return true;
   }
 
   dispose(): void {}
@@ -107,29 +119,5 @@ export class CPUGradientAlignedBlur extends BaseCPUBlur implements BlurStrategy 
     }
     
     return weightSum > 0 ? sum / weightSum : 0;
-  }
-}
-
-export class GradientAlignedBlur implements BlurStrategy {
-  private instance: BlurStrategy & { setFlowField?(flowField: FlowField): void; dispose?(): void };
-  
-  constructor(flowField: FlowField, config: Partial<GradientAlignedBlurConfig> = {}) {
-    this.instance = new CPUGradientAlignedBlur(flowField, config);
-  }
-  
-  async blur(input: ChannelImage, sigma: number): Promise<ChannelImage> {
-    return this.instance.blur(input, sigma);
-  }
-  
-  setFlowField(flowField: FlowField): void {
-    if (this.instance.setFlowField) {
-      this.instance.setFlowField(flowField);
-    }
-  }
-  
-  dispose(): void {
-    if (this.instance.dispose) {
-      this.instance.dispose();
-    }
   }
 }

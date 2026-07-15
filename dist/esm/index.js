@@ -91,7 +91,7 @@ export { EdgeTangentFlowComputer } from './etf/index.js';
 // Preprocessing
 export * as preprocess from './preprocess/index.js';
 export * as threshold from './threshold.js';
-export { DEFAULT_ETF_CONFIG } from './types.js';
+export { DEFAULT_ETF_CONFIG } from './interfaces/base.js';
 // Utilities
 export * as utilities from './utils/index.js';
 // Extensions (composable strategies for advanced stylization)

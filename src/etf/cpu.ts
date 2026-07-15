@@ -30,24 +30,18 @@ import type {
   Gradients,
   ChannelTensor,
   ETFComputer,
-} from '../types.js';
-import { DEFAULT_ETF_CONFIG } from '../types.js';
+} from '../interfaces/base.js';
+import { DEFAULT_ETF_CONFIG } from '../interfaces/base.js';
 import { normalizeVec2, dotVec2, generateGaussianKernel } from '../utils/index.js';
 import { TangentFlowField } from './flow-field.js';
+import { BaseCPUStrategy } from '../base.js';
 
 /**
  * CPU-backed ETFComputer. Synchronous under the hood, but exposes the
  * same async ETFComputer contract as the WebGL/WebGPU backends so callers
  * can swap implementations without caring which one they have.
  */
-export class CpuEdgeTangentFlowComputer implements ETFComputer {
-  /**
-   * The CPU backend has no environment dependency and is always available.
-   */
-  static isSupported(): boolean {
-    return true;
-  }
-
+export class CpuEdgeTangentFlowComputer extends BaseCPUStrategy implements ETFComputer {
   async compute(
     input: ChannelImage,
     config: Partial<ETFConfig> = {},
@@ -76,10 +70,6 @@ export class CpuEdgeTangentFlowComputer implements ETFComputer {
     const combined = sumChannelTensors(channelTensors, width, height);
 
     return buildFlowField(combined, width, height, config, sigmaC);
-  }
-
-  dispose(): void {
-    // No GPU resources to release for the CPU backend.
   }
 }
 

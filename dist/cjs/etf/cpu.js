@@ -23,21 +23,16 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CpuEdgeTangentFlowComputer = void 0;
-const types_js_1 = require("../types.js");
+const base_js_1 = require("../interfaces/base.js");
 const index_js_1 = require("../utils/index.js");
 const flow_field_js_1 = require("./flow-field.js");
+const base_js_2 = require("../base.js");
 /**
  * CPU-backed ETFComputer. Synchronous under the hood, but exposes the
  * same async ETFComputer contract as the WebGL/WebGPU backends so callers
  * can swap implementations without caring which one they have.
  */
-class CpuEdgeTangentFlowComputer {
-    /**
-     * The CPU backend has no environment dependency and is always available.
-     */
-    static isSupported() {
-        return true;
-    }
+class CpuEdgeTangentFlowComputer extends base_js_2.BaseCPUStrategy {
     async compute(input, config = {}, sigmaC) {
         const channelTensor = computeChannelTensor(input);
         return buildFlowField(channelTensor, input.width, input.height, config, sigmaC);
@@ -56,9 +51,6 @@ class CpuEdgeTangentFlowComputer {
         const combined = sumChannelTensors(channelTensors, width, height);
         return buildFlowField(combined, width, height, config, sigmaC);
     }
-    dispose() {
-        // No GPU resources to release for the CPU backend.
-    }
 }
 exports.CpuEdgeTangentFlowComputer = CpuEdgeTangentFlowComputer;
 /**
@@ -68,7 +60,7 @@ exports.CpuEdgeTangentFlowComputer = CpuEdgeTangentFlowComputer;
  * computeMultiChannel() above.
  */
 function buildFlowField(channelTensor, width, height, config, sigmaC) {
-    const cfg = { ...types_js_1.DEFAULT_ETF_CONFIG, ...config };
+    const cfg = { ...base_js_1.DEFAULT_ETF_CONFIG, ...config };
     // Smooth the structure tensor with Gaussian (not box filter!)
     // Paper specifies sampling within 2.45 * σc for structure tensor blur
     const smoothSigma = sigmaC ?? (cfg.kernelSize / 2.45);

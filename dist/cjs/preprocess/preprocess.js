@@ -3,202 +3,262 @@
  * Composed Preprocessing Module for XDoG/FDoG
  *
  * This module is the single entry point the rest of the codebase should
- * import from. Each exported class picks its backend ONCE, at
- * construction time:
+ * import from. Each exported class resolves its OWN best-supported
+ * backend independently (WebGPU > WebGL > CPU), the first time it's
+ * created:
  *
- *   - WebGL 2.0 available  -> delegates to the GPU implementation (webgl.ts)
- *   - WebGL 2.0 unavailable -> delegates to the CPU implementation (cpu.ts)
+ *   BilateralFilter.create(...)  // may end up WebGPU on this device
+ *   MedianFilter.create(...)     // may end up WebGL on this device, if
+ *                                // e.g. it needs a storage texture format
+ *                                // WebGPU can't provide here
+ *
+ * A device can support WebGPU for one algorithm and not another, so
+ * resolution happens per class, not once globally for the whole module —
+ * this follows the same pattern used for BlurStrategy/ETFComputer.
+ *
+ * If a backend fails mid-session (driver crash, lost context), each
+ * instance demotes itself to the next supported candidate once and
+ * retries the call that failed; that shared retry/demote machinery lives
+ * in `ResilientPreprocessor`, not duplicated per filter.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.disposeWebGL = exports.isWebGLAvailable = exports.PreprocessingPipeline = exports.PreprocessingPresets = exports.Quantizer = exports.ContrastEnhancer = exports.GaussianBlur = exports.KuwaharaFilter = exports.MedianFilter = exports.BilateralFilter = void 0;
+exports.disposeWebGPU = exports.disposeWebGL = exports.isWebGLAvailable = exports.PreprocessingPipeline = exports.PreprocessingPresets = exports.Quantizer = exports.ContrastEnhancer = exports.GaussianBlur = exports.KuwaharaFilter = exports.MedianFilter = exports.BilateralFilter = void 0;
+const resilient_preprocessor_js_1 = require("./resilient-preprocessor.js");
 const webgl_js_1 = require("./webgl.js");
 Object.defineProperty(exports, "isWebGLAvailable", { enumerable: true, get: function () { return webgl_js_1.isWebGLAvailable; } });
 Object.defineProperty(exports, "disposeWebGL", { enumerable: true, get: function () { return webgl_js_1.disposeWebGL; } });
+const webgpu_js_1 = require("./webgpu.js");
+Object.defineProperty(exports, "disposeWebGPU", { enumerable: true, get: function () { return webgpu_js_1.disposeWebGPU; } });
 const cpu_js_1 = require("./cpu.js");
-function useWebGL(options) {
-    if (options?.forceCPU)
-        return false;
-    return (0, webgl_js_1.isWebGLAvailable)();
+function pickCandidates(candidates, options) {
+    if (!options?.forceCPU)
+        return candidates;
+    return [candidates[candidates.length - 1]];
 }
-// ============================================================================
-// Composed Filters
-// ============================================================================
 /**
- * Edge-preserving smoothing filter. Uses the GPU implementation when
- * available, otherwise falls back to the CPU implementation.
+ * Edge-preserving smoothing filter. Resolves the best supported backend
+ * at creation time; falls back once if that backend fails later.
  */
-class BilateralFilter {
-    instance;
-    constructor(config = {}, options) {
-        this.instance = useWebGL(options)
-            ? new webgl_js_1.BilateralFilterWebGL(config)
-            : new cpu_js_1.BilateralFilter(config);
+class BilateralFilter extends resilient_preprocessor_js_1.ResilientPreprocessor {
+    // Ordered best-to-worst. `satisfies` (not `implements`) catches a
+    // backend missing isSupported() or the instance shape at this line.
+    static candidates = [
+        webgpu_js_1.GPUBilateralFilter,
+        webgl_js_1.BilateralFilterWebGL,
+        cpu_js_1.BilateralFilter,
+    ];
+    constructor(resolved, config) {
+        super(BilateralFilter.candidates, resolved, config);
     }
-    process(input) {
-        return this.instance.process(input);
+    static async create(config = {}, options) {
+        const resolved = await resilient_preprocessor_js_1.ResilientPreprocessor.resolve(pickCandidates(BilateralFilter.candidates, options), config);
+        return new BilateralFilter(resolved, config);
     }
 }
 exports.BilateralFilter = BilateralFilter;
 /**
  * Median filter for salt-and-pepper noise removal.
  */
-class MedianFilter {
-    instance;
-    constructor(config = {}, options) {
-        this.instance = useWebGL(options)
-            ? new webgl_js_1.MedianFilterWebGL(config)
-            : new cpu_js_1.MedianFilter(config);
+class MedianFilter extends resilient_preprocessor_js_1.ResilientPreprocessor {
+    static candidates = [
+        webgpu_js_1.GPUMedianFilter,
+        webgl_js_1.MedianFilterWebGL,
+        cpu_js_1.MedianFilter,
+    ];
+    constructor(resolved, config) {
+        super(MedianFilter.candidates, resolved, config);
     }
-    process(input) {
-        return this.instance.process(input);
+    static async create(config = {}, options) {
+        const resolved = await resilient_preprocessor_js_1.ResilientPreprocessor.resolve(pickCandidates(MedianFilter.candidates, options), config);
+        return new MedianFilter(resolved, config);
     }
 }
 exports.MedianFilter = MedianFilter;
 /**
  * Kuwahara filter for a painterly, stylized effect.
  */
-class KuwaharaFilter {
-    instance;
-    constructor(config = {}, options) {
-        this.instance = useWebGL(options)
-            ? new webgl_js_1.KuwaharaFilterWebGL(config)
-            : new cpu_js_1.KuwaharaFilter(config);
+class KuwaharaFilter extends resilient_preprocessor_js_1.ResilientPreprocessor {
+    static candidates = [
+        webgpu_js_1.GPUKuwaharaFilter,
+        webgl_js_1.KuwaharaFilterWebGL,
+        cpu_js_1.KuwaharaFilter,
+    ];
+    constructor(resolved, config) {
+        super(KuwaharaFilter.candidates, resolved, config);
     }
-    process(input) {
-        return this.instance.process(input);
+    static async create(config = {}, options) {
+        const resolved = await resilient_preprocessor_js_1.ResilientPreprocessor.resolve(pickCandidates(KuwaharaFilter.candidates, options), config);
+        return new KuwaharaFilter(resolved, config);
     }
 }
 exports.KuwaharaFilter = KuwaharaFilter;
 /**
  * Separable Gaussian blur.
+ *
+ * Config here is just `number` (sigma), not an object — candidates'
+ * constructors all take `(sigma: number)` directly, so `TConfig` is
+ * `number` rather than a `Partial<...>` shape.
  */
-class GaussianBlur {
-    instance;
-    constructor(sigma = 1.0, options) {
-        this.instance = useWebGL(options)
-            ? new webgl_js_1.GaussianBlurWebGL(sigma)
-            : new cpu_js_1.GaussianBlur(sigma);
+class GaussianBlur extends resilient_preprocessor_js_1.ResilientPreprocessor {
+    static candidates = [
+        webgpu_js_1.GPUGaussianBlur,
+        webgl_js_1.GaussianBlurWebGL,
+        cpu_js_1.GaussianBlur,
+    ];
+    constructor(resolved, sigma) {
+        super(GaussianBlur.candidates, resolved, sigma);
     }
-    process(input) {
-        return this.instance.process(input);
+    static async create(sigma = 1.0, options) {
+        const resolved = await resilient_preprocessor_js_1.ResilientPreprocessor.resolve(pickCandidates(GaussianBlur.candidates, options), sigma);
+        return new GaussianBlur(resolved, sigma);
     }
 }
 exports.GaussianBlur = GaussianBlur;
-/**
- * Histogram-percentile contrast stretch.
- */
-class ContrastEnhancer {
-    instance;
-    constructor(blackPoint = 0.01, whitePoint = 0.99, options) {
-        this.instance = useWebGL(options)
-            ? new webgl_js_1.ContrastEnhancerWebGL(blackPoint, whitePoint)
-            : new cpu_js_1.ContrastEnhancer(blackPoint, whitePoint);
+function adaptContrastCtor(Ctor) {
+    const Adapted = class {
+        static isSupported = Ctor.isSupported;
+        static getUnsupportedReason = Ctor.getUnsupportedReason;
+        constructor(config) {
+            return new Ctor(config.blackPoint, config.whitePoint);
+        }
+    };
+    return Adapted;
+}
+class ContrastEnhancer extends resilient_preprocessor_js_1.ResilientPreprocessor {
+    static candidates = [
+        adaptContrastCtor(webgpu_js_1.GPUContrastEnhancer),
+        adaptContrastCtor(webgl_js_1.ContrastEnhancerWebGL),
+        adaptContrastCtor(cpu_js_1.ContrastEnhancer),
+    ];
+    constructor(resolved, config) {
+        super(ContrastEnhancer.candidates, resolved, config);
     }
-    process(input) {
-        return this.instance.process(input);
+    static async create(blackPoint = 0.01, whitePoint = 0.99, options) {
+        const config = { blackPoint, whitePoint };
+        const resolved = await resilient_preprocessor_js_1.ResilientPreprocessor.resolve(pickCandidates(ContrastEnhancer.candidates, options), config);
+        return new ContrastEnhancer(resolved, config);
     }
 }
 exports.ContrastEnhancer = ContrastEnhancer;
 /**
  * Posterize/quantize intensity levels.
  */
-class Quantizer {
-    instance;
-    constructor(levels = 8, options) {
-        this.instance = useWebGL(options)
-            ? new webgl_js_1.QuantizerWebGL(levels)
-            : new cpu_js_1.Quantizer(levels);
+class Quantizer extends resilient_preprocessor_js_1.ResilientPreprocessor {
+    static candidates = [
+        webgpu_js_1.GPUQuantizer,
+        webgl_js_1.QuantizerWebGL,
+        cpu_js_1.Quantizer,
+    ];
+    constructor(resolved, levels) {
+        super(Quantizer.candidates, resolved, levels);
     }
-    process(input) {
-        return this.instance.process(input);
+    static async create(levels = 8, options) {
+        const resolved = await resilient_preprocessor_js_1.ResilientPreprocessor.resolve(pickCandidates(Quantizer.candidates, options), levels);
+        return new Quantizer(resolved, levels);
     }
 }
 exports.Quantizer = Quantizer;
-// ============================================================================
-// Presets
-// ============================================================================
-// Built on top of the composed filters above, so each preset automatically
-// gets the GPU-when-available/CPU-otherwise behavior for free, with no
-// duplicated branching logic.
 exports.PreprocessingPresets = {
     /**
      * Light preprocessing - minimal smoothing
      * Good for: Clean studio photos, illustrations
      */
-    light: (input) => {
-        return new BilateralFilter({ sigmaSpatial: 2, sigmaRange: 0.08 }).process(input);
+    light: async (input) => {
+        const filter = await BilateralFilter.create({ sigmaSpatial: 2, sigmaRange: 0.08 });
+        try {
+            return await filter.process(input);
+        }
+        finally {
+            filter.dispose();
+        }
     },
     /**
      * Standard preprocessing - balanced smoothing
      * Good for: Most outdoor photos, portraits
      */
-    standard: (input) => {
-        return new BilateralFilter({ sigmaSpatial: 4, sigmaRange: 0.1 }).process(input);
+    standard: async (input) => {
+        const filter = await BilateralFilter.create({ sigmaSpatial: 4, sigmaRange: 0.1 });
+        try {
+            return await filter.process(input);
+        }
+        finally {
+            filter.dispose();
+        }
     },
     /**
      * Heavy preprocessing - aggressive noise removal
      * Good for: Very textured images (grass, foliage, fabric)
      */
-    heavy: (input) => {
-        let result = new BilateralFilter({ sigmaSpatial: 5, sigmaRange: 0.12 }).process(input);
-        result = new BilateralFilter({ sigmaSpatial: 3, sigmaRange: 0.1 }).process(result);
-        return result;
+    heavy: async (input) => {
+        const first = await BilateralFilter.create({ sigmaSpatial: 5, sigmaRange: 0.12 });
+        const second = await BilateralFilter.create({ sigmaSpatial: 3, sigmaRange: 0.1 });
+        try {
+            return await second.process(await first.process(input));
+        }
+        finally {
+            first.dispose();
+            second.dispose();
+        }
     },
     /**
      * Artistic preprocessing - painterly smoothing
      * Good for: Stylized/artistic output
      */
-    artistic: (input) => {
-        let result = new KuwaharaFilter({ radius: 4 }).process(input);
-        result = new BilateralFilter({ sigmaSpatial: 2, sigmaRange: 0.08 }).process(result);
-        return result;
+    artistic: async (input) => {
+        const kuwahara = await KuwaharaFilter.create({ radius: 4 });
+        const bilateral = await BilateralFilter.create({ sigmaSpatial: 2, sigmaRange: 0.08 });
+        try {
+            return await bilateral.process(await kuwahara.process(input));
+        }
+        finally {
+            kuwahara.dispose();
+            bilateral.dispose();
+        }
     },
     /**
      * Photo preprocessing - for photos with grass/nature
      * Good for: Landscape, outdoor scenes
      */
-    nature: (input) => {
-        let result = new BilateralFilter({ sigmaSpatial: 6, sigmaRange: 0.15 }).process(input);
-        result = new BilateralFilter({ sigmaSpatial: 3, sigmaRange: 0.08 }).process(result);
-        return result;
+    nature: async (input) => {
+        const first = await BilateralFilter.create({ sigmaSpatial: 6, sigmaRange: 0.15 });
+        const second = await BilateralFilter.create({ sigmaSpatial: 3, sigmaRange: 0.08 });
+        try {
+            return await second.process(await first.process(input));
+        }
+        finally {
+            first.dispose();
+            second.dispose();
+        }
     },
 };
-// ============================================================================
-// Pipeline (Fluent API)
-// ============================================================================
-/**
- * Convenience class for chaining preprocessing operations. Each stage picks
- * its backend (GPU vs CPU) independently at the time it's added, using
- * whatever `isWebGLAvailable()` reports at that moment.
- */
 class PreprocessingPipeline {
     options;
     operations = [];
     constructor(options) {
         this.options = options;
     }
-    bilateral(config) {
-        this.operations.push(new BilateralFilter(config, this.options));
+    async bilateral(config) {
+        this.operations.push(await BilateralFilter.create(config, this.options));
         return this;
     }
-    median(config) {
-        this.operations.push(new MedianFilter(config, this.options));
+    async median(config) {
+        this.operations.push(await MedianFilter.create(config, this.options));
         return this;
     }
-    kuwahara(config) {
-        this.operations.push(new KuwaharaFilter(config, this.options));
+    async kuwahara(config) {
+        this.operations.push(await KuwaharaFilter.create(config, this.options));
         return this;
     }
-    gaussian(sigma) {
-        this.operations.push(new GaussianBlur(sigma, this.options));
+    async gaussian(sigma) {
+        this.operations.push(await GaussianBlur.create(sigma, this.options));
         return this;
     }
-    contrast(blackPoint, whitePoint) {
-        this.operations.push(new ContrastEnhancer(blackPoint, whitePoint, this.options));
+    async contrast(blackPoint, whitePoint) {
+        this.operations.push(await ContrastEnhancer.create(blackPoint, whitePoint, this.options));
         return this;
     }
-    quantize(levels) {
-        this.operations.push(new Quantizer(levels, this.options));
+    async quantize(levels) {
+        this.operations.push(await Quantizer.create(levels, this.options));
         return this;
     }
     /**
@@ -209,14 +269,18 @@ class PreprocessingPipeline {
         this.operations.push(preprocessor);
         return this;
     }
-    apply(input) {
+    async apply(input) {
         let result = input;
         for (const op of this.operations) {
-            result = op.process(result);
+            result = await op.process(result);
+            op.dispose();
         }
         return result;
     }
+    /** Disposes every staged operation's resources and clears the pipeline. */
     clear() {
+        for (const op of this.operations)
+            op.dispose();
         this.operations = [];
         return this;
     }

@@ -11,16 +11,16 @@ exports.hdog = hdog;
 const index_js_1 = require("../utils/index.js");
 const adog_js_1 = require("./adog.js");
 const fdog_js_1 = require("./fdog.js");
-const types_js_1 = require("./types.js");
+const dog_js_1 = require("../interfaces/dog.js");
 class HDoG {
     fdog;
     adogPrimary;
     adogSecondary;
     constructor(config = {}) {
-        const merged = { ...types_js_1.DEFAULT_HDOG_CONFIG, ...config };
-        const primaryADoGConfig = { ...types_js_1.DEFAULT_ADOG_CONFIG, ...merged.adog };
+        const merged = { ...dog_js_1.DEFAULT_HDOG_CONFIG, ...config };
+        const primaryADoGConfig = { ...dog_js_1.DEFAULT_ADOG_CONFIG, ...merged.adog };
         const secondaryADoGConfig = {
-            ...types_js_1.DEFAULT_ADOG_CONFIG,
+            ...dog_js_1.DEFAULT_ADOG_CONFIG,
             ...primaryADoGConfig,
             s: primaryADoGConfig.s * merged.adogSecondaryScaleFactor,
             ...merged.adogSecondary,

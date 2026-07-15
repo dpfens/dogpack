@@ -7,8 +7,8 @@
  */
 
 import { FDoG, XDoG} from '../dog/index.js';
-import type { DoGImplementation } from '../dog/types.js';
-import type { ChannelImage } from '../types.js';
+import type { DoGImplementation } from '../interfaces/dog.js';
+import type { ChannelImage } from '../interfaces/base.js';
 import { createChannelImage } from '../utils/index.js';
 import type { ExtensionStrategy } from './base.js';
 
@@ -295,7 +295,7 @@ export const blendPriority: BlendFunction = (ctx) => {
 /**
  * Collection of all built-in blend functions for easy access
  */
-export const BlendFunctions = {
+export const BlendFunctions: Record<string, BlendFunction> = {
   average: blendAverage,
   min: blendMin,
   max: blendMax,

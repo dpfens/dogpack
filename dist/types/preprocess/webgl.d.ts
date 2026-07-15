@@ -3,47 +3,51 @@
  *
  * High-performance GPU implementations of image preprocessing filters.
  * Achieves 50-100x speedup over CPU implementations for large images.
- *
- * Filters included:
- * - Bilateral Filter (edge-preserving smoothing)
- * - Median Filter (noise removal) - approximated via weighted histogram
- * - Kuwahara Filter (painterly effect)
- * - Gaussian Blur (separable, very fast)
- * - Contrast Enhancement
- * - Quantization
- *
  */
-import type { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig, Preprocessor } from '../types.js';
-export declare class BilateralFilterWebGL implements Preprocessor {
+import type { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig, Preprocessor } from '../interfaces/base.js';
+import { BaseWebGLStrategy } from '../base.js';
+export declare class BilateralFilterWebGL extends BaseWebGLStrategy implements Preprocessor {
     private readonly config;
+    static isSupported(): Promise<boolean>;
+    static getUnsupportedReason(): Promise<string | undefined>;
     constructor(config?: Partial<BilateralFilterConfig>);
-    process(input: ChannelImage): ChannelImage;
+    process(input: ChannelImage): Promise<ChannelImage>;
 }
-export declare class GaussianBlurWebGL implements Preprocessor {
+export declare class GaussianBlurWebGL extends BaseWebGLStrategy implements Preprocessor {
     private readonly sigma;
+    static isSupported(): Promise<boolean>;
+    static getUnsupportedReason(): Promise<string | undefined>;
     constructor(sigma?: number);
-    process(input: ChannelImage): ChannelImage;
+    process(input: ChannelImage): Promise<ChannelImage>;
 }
-export declare class MedianFilterWebGL implements Preprocessor {
+export declare class MedianFilterWebGL extends BaseWebGLStrategy implements Preprocessor {
     private readonly config;
+    static isSupported(): Promise<boolean>;
+    static getUnsupportedReason(): Promise<string | undefined>;
     constructor(config?: Partial<MedianFilterConfig>);
-    process(input: ChannelImage): ChannelImage;
+    process(input: ChannelImage): Promise<ChannelImage>;
 }
-export declare class KuwaharaFilterWebGL implements Preprocessor {
+export declare class KuwaharaFilterWebGL extends BaseWebGLStrategy implements Preprocessor {
     private readonly config;
+    static isSupported(): Promise<boolean>;
+    static getUnsupportedReason(): Promise<string | undefined>;
     constructor(config?: Partial<KuwaharaFilterConfig>);
-    process(input: ChannelImage): ChannelImage;
+    process(input: ChannelImage): Promise<ChannelImage>;
 }
-export declare class ContrastEnhancerWebGL implements Preprocessor {
+export declare class ContrastEnhancerWebGL extends BaseWebGLStrategy implements Preprocessor {
     private readonly blackPoint;
     private readonly whitePoint;
+    static isSupported(): Promise<boolean>;
+    static getUnsupportedReason(): Promise<string | undefined>;
     constructor(blackPoint?: number, whitePoint?: number);
-    process(input: ChannelImage): ChannelImage;
+    process(input: ChannelImage): Promise<ChannelImage>;
 }
-export declare class QuantizerWebGL implements Preprocessor {
+export declare class QuantizerWebGL extends BaseWebGLStrategy implements Preprocessor {
     private readonly levels;
+    static isSupported(): Promise<boolean>;
+    static getUnsupportedReason(): Promise<string | undefined>;
     constructor(levels?: number);
-    process(input: ChannelImage): ChannelImage;
+    process(input: ChannelImage): Promise<ChannelImage>;
 }
 /**
  * Check if WebGL 2.0 is available

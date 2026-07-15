@@ -5,28 +5,10 @@
  * CPUGradientAlignedBlur, but as a single fullscreen-quad fragment shader
  * pass on the GPU instead of a per-pixel JS loop.
  *
- * ASSUMPTIONS (double check against your real types.ts):
- * - `FlowField` only exposes `getTangent(x, y): Vec2` — there's no bulk
- *   accessor. So we "bake" the perpendicular direction into an RG32F
- *   texture once per FlowField (cached; only rebaked when setFlowField()
- *   is called or the image dimensions change). If FlowField ever grows a
- *   bulk method (e.g. a Float32Array of tangents), swap bakeFlowTexture()
- *   to use it directly and skip the per-pixel getTangent() calls.
- * - `ChannelImage.data` is a single-channel Float32Array, row-major.
- * - `BlurStrategy` is `{ blur(input, sigma): Promise<ChannelImage> }`.
- *
- * NOTE ON THE TIMING NUMBERS:
- * WebGL submission (drawArrays) is async on the GPU timeline. The
- * "Draw call" log below only measures how long it took the JS thread to
- * *submit* the work — the driver doesn't actually block until something
- * forces a sync, which here is `readPixels`. So in practice most of the
- * real GPU time will show up under "Readback", not "Draw call". If you
- * need true GPU-side timing, add the EXT_disjoint_timer_query_webgl2
- * extension — happy to wire that in if these numbers don't add up.
  */
-import { type BlurStrategy, type ChannelImage, type FlowField, type GradientAlignedBlurConfig } from '../../types.js';
+import { type BlurStrategy, type ChannelImage, type FlowField, type GradientAlignedBlurBackendConfig } from '../../interfaces/base.js';
 export declare class WebGLGradientAlignedBlur implements BlurStrategy {
-    private flowField;
+    readonly backend: "webgl";
     private config;
     private gl;
     private canvas;
@@ -42,7 +24,19 @@ export declare class WebGLGradientAlignedBlur implements BlurStrategy {
     private fboWidth;
     private fboHeight;
     private uniforms;
-    constructor(flowField: FlowField, config?: Partial<GradientAlignedBlurConfig>);
+    private contextLost;
+    private flowField;
+    constructor(config: GradientAlignedBlurBackendConfig);
+    /**
+     * Cheap synchronous-capability probe wrapped in an async signature to
+     * match `BlurStrategyCtor`. Doesn't touch the instance — creates its own
+     * throwaway canvas/context, same as the constructor does for real, so a
+     * `true` here means "constructing an instance should work", not a
+     * guarantee (construction can still fail — see key decisions in the
+     * design doc on why we still try/catch `new Ctor(...)`).
+     */
+    static isSupported(): Promise<boolean>;
+    static getUnsupportedReason(): Promise<string | undefined>;
     private setupTextureParams;
     setFlowField(flowField: FlowField): void;
     dispose(): void;

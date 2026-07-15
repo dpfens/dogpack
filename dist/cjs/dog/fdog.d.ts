@@ -7,8 +7,8 @@
  * Based on: "XDoG: An eXtended difference-of-Gaussians compendium including
  * advanced image stylization" by Winnemöller et al. (2012)
  */
-import { type ChannelImage, type FlowField } from '../types.js';
-import { FDOG_STYLE_PRESETS, type DoGImplementation, type FDoGConfig } from './types.js';
+import { type ChannelImage, type FlowField } from '../interfaces/base.js';
+import { FDOG_STYLE_PRESETS, type DoGImplementation, type FDoGConfig } from '../interfaces/dog.js';
 /**
  * FDoG (Flow-based Difference of Gaussians)
  *

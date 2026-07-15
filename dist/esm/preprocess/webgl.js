@@ -1,18 +1,4 @@
-/**
- * WebGL-Accelerated Preprocessing Module for XDoG/FDoG
- *
- * High-performance GPU implementations of image preprocessing filters.
- * Achieves 50-100x speedup over CPU implementations for large images.
- *
- * Filters included:
- * - Bilateral Filter (edge-preserving smoothing)
- * - Median Filter (noise removal) - approximated via weighted histogram
- * - Kuwahara Filter (painterly effect)
- * - Gaussian Blur (separable, very fast)
- * - Contrast Enhancement
- * - Quantization
- *
- */
+import { BaseWebGLStrategy } from '../base.js';
 // Default config values (mirrors the CPU implementation in cpu.ts)
 const DEFAULT_BILATERAL_CONFIG = {
     sigmaSpatial: 3,
@@ -310,12 +296,19 @@ void main() {
   fragColor = vec4(result, 0.0, 0.0, 1.0);
 }
 `;
-export class BilateralFilterWebGL {
+export class BilateralFilterWebGL extends BaseWebGLStrategy {
     config;
+    static async isSupported() {
+        return isWebGLAvailable();
+    }
+    static async getUnsupportedReason() {
+        return isWebGLAvailable() ? undefined : 'WebGL 2.0 is not available in this environment';
+    }
     constructor(config = {}) {
+        super();
         this.config = { ...DEFAULT_BILATERAL_CONFIG, ...config };
     }
-    process(input) {
+    async process(input) {
         const config = this.config;
         const gl = getGL();
         if (!gl) {
@@ -331,29 +324,31 @@ export class BilateralFilterWebGL {
             canvas.width = width;
             canvas.height = height;
         }
-        const program = createProgram(BILATERAL_FRAG, 'bilateral');
-        if (!program) {
-            throw new Error('BilateralFilterWebGL: failed to compile/link shader program.');
-        }
-        const inputTex = createInputTexture(data, width, height);
-        const output = createFramebuffer(width, height);
-        if (!inputTex || !output) {
-            if (inputTex)
-                gl.deleteTexture(inputTex);
-            throw new Error('BilateralFilterWebGL: failed to create input texture or framebuffer.');
-        }
-        renderPass(program, inputTex, output.fb, width, height, {
-            u_texelSize: [1.0 / width, 1.0 / height],
-            u_sigmaSpatial2: 2.0 * sigmaSpatial * sigmaSpatial,
-            u_sigmaRange2: 2.0 * sigmaRange * sigmaRange,
-            u_radius: radius,
+        return this.runGuarded(gl, () => {
+            const program = createProgram(BILATERAL_FRAG, 'bilateral');
+            if (!program) {
+                throw new Error('BilateralFilterWebGL: failed to compile/link shader program.');
+            }
+            const inputTex = createInputTexture(data, width, height);
+            const output = createFramebuffer(width, height);
+            if (!inputTex || !output) {
+                if (inputTex)
+                    gl.deleteTexture(inputTex);
+                throw new Error('BilateralFilterWebGL: failed to create input texture or framebuffer.');
+            }
+            renderPass(program, inputTex, output.fb, width, height, {
+                u_texelSize: [1.0 / width, 1.0 / height],
+                u_sigmaSpatial2: 2.0 * sigmaSpatial * sigmaSpatial,
+                u_sigmaRange2: 2.0 * sigmaRange * sigmaRange,
+                u_radius: radius,
+            });
+            const result = readResult(output.fb, width, height);
+            // Cleanup
+            gl.deleteTexture(inputTex);
+            gl.deleteTexture(output.tex);
+            gl.deleteFramebuffer(output.fb);
+            return { data: result, width, height };
         });
-        const result = readResult(output.fb, width, height);
-        // Cleanup
-        gl.deleteTexture(inputTex);
-        gl.deleteTexture(output.tex);
-        gl.deleteFramebuffer(output.fb);
-        return { data: result, width, height };
     }
 }
 // ============================================================================
@@ -415,12 +410,19 @@ void main() {
   fragColor = vec4(sum / weightSum, 0.0, 0.0, 1.0);
 }
 `;
-export class GaussianBlurWebGL {
+export class GaussianBlurWebGL extends BaseWebGLStrategy {
     sigma;
+    static async isSupported() {
+        return isWebGLAvailable();
+    }
+    static async getUnsupportedReason() {
+        return isWebGLAvailable() ? undefined : 'WebGL 2.0 is not available in this environment';
+    }
     constructor(sigma = 1.0) {
+        super();
         this.sigma = sigma;
     }
-    process(input) {
+    async process(input) {
         const sigma = this.sigma;
         if (sigma < 0.1) {
             return { data: new Float32Array(input.data), width: input.width, height: input.height };
@@ -436,43 +438,45 @@ export class GaussianBlurWebGL {
             canvas.width = width;
             canvas.height = height;
         }
-        const hProgram = createProgram(GAUSSIAN_H_FRAG, 'gaussianH');
-        const vProgram = createProgram(GAUSSIAN_V_FRAG, 'gaussianV');
-        if (!hProgram || !vProgram) {
-            throw new Error('GaussianBlurWebGL: failed to compile/link shader program.');
-        }
-        const inputTex = createInputTexture(data, width, height);
-        const tempFb = createFramebuffer(width, height);
-        const outputFb = createFramebuffer(width, height);
-        if (!inputTex || !tempFb || !outputFb) {
-            if (inputTex)
-                gl.deleteTexture(inputTex);
-            if (tempFb) {
-                gl.deleteFramebuffer(tempFb.fb);
-                gl.deleteTexture(tempFb.tex);
+        return this.runGuarded(gl, () => {
+            const hProgram = createProgram(GAUSSIAN_H_FRAG, 'gaussianH');
+            const vProgram = createProgram(GAUSSIAN_V_FRAG, 'gaussianV');
+            if (!hProgram || !vProgram) {
+                throw new Error('GaussianBlurWebGL: failed to compile/link shader program.');
             }
-            throw new Error('GaussianBlurWebGL: failed to create input texture or framebuffer.');
-        }
-        // Horizontal pass
-        renderPass(hProgram, inputTex, tempFb.fb, width, height, {
-            u_texelSizeX: 1.0 / width,
-            u_radius: radius,
-            u_sigma2: sigma2,
+            const inputTex = createInputTexture(data, width, height);
+            const tempFb = createFramebuffer(width, height);
+            const outputFb = createFramebuffer(width, height);
+            if (!inputTex || !tempFb || !outputFb) {
+                if (inputTex)
+                    gl.deleteTexture(inputTex);
+                if (tempFb) {
+                    gl.deleteFramebuffer(tempFb.fb);
+                    gl.deleteTexture(tempFb.tex);
+                }
+                throw new Error('GaussianBlurWebGL: failed to create input texture or framebuffer.');
+            }
+            // Horizontal pass
+            renderPass(hProgram, inputTex, tempFb.fb, width, height, {
+                u_texelSizeX: 1.0 / width,
+                u_radius: radius,
+                u_sigma2: sigma2,
+            });
+            // Vertical pass
+            renderPass(vProgram, tempFb.tex, outputFb.fb, width, height, {
+                u_texelSizeY: 1.0 / height,
+                u_radius: radius,
+                u_sigma2: sigma2,
+            });
+            const result = readResult(outputFb.fb, width, height);
+            // Cleanup
+            gl.deleteTexture(inputTex);
+            gl.deleteTexture(tempFb.tex);
+            gl.deleteFramebuffer(tempFb.fb);
+            gl.deleteTexture(outputFb.tex);
+            gl.deleteFramebuffer(outputFb.fb);
+            return { data: result, width, height };
         });
-        // Vertical pass
-        renderPass(vProgram, tempFb.tex, outputFb.fb, width, height, {
-            u_texelSizeY: 1.0 / height,
-            u_radius: radius,
-            u_sigma2: sigma2,
-        });
-        const result = readResult(outputFb.fb, width, height);
-        // Cleanup
-        gl.deleteTexture(inputTex);
-        gl.deleteTexture(tempFb.tex);
-        gl.deleteFramebuffer(tempFb.fb);
-        gl.deleteTexture(outputFb.tex);
-        gl.deleteFramebuffer(outputFb.fb);
-        return { data: result, width, height };
     }
 }
 // ============================================================================
@@ -577,12 +581,19 @@ void main() {
   fragColor = vec4(values[medianIdx], 0.0, 0.0, 1.0);
 }
 `;
-export class MedianFilterWebGL {
+export class MedianFilterWebGL extends BaseWebGLStrategy {
     config;
+    static async isSupported() {
+        return isWebGLAvailable();
+    }
+    static async getUnsupportedReason() {
+        return isWebGLAvailable() ? undefined : 'WebGL 2.0 is not available in this environment';
+    }
     constructor(config = {}) {
+        super();
         this.config = { ...DEFAULT_MEDIAN_CONFIG, ...config };
     }
-    process(input) {
+    async process(input) {
         const config = this.config;
         const gl = getGL();
         if (!gl) {
@@ -594,30 +605,32 @@ export class MedianFilterWebGL {
             canvas.width = width;
             canvas.height = height;
         }
-        // Use exact sorting for small kernels, histogram for large
-        const shaderSource = radius <= 2 ? MEDIAN_SMALL_FRAG : MEDIAN_FRAG;
-        const cacheKey = radius <= 2 ? 'medianSmall' : 'medianLarge';
-        const program = createProgram(shaderSource, cacheKey);
-        if (!program) {
-            throw new Error('MedianFilterWebGL: failed to compile/link shader program.');
-        }
-        const inputTex = createInputTexture(data, width, height);
-        const output = createFramebuffer(width, height);
-        if (!inputTex || !output) {
-            if (inputTex)
-                gl.deleteTexture(inputTex);
-            throw new Error('MedianFilterWebGL: failed to create input texture or framebuffer.');
-        }
-        renderPass(program, inputTex, output.fb, width, height, {
-            u_texelSize: [1.0 / width, 1.0 / height],
-            u_radius: radius,
+        return this.runGuarded(gl, () => {
+            // Use exact sorting for small kernels, histogram for large
+            const shaderSource = radius <= 2 ? MEDIAN_SMALL_FRAG : MEDIAN_FRAG;
+            const cacheKey = radius <= 2 ? 'medianSmall' : 'medianLarge';
+            const program = createProgram(shaderSource, cacheKey);
+            if (!program) {
+                throw new Error('MedianFilterWebGL: failed to compile/link shader program.');
+            }
+            const inputTex = createInputTexture(data, width, height);
+            const output = createFramebuffer(width, height);
+            if (!inputTex || !output) {
+                if (inputTex)
+                    gl.deleteTexture(inputTex);
+                throw new Error('MedianFilterWebGL: failed to create input texture or framebuffer.');
+            }
+            renderPass(program, inputTex, output.fb, width, height, {
+                u_texelSize: [1.0 / width, 1.0 / height],
+                u_radius: radius,
+            });
+            const result = readResult(output.fb, width, height);
+            // Cleanup
+            gl.deleteTexture(inputTex);
+            gl.deleteTexture(output.tex);
+            gl.deleteFramebuffer(output.fb);
+            return { data: result, width, height };
         });
-        const result = readResult(output.fb, width, height);
-        // Cleanup
-        gl.deleteTexture(inputTex);
-        gl.deleteTexture(output.tex);
-        gl.deleteFramebuffer(output.fb);
-        return { data: result, width, height };
     }
 }
 // ============================================================================
@@ -676,12 +689,19 @@ void main() {
   fragColor = vec4(result, 0.0, 0.0, 1.0);
 }
 `;
-export class KuwaharaFilterWebGL {
+export class KuwaharaFilterWebGL extends BaseWebGLStrategy {
     config;
+    static async isSupported() {
+        return isWebGLAvailable();
+    }
+    static async getUnsupportedReason() {
+        return isWebGLAvailable() ? undefined : 'WebGL 2.0 is not available in this environment';
+    }
     constructor(config = {}) {
+        super();
         this.config = { ...DEFAULT_KUWAHARA_CONFIG, ...config };
     }
-    process(input) {
+    async process(input) {
         const config = this.config;
         const gl = getGL();
         if (!gl) {
@@ -693,27 +713,29 @@ export class KuwaharaFilterWebGL {
             canvas.width = width;
             canvas.height = height;
         }
-        const program = createProgram(KUWAHARA_FRAG, 'kuwahara');
-        if (!program) {
-            throw new Error('KuwaharaFilterWebGL: failed to compile/link shader program.');
-        }
-        const inputTex = createInputTexture(data, width, height);
-        const output = createFramebuffer(width, height);
-        if (!inputTex || !output) {
-            if (inputTex)
-                gl.deleteTexture(inputTex);
-            throw new Error('KuwaharaFilterWebGL: failed to create input texture or framebuffer.');
-        }
-        renderPass(program, inputTex, output.fb, width, height, {
-            u_texelSize: [1.0 / width, 1.0 / height],
-            u_radius: radius,
+        return this.runGuarded(gl, () => {
+            const program = createProgram(KUWAHARA_FRAG, 'kuwahara');
+            if (!program) {
+                throw new Error('KuwaharaFilterWebGL: failed to compile/link shader program.');
+            }
+            const inputTex = createInputTexture(data, width, height);
+            const output = createFramebuffer(width, height);
+            if (!inputTex || !output) {
+                if (inputTex)
+                    gl.deleteTexture(inputTex);
+                throw new Error('KuwaharaFilterWebGL: failed to create input texture or framebuffer.');
+            }
+            renderPass(program, inputTex, output.fb, width, height, {
+                u_texelSize: [1.0 / width, 1.0 / height],
+                u_radius: radius,
+            });
+            const result = readResult(output.fb, width, height);
+            // Cleanup
+            gl.deleteTexture(inputTex);
+            gl.deleteTexture(output.tex);
+            gl.deleteFramebuffer(output.fb);
+            return { data: result, width, height };
         });
-        const result = readResult(output.fb, width, height);
-        // Cleanup
-        gl.deleteTexture(inputTex);
-        gl.deleteTexture(output.tex);
-        gl.deleteFramebuffer(output.fb);
-        return { data: result, width, height };
     }
 }
 // ============================================================================
@@ -741,14 +763,21 @@ void main() {
   fragColor = vec4(result, 0.0, 0.0, 1.0);
 }
 `;
-export class ContrastEnhancerWebGL {
+export class ContrastEnhancerWebGL extends BaseWebGLStrategy {
     blackPoint;
     whitePoint;
+    static async isSupported() {
+        return isWebGLAvailable();
+    }
+    static async getUnsupportedReason() {
+        return isWebGLAvailable() ? undefined : 'WebGL 2.0 is not available in this environment';
+    }
     constructor(blackPoint = 0.01, whitePoint = 0.99) {
+        super();
         this.blackPoint = blackPoint;
         this.whitePoint = whitePoint;
     }
-    process(input) {
+    async process(input) {
         const { blackPoint, whitePoint } = this;
         const gl = getGL();
         if (!gl) {
@@ -764,27 +793,29 @@ export class ContrastEnhancerWebGL {
             canvas.width = width;
             canvas.height = height;
         }
-        const program = createProgram(CONTRAST_FRAG, 'contrast');
-        if (!program) {
-            throw new Error('ContrastEnhancerWebGL: failed to compile/link shader program.');
-        }
-        const inputTex = createInputTexture(data, width, height);
-        const output = createFramebuffer(width, height);
-        if (!inputTex || !output) {
-            if (inputTex)
-                gl.deleteTexture(inputTex);
-            throw new Error('ContrastEnhancerWebGL: failed to create input texture or framebuffer.');
-        }
-        renderPass(program, inputTex, output.fb, width, height, {
-            u_minVal: minVal,
-            u_maxVal: maxVal,
+        return this.runGuarded(gl, () => {
+            const program = createProgram(CONTRAST_FRAG, 'contrast');
+            if (!program) {
+                throw new Error('ContrastEnhancerWebGL: failed to compile/link shader program.');
+            }
+            const inputTex = createInputTexture(data, width, height);
+            const output = createFramebuffer(width, height);
+            if (!inputTex || !output) {
+                if (inputTex)
+                    gl.deleteTexture(inputTex);
+                throw new Error('ContrastEnhancerWebGL: failed to create input texture or framebuffer.');
+            }
+            renderPass(program, inputTex, output.fb, width, height, {
+                u_minVal: minVal,
+                u_maxVal: maxVal,
+            });
+            const result = readResult(output.fb, width, height);
+            // Cleanup
+            gl.deleteTexture(inputTex);
+            gl.deleteTexture(output.tex);
+            gl.deleteFramebuffer(output.fb);
+            return { data: result, width, height };
         });
-        const result = readResult(output.fb, width, height);
-        // Cleanup
-        gl.deleteTexture(inputTex);
-        gl.deleteTexture(output.tex);
-        gl.deleteFramebuffer(output.fb);
-        return { data: result, width, height };
     }
 }
 // ============================================================================
@@ -807,12 +838,19 @@ void main() {
   fragColor = vec4(clamp(result, 0.0, 1.0), 0.0, 0.0, 1.0);
 }
 `;
-export class QuantizerWebGL {
+export class QuantizerWebGL extends BaseWebGLStrategy {
     levels;
+    static async isSupported() {
+        return isWebGLAvailable();
+    }
+    static async getUnsupportedReason() {
+        return isWebGLAvailable() ? undefined : 'WebGL 2.0 is not available in this environment';
+    }
     constructor(levels = 8) {
+        super();
         this.levels = levels;
     }
-    process(input) {
+    async process(input) {
         const levels = this.levels;
         const gl = getGL();
         if (!gl) {
@@ -823,26 +861,28 @@ export class QuantizerWebGL {
             canvas.width = width;
             canvas.height = height;
         }
-        const program = createProgram(QUANTIZE_FRAG, 'quantize');
-        if (!program) {
-            throw new Error('QuantizerWebGL: failed to compile/link shader program.');
-        }
-        const inputTex = createInputTexture(data, width, height);
-        const output = createFramebuffer(width, height);
-        if (!inputTex || !output) {
-            if (inputTex)
-                gl.deleteTexture(inputTex);
-            throw new Error('QuantizerWebGL: failed to create input texture or framebuffer.');
-        }
-        renderPass(program, inputTex, output.fb, width, height, {
-            u_levels: levels,
+        return this.runGuarded(gl, () => {
+            const program = createProgram(QUANTIZE_FRAG, 'quantize');
+            if (!program) {
+                throw new Error('QuantizerWebGL: failed to compile/link shader program.');
+            }
+            const inputTex = createInputTexture(data, width, height);
+            const output = createFramebuffer(width, height);
+            if (!inputTex || !output) {
+                if (inputTex)
+                    gl.deleteTexture(inputTex);
+                throw new Error('QuantizerWebGL: failed to create input texture or framebuffer.');
+            }
+            renderPass(program, inputTex, output.fb, width, height, {
+                u_levels: levels,
+            });
+            const result = readResult(output.fb, width, height);
+            // Cleanup
+            gl.deleteTexture(inputTex);
+            gl.deleteTexture(output.tex);
+            gl.deleteFramebuffer(output.fb);
+            return { data: result, width, height };
         });
-        const result = readResult(output.fb, width, height);
-        // Cleanup
-        gl.deleteTexture(inputTex);
-        gl.deleteTexture(output.tex);
-        gl.deleteFramebuffer(output.fb);
-        return { data: result, width, height };
     }
 }
 // ============================================================================

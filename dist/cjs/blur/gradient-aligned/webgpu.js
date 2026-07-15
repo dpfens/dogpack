@@ -5,30 +5,10 @@ exports.WebGPUGradientAlignedBlur = void 0;
  * WebGPU-accelerated gradient-aligned blur for FDoG
  *
  * Compute-shader version of the same perpendicular-to-flow sampling as
- * CPUGradientAlignedBlur / WebGLGradientAlignedBlur. Prefer this backend
- * when available — no readback-forced sync via drawing, explicit control
- * over the copy timeline, and generally faster on the same hardware.
+ * CPUGradientAlignedBlur / WebGLGradientAlignedBlur.
  *
- * ASSUMPTIONS — same as the WebGL file:
- * - `FlowField` only exposes `getTangent(x, y): Vec2`; we bake perpendicular
- *   direction into an rg32float texture once per FlowField instance.
- * - `ChannelImage.data` is a single-channel Float32Array, row-major.
- *
- * TYPES: this file assumes `@webgpu/types` is installed (or `lib.dom` in a
- * recent TS/tsconfig that includes WebGPU types). If GPUDevice/GPUBuffer
- * etc. aren't recognized, add `@webgpu/types` as a devDependency and either
- * add it to tsconfig `types`, or drop a `/// <reference types="@webgpu/types" />`
- * at the top of this file.
- *
- * NOTE ON TIMING:
- * Like the WebGL version, `queue.submit()` doesn't block — the actual GPU
- * wait happens at `mapAsync()`. So "Dispatch" below measures submission
- * only; "Readback" is where the real cost will show up. For true GPU-side
- * timing, add a `GPUQuerySet` with 'timestamp' queries around the compute
- * pass (needs the 'timestamp-query' feature) — can wire that in if you
- * want harder numbers than JS-side wall time.
  */
-const types_js_1 = require("../../types.js");
+const base_js_1 = require("../../interfaces/base.js");
 const index_js_1 = require("../../utils/index.js");
 const MAX_SAMPLES = 256;
 const WORKGROUP_SIZE = 8;
@@ -125,41 +105,37 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 `;
 class WebGPUGradientAlignedBlur {
-    flowField;
+    backend = 'webgpu';
     config;
     device;
     pipeline;
-    // NOTE ON CONCURRENCY:
-    // `blur()` is safe to call concurrently on the same instance (e.g. two
-    // different sigmas via Promise.all). To make that safe, every resource
-    // that is written-to-then-read-back per call (input texture, output
-    // buffer, readback buffer, params buffer, weights buffer, bind group) is
-    // now allocated fresh *inside* blur() and destroyed when that call is
-    // done — no shared mutable GPU state between concurrent invocations.
-    // Only the compute pipeline (immutable after creation) and the flow
-    // texture (read-only, cached by dimensions) remain instance-level, and
-    // the flow texture bake is guarded by `flowBakePromise` so concurrent
-    // calls with the same dimensions share one bake instead of racing.
+    flowField;
+    // --- class-level device cache ---------------------
+    static cachedDevice = null;
+    static deviceInitPromise = null;
+    static lastUnsupportedReason;
+    static errorListenerAttached = false;
     flowTexture = null;
     flowFieldWidth = 0;
     flowFieldHeight = 0;
     flowDirty = true;
     flowBakePromise = null;
     // Bytes we're willing to put in a single GPU buffer for one tile, well
-    // under whatever the device actually supports (see `create()`). Large
-    // images are processed in row-band tiles bounded by this so memory use
-    // stays flat regardless of image size — this is what prevents the
+    // under whatever the device actually supports.
+    // Large images are processed in row-band tiles bounded by this so memory
+    // use stays flat regardless of image size — this is what prevents the
     // crash on big images/concurrent calls.
     maxTileBytes = 0;
-    // CPU-side cap on how many rows of flow-field data we build into a
-    // Float32Array at once, so baking the flow texture for a huge image
-    // doesn't itself blow up JS heap before anything even reaches the GPU.
     static CPU_BAKE_ROWS_PER_CHUNK = 512;
     static TILE_MEMORY_SAFETY_FACTOR = 0.5;
-    constructor(flowField, device, config) {
-        this.flowField = flowField;
+    constructor(config) {
+        const device = WebGPUGradientAlignedBlur.cachedDevice;
+        if (!device) {
+            throw new Error('[GradientAlignedBlur/WebGPU] No cached GPUDevice. isSupported() must resolve true before construction.');
+        }
+        this.flowField = config.flowField;
         this.device = device;
-        this.config = { ...types_js_1.DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, ...config };
+        this.config = { ...base_js_1.DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, ...config };
         this.initPipeline();
         // maxBufferSize / maxStorageBufferBindingSize are usually the binding
         // constraint that bites first on large images (commonly 256MB / 128MB
@@ -172,31 +148,75 @@ class WebGPUGradientAlignedBlur {
             WebGPUGradientAlignedBlur.TILE_MEMORY_SAFETY_FACTOR));
         // Surface GPU-side failures (e.g. a validation error from a size that
         // slipped past our checks) as visible console errors instead of a
-        // silent hang or an opaque tab crash.
-        this.device.addEventListener('uncapturederror', (event) => {
-            console.error('[GradientAlignedBlur/WebGPU] uncaptured GPU error:', event.error?.message ?? event.error);
-        });
+        // silent hang or an opaque tab crash. Attached once per (shared) device,
+        // not once per instance.
+        if (!WebGPUGradientAlignedBlur.errorListenerAttached) {
+            WebGPUGradientAlignedBlur.errorListenerAttached = true;
+            this.device.addEventListener('uncapturederror', (event) => {
+                console.error('[GradientAlignedBlur/WebGPU] uncaptured GPU error:', event.error?.message ?? event.error);
+            });
+        }
     }
-    /** WebGPU device creation is async, so use this instead of `new`. */
-    static async create(flowField, config = {}) {
-        if (typeof navigator === 'undefined' || !('gpu' in navigator)) {
-            throw new Error('[GradientAlignedBlur/WebGPU] navigator.gpu unavailable');
+    /**
+     * Acquires (and caches) the shared GPUDevice. Concurrent callers await
+     * the same in-flight request rather than each requesting their own
+     * adapter/device. Re-acquires automatically after a `device.lost` clears
+     * the cache.
+     */
+    static async acquireDevice() {
+        if (WebGPUGradientAlignedBlur.cachedDevice) {
+            return WebGPUGradientAlignedBlur.cachedDevice;
         }
-        const adapter = await navigator.gpu.requestAdapter();
-        if (!adapter) {
-            throw new Error('[GradientAlignedBlur/WebGPU] No adapter available');
+        if (WebGPUGradientAlignedBlur.deviceInitPromise) {
+            return WebGPUGradientAlignedBlur.deviceInitPromise;
         }
-        // Explicitly request the adapter's actual max limits rather than
-        // accepting the (often much lower) spec-minimum defaults — e.g. the
-        // default maxBufferSize/maxStorageBufferBindingSize are commonly
-        // 256MB/128MB, but many adapters support several times that. Getting
-        // this headroom up front means fewer images need tiling at all.
-        const device = await adapter.requestDevice({
-            requiredLimits: {
-                maxTextureDimension2D: adapter.limits.maxTextureDimension2D,
-            },
-        });
-        return new WebGPUGradientAlignedBlur(flowField, device, config);
+        WebGPUGradientAlignedBlur.deviceInitPromise = (async () => {
+            if (typeof navigator === 'undefined' || !('gpu' in navigator)) {
+                throw new Error('[GradientAlignedBlur/WebGPU] navigator.gpu unavailable');
+            }
+            const adapter = await navigator.gpu.requestAdapter();
+            if (!adapter) {
+                throw new Error('[GradientAlignedBlur/WebGPU] No adapter available');
+            }
+            // Explicitly request the adapter's actual max limits rather than
+            // accepting the (often much lower) spec-minimum defaults — e.g. the
+            // default maxBufferSize/maxStorageBufferBindingSize are commonly
+            // 256MB/128MB, but many adapters support several times that.
+            const device = await adapter.requestDevice({
+                requiredLimits: {
+                    maxTextureDimension2D: adapter.limits.maxTextureDimension2D,
+                },
+            });
+            device.lost.then((info) => {
+                console.warn('[GradientAlignedBlur/WebGPU] device lost:', info.message);
+                if (WebGPUGradientAlignedBlur.cachedDevice === device) {
+                    WebGPUGradientAlignedBlur.cachedDevice = null;
+                    WebGPUGradientAlignedBlur.errorListenerAttached = false;
+                }
+            });
+            WebGPUGradientAlignedBlur.cachedDevice = device;
+            return device;
+        })();
+        try {
+            return await WebGPUGradientAlignedBlur.deviceInitPromise;
+        }
+        finally {
+            WebGPUGradientAlignedBlur.deviceInitPromise = null;
+        }
+    }
+    static async isSupported() {
+        try {
+            await WebGPUGradientAlignedBlur.acquireDevice();
+            return true;
+        }
+        catch (err) {
+            WebGPUGradientAlignedBlur.lastUnsupportedReason =
+                err instanceof Error ? err.message : String(err);
+            return false;
+        }
+    }
+    static getUnsupportedReason() {
+        return WebGPUGradientAlignedBlur.lastUnsupportedReason;
     }
     initPipeline() {
         const module = this.device.createShaderModule({ code: SHADER_SRC });
@@ -220,15 +240,16 @@ class WebGPUGradientAlignedBlur {
         }
     }
     /**
-     * NOTE: only safe to call once no `blur()` calls are in flight — it
-     * destroys the device itself, which would invalidate any in-progress
-     * GPU work. Per-call buffers/textures created inside blur() are already
-     * cleaned up in their own try/finally, so there's nothing else to
-     * release here besides the flow texture and the device.
+     * Releases this instance's own GPU resources (flow texture). Deliberately
+     * does NOT destroy `this.device`. The device is shared/cached at the
+     * class level (see file header), and other instances (or a future
+     * instance created after a fallback-and-retry) may still be using it.
+     * If you need to fully release the device (e.g. on app shutdown), that's
+     * out of scope for a per-instance dispose() and would need an explicit
+     * class-level teardown method instead.
      */
     dispose() {
         this.flowTexture?.destroy();
-        this.device.destroy();
     }
     bakeFlowTexture(width, height) {
         this.assertWithinTextureLimits(width, height);
@@ -316,6 +337,12 @@ class WebGPUGradientAlignedBlur {
      * `assertWithinTextureLimits`).
      */
     async blur(input, sigma) {
+        if (WebGPUGradientAlignedBlur.cachedDevice !== this.device) {
+            // The device this instance was built on has since been lost/replaced
+            // (see the `device.lost` handler in acquireDevice()). Fail fast
+            // rather than issuing GPU calls against a dead device.
+            throw new Error('[GradientAlignedBlur/WebGPU] device lost');
+        }
         if (sigma < 0.1) {
             return { data: new Float32Array(input.data), width: input.width, height: input.height };
         }

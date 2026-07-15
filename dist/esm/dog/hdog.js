@@ -4,11 +4,11 @@
  * This class provides a convenient wrapper that compose the blur strategies
  * and DoG processor together.
  */
-import {} from '../types.js';
+import {} from '../interfaces/base.js';
 import { andCombine } from '../utils/index.js';
 import { ADoG } from './adog.js';
 import { FDoG } from './fdog.js';
-import { DEFAULT_ADOG_CONFIG, DEFAULT_HDOG_CONFIG } from './types.js';
+import { DEFAULT_ADOG_CONFIG, DEFAULT_HDOG_CONFIG } from '../interfaces/dog.js';
 export class HDoG {
     fdog;
     adogPrimary;

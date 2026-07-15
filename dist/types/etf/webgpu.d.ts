@@ -29,7 +29,8 @@
  * ChannelImage scalar fields. RGB/Lab/etc. splitting and conversion is
  * the caller's responsibility (see utils/color.ts).
  */
-import { type ChannelImage, type FlowField, type ETFConfig, type ETFComputer } from '../types.js';
+import { type ChannelImage, type FlowField, type ETFConfig, type ETFComputer } from '../interfaces/base.js';
+import { BaseWebGPUStrategy } from '../base.js';
 /**
  * WebGPU-accelerated ETFComputer. Device/pipeline resources are cached
  * statically (shared across every instance) since acquiring a GPUDevice
@@ -37,18 +38,21 @@ import { type ChannelImage, type FlowField, type ETFConfig, type ETFComputer } f
  * count; per-call state (buffers) is still allocated fresh in
  * computeInternal().
  */
-export declare class WebGpuEdgeTangentFlowComputer implements ETFComputer {
+export declare class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy implements ETFComputer {
     private static resources;
     private static resourcesPromise;
     /**
-     * Cheap synchronous check — mirrors the shape of isWebGLComputeSupported().
-     * This only confirms the API surface exists; it can't confirm an adapter
-     * is actually obtainable (that requires the async requestAdapter() call
-     * made lazily inside initResources()/computeInternal()).
+     * Cheap check — mirrors the shape of isWebGLComputeSupported(), just
+     * wrapped in a resolved Promise to match the async `ETFComputerCtor`
+     * shape. This only confirms the API surface exists; it can't confirm
+     * an adapter is actually obtainable (that requires the async
+     * requestAdapter() call made lazily inside
+     * initResources()/computeInternal()) — use getUnsupportedReason() for
+     * that deeper check.
      */
-    static isSupported(): boolean;
+    static isSupported(): Promise<boolean>;
     /**
-     * Optional richer diagnostic, matching the ETFComputerClass shape in
+     * Optional richer diagnostic, matching the ETFComputerCtor shape in
      * types.ts. Async, since it actually attempts to obtain an adapter.
      */
     static getUnsupportedReason(): Promise<string | undefined>;
