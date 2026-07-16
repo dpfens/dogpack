@@ -4,7 +4,7 @@
     <div class="col-12 col-lg-7 h-100">
       <div class="row g-3 h-100">
         <div class="col-12 col-md-6">
-          <div class="card h-100">
+          <div class="card drop-shadow h-100">
             <div class="card-header">Source</div>
             <div class="card-body d-flex align-items-center justify-content-center bg-body-tertiary p-2">
               <app-image-canvas [imageData]="image()" />
@@ -12,7 +12,7 @@
           </div>
         </div>
         <div class="col-12 col-md-6">
-          <div class="card h-100">
+          <div class="card drop-shadow h-100">
             <div class="card-header d-flex align-items-center justify-content-between">
               <span>Preprocessed</span>
               <span class="badge" [class.text-bg-success]="usingWebGL()" [class.text-bg-secondary]="!usingWebGL()">
@@ -29,7 +29,7 @@
 
     <!-- Controls column -->
     <div class="col-12 col-lg-5">
-      <div class="card mb-3">
+      <div class="card drop-shadow mb-3">
         <div class="card-header">Channels</div>
         <div class="card-body">
           <div class="btn-group w-100" role="group" aria-label="Channel mode">
@@ -58,10 +58,10 @@
         </div>
       </div>
 
-      <div class="card">
+      <div class="card drop-shadow">
         <div class="card-header d-flex align-items-center justify-content-between">
-          <span>Pipeline</span>
-          <span class="badge text-bg-secondary">{{ steps().length }} step(s)</span>
+          <span>Preprocessing</span>
+          <span class="badge text-bg-secondary">{{ steps().length }} step@if(steps().length > 1) {s}</span>
         </div>
 
         <ul class="list-group list-group-flush">
@@ -71,12 +71,12 @@
                 <span class="fw-semibold">{{ stepLabels[step.type] }}</span>
                 <div class="btn-group btn-group-sm">
                   <button type="button" class="btn btn-outline-secondary" [disabled]="first" (click)="moveStepUp(i)">
-                    ↑
+                    <i class="btl bt-long-arrow-up bt-lg"></i>
                   </button>
                   <button type="button" class="btn btn-outline-secondary" [disabled]="last" (click)="moveStepDown(i)">
-                    ↓
+                    <i class="btl bt-long-arrow-down bt-lg"></i>
                   </button>
-                  <button type="button" class="btn btn-outline-danger" (click)="removeStep(i)">✕</button>
+                  <button type="button" class="btn btn-outline-danger" (click)="removeStep(i)"><i class="btl bt-times bt-lg"></i></button>
                 </div>
               </div>
 
@@ -204,7 +204,9 @@
               <option [value]="idx">{{ stepLabels[step.type] }}</option>
             }
           </select>
-          <button type="button" class="btn btn-primary text-nowrap" (click)="addSelectedStep()">Add step</button>
+          <button type="button" class="btn btn-primary text-nowrap" (click)="addSelectedStep()">
+            <i class="btl bt-plus bt-lg me-1" role="status"></i>
+          </button>
         </div>
       </div>
     </div>

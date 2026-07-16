@@ -1,7 +1,7 @@
 @if (sourceImage(); as image) {
   <div class="d-flex justify-content-end p-2 pe-3">
-    <button type="button" class="btn btn-outline-secondary btn-sm" (click)="reset()">
-      New image
+    <button type="button" class="btn btn-sm border-1 border-black" (click)="reset()">
+      <i class="btl bt-upload bt-lg"></i>
     </button>
   </div>
 
@@ -16,28 +16,12 @@
   >
     <h1 class="display-5 mb-2">DoG Studio</h1>
     <p class="text-body-secondary mb-4">
-      Difference-of-Gaussians image exploration, right in your browser.
+      Difference-of-Gaussians image conversion, all in your browser.
     </p>
 
     <label class="upload-dropzone p-5 rounded-4">
       <input type="file" accept="image/*" class="d-none" (change)="onFileSelected($event)" />
-
-      <svg
-        class="mb-2"
-        width="40"
-        height="40"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.5"
-      >
-        <path d="M12 16V4m0 0L7 9m5-5l5 5" stroke-linecap="round" stroke-linejoin="round" />
-        <path
-          d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-      </svg>
+      <i class="btl bt-upload bt-4x mb-3"></i>
 
       <div class="fw-semibold">Drop an image here, or click to browse</div>
       <div class="text-body-secondary small">PNG, JPG, or WebP</div>

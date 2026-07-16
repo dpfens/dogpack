@@ -3,7 +3,6 @@ import { TypedWorkerClient } from '../worker/worker-client';
 import { DogLayer, DogNode, DogRunRequest, isLayer } from '../../models/dog';
 import { WorkerService } from '../worker/worker-service';
 import { ChannelImage } from 'dogpack';
-import { multiScale } from 'dogpack/extensions';
 
 /** Identifies which node currently "owns" the shared canvas, for a label/header. */
 export interface DogFocusLabel {

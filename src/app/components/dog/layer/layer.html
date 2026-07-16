@@ -27,7 +27,7 @@
         data-bs-toggle="dropdown"
         aria-expanded="false"
       >
-        Add node
+      <i class="btl bt-plus me-1"></i>
       </button>
       <ul class="dropdown-menu dropdown-menu-end">
         @for (type of nodeTypes; track type.kind) {
@@ -39,33 +39,65 @@
         }
       </ul>
     </div>
+
+    <button type="button" class="btn btn-primary btn-sm" [disabled]="previewPending()" (click)="runPreview()">
+      @if (previewPending()) {
+        <i class="btl bt-gear bt-spin bt-lg me-1" role="status"></i>
+      } @else {
+        <i class="btl bt-play bt-lg me-1" role="status"></i>
+      }
+      Preview
+    </button>
   </div>
 
   <div class="card-body vstack gap-3">
     @if (instances().length === 0) {
-      <p class="text-muted small mb-0 fst-italic">No nodes yet — use "Add node" to get started.</p>
+      <p class="text-muted small mb-0 fst-italic">No nodes yet. Use "<i class="btl bt-plus mx-1"></i>" to get started.</p>
     }
 
-    @for (entry of instances(); track entry.id) {
-      <div class="position-relative border rounded-3 p-2 pt-4">
-        <span class="badge text-bg-secondary text-capitalize position-absolute top-0 start-0 m-1">
-          {{ entry.kind }}
-        </span>
-        <button
-          type="button"
-          class="btn btn-sm btn-outline-danger position-absolute top-0 end-0 m-1 py-0 px-2"
-          (click)="remove(entry)"
-          [attr.aria-label]="'Remove ' + entry.kind"
-          [title]="'Remove ' + entry.kind"
-        >
-          &times;
-        </button>
+    <div class="accordion">
+      @for (entry of instances(); track entry.id) {
+        <div class="accordion-item">
+          <h2 class="accordion-header fs-6 position-relative">
+            <button
+              type="button"
+              class="accordion-button collapsed py-2 px-3"
+              style="font-size: 1rem; padding-right: 2.75rem"
+              data-bs-toggle="collapse"
+              [attr.data-bs-target]="'#dog-layer-collapse-' + entry.id"
+              aria-expanded="false"
+              [attr.aria-controls]="'dog-layer-collapse-' + entry.id"
+            >
+              <span class="badge text-bg-secondary text-capitalize">
+                {{ entry.kind }}
+              </span>
+            </button>
 
-        <!-- The actual XDog/FDog/ADog/HDog/Layer component is relocated here
-             right after creation — see attach() in layer.ts. -->
-        <div #slot></div>
-      </div>
-    }
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-danger position-absolute top-50 translate-middle-y py-0 px-2"
+              style="right: 2.75rem; z-index: 4"
+              (click)="$event.stopPropagation(); remove(entry)"
+              [attr.aria-label]="'Remove ' + entry.kind"
+              [title]="'Remove ' + entry.kind"
+            >
+              <i class="btl bt-times me-1"></i>
+            </button>
+          </h2>
+
+          <div
+            [id]="'dog-layer-collapse-' + entry.id"
+            class="accordion-collapse collapse"
+          >
+            <div class="accordion-body">
+              <!-- The actual XDog/FDog/ADog/HDog/Layer component is relocated here
+                   right after creation — see attach() in layer.ts. -->
+              <div #slot></div>
+            </div>
+          </div>
+        </div>
+      }
+    </div>
 
     <!-- Hidden mounting point components are first created into, before
          being relocated into their row's #slot above. -->

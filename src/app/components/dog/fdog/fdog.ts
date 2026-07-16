@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, input, model, output, signal, untracked } from '@angular/core';
+import { Component, computed, effect, input, model, signal, untracked } from '@angular/core';
 import { FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
 import {
   DoGConfig,
@@ -8,11 +8,11 @@ import {
   FDogConfigParamType,
   ParamRange,
 } from 'dogpack/dog';
-import { ChannelImage, FDoGConfig } from 'dogpack';
 import { DogComponent } from '../dog/dog';
 import { ParamSliderComponent } from '../../ui/param-slider-component/param-slider-component';
-import { DogModelProvider, FDogConfig, FDogPreset, WireDoGConfig, WireFDoGConfig } from '../../../models/dog';
-import { DoGService } from '../../../services/dog/dog-service';
+import { FDogConfig, FDogPreset, WireDoGConfig, WireFDoGConfig } from '../../../models/dog';
+import { DogPreviewableComponent } from '../base';
+import { DogFocusLabel } from '../../../services/dog/dog-service';
 
 @Component({
   selector: 'fdog',
@@ -21,18 +21,11 @@ import { DoGService } from '../../../services/dog/dog-service';
   styleUrl: './fdog.scss',
   providers: [],
 })
-export class FDogComponent implements DogModelProvider<FDogConfig> {
+export class FDogComponent extends DogPreviewableComponent<FDogConfig> {
   readonly paramRanges: Record<DogConfigParamType | FDogConfigParamType, ParamRange> =
     FDOG_PARAM_RANGES;
 
   readonly config = model<WireFDoGConfig>({} as WireFDoGConfig);
-
-  /** Same contract as xdog/adog/hdog - see xdog.ts for the full rationale. */
-  readonly channelImage = output<ChannelImage>();
-
-  /** True while a preview run is in flight - bind a spinner/disabled state to this. */
-  readonly previewPending = signal(false);
-  dogService = inject(DoGService);
 
   // FDoG-specific keys that DogComponent doesn't manage. Kept as a list so the
   // preset effect and any future validation can iterate them.
@@ -54,7 +47,7 @@ export class FDogComponent implements DogModelProvider<FDogConfig> {
   readonly presetNames = Object.keys(FDOG_STYLE_PRESETS);
   readonly selectedPreset = signal<FDogPreset | null>(null);
   preset = input<FDogPreset | null>(null);
-  private effectivePreset = computed(() => this.preset() ?? this.selectedPreset());;
+  private effectivePreset = computed(() => this.preset() ?? this.selectedPreset());
 
   // When a preset is chosen, patch the FDoG extras. The base DoG params are
   // handled by DogComponent, which receives the same preset as an input.
@@ -71,15 +64,8 @@ export class FDogComponent implements DogModelProvider<FDogConfig> {
     });
   });
 
-  /** Wire this to a "Preview" button in fdog.html - config changes no longer preview automatically. */
-  async runPreview(): Promise<void> {
-    this.previewPending.set(true);
-    try {
-      const image = await this.dogService.run(this.toModel());
-      if (image) this.channelImage.emit(image);
-    } finally {
-      this.previewPending.set(false);
-    }
+  protected focusLabel(): DogFocusLabel {
+    return { kind: 'fdog' };
   }
 
   private rangeControl(key: FDogConfigParamType): FormControl<number> {

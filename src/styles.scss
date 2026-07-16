@@ -1,1 +1,323 @@
-/* You can add global styles to this file, and also import other style files */
+@font-face {
+    font-family: "Playfair Display";
+    src: url("/assets/fonts/PlayfairDisplay-VariableFont_wght.ttf") format("truetype");
+    font-weight: 100 1000;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Playfair Display";
+    src: url("/assets/fonts/PlayfairDisplay-Italic-VariableFont_wght.ttf") format("truetype");
+    font-weight: 100 1000;
+    font-style: italic;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Playfair Display SC";
+    src: url("/assets/fonts/PlayfairDisplaySC-Regular.ttf") format("truetype");
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "IntelOne Mono";
+    src: url("/assets/fonts/intelone-mono-font-family-regular.ttf") format("truetype");
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Noto Sans";
+    src: url("/assets/fonts/NotoSans-VariableFont_wdth,wght.ttf") format("truetype");
+    font-weight: 100 1000;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Noto Sans";
+    src: url("/assets/fonts/NotoSans-Italic-VariableFont_wdth,wght.ttf") format("truetype");
+    font-weight: 100 1000;
+    font-style: italic;
+    font-display: swap;
+}
+
+// ============================================================
+// Bootstrap 5.3 overrides
+// ============================================================
+// Bootstrap 5.3 drives most typography off CSS custom properties
+// defined on :root / body. Overriding these covers body text,
+// buttons, forms, and most components in one shot.
+
+:root,
+[data-bs-theme] {
+    --bs-body-font-family: "Noto Sans", sans-serif;
+    --bs-font-monospace: "IntelOne Mono", monospace;
+    --bs-font-sans-serif: "Noto Sans", sans-serif;
+    --bs-body-font-weight: 400;
+    --bs-body-line-height: 1.618;
+    --bs-body-font-size: 1rem;
+}
+
+// Bootstrap's headings ($headings-font-family) are NOT exposed as a
+// CSS variable — they're compiled directly into the selectors below,
+// so we override the selectors themselves rather than a --bs- token.
+h1, .h1,
+h2, .h2,
+h3, .h3,
+h4, .h4,
+h5, .h5,
+h6, .h6 {
+    font-family: "Playfair Display", serif;
+    font-style: normal;
+    font-weight: 400;
+    line-height: 1.618;
+    text-wrap: balance;
+}
+
+h1, .h1 { font-size: 3em; }
+h2, .h2 { font-size: 2.5em; }
+h3, .h3 { font-size: 2em; }
+h4, .h4 { font-size: 1.75em; }
+h5, .h5 { font-size: 1.5em; }
+h6, .h6 { font-size: 1.25em; }
+
+// Bootstrap's oversized display headings (.display-1–.display-6)
+// also inherit $headings-font-family at compile time — override directly.
+.display-1, .display-2, .display-3,
+.display-4, .display-5, .display-6 {
+    font-family: "Playfair Display", serif;
+    font-weight: 400;
+}
+
+// .lead is a Bootstrap utility class for intro paragraphs — align it
+// with your body font stack rather than leaving Bootstrap's default weight.
+.lead {
+    font-family: "Noto Sans", sans-serif;
+    font-weight: 300;
+}
+
+// Bootstrap sets `strong, b { font-weight: bolder }` in reboot —
+// override with your explicit weight instead of the relative keyword.
+b, strong {
+    font-weight: 800;
+    font-style: normal;
+}
+
+// code/pre/kbd/samp reference var(--bs-font-monospace) already via the
+// custom property above, but Bootstrap's reboot also sets `code` font-size
+// and color — reassert family explicitly in case those rules load after.
+pre, pre *,
+code, code *,
+kbd, samp {
+    font-family: "IntelOne Mono", monospace;
+    font-style: normal;
+    font-weight: 400;
+}
+
+.ff-mono {
+    font-family: "IntelOne Mono", monospace;
+}
+
+.ff-display {
+    font-family: "Playfair Display", serif;
+}
+
+.ff-body {
+    font-family: "Noto Sans", sans-serif;
+}
+
+
+// ============================================================
+// Basic inline text semantics
+// ============================================================
+
+// em/i — italic. This mostly "just works" already, since Noto Sans
+// and Playfair Display both have italic @font-face blocks registered
+// under the same font-family name — the browser auto-selects the
+// italic file whenever font-style: italic is computed, which <em>/<i>
+// trigger by default via the UA stylesheet. No CSS needed for that
+// mechanism to function. BUT — see the mono/SC warning below.
+em, i {
+    font-style: italic;
+}
+
+// mark — highlight/marked text. Bootstrap reboot sets background
+// but not font-family, so it silently inherits body font, which is
+// fine — just made explicit here for clarity.
+mark {
+    font-family: "Noto Sans", sans-serif;
+    font-style: normal;
+}
+
+// del/s — strikethrough. u/ins — underline.
+// No font-family change needed, just keeping style: normal explicit
+// so nested em/i inside deleted/inserted text still italicizes correctly
+// rather than inheriting an unexpected style.
+del, s, ins, u {
+    font-style: normal;
+}
+
+// sub/sup — Bootstrap reboot already sets these; no font-family
+// override needed, they inherit correctly.
+
+// blockquote/cite/q — editorial quoting elements. These pair
+// naturally with your Playfair Display "content" register rather
+// than body copy or mono chrome.
+blockquote {
+    font-family: "Playfair Display", serif;
+    font-style: italic;
+    font-weight: 400;
+}
+
+cite {
+    font-family: "Playfair Display", serif;
+    font-style: italic;
+    font-weight: 400;
+}
+
+// small — distinct from your .fs-small utility class. This is the
+// actual <small> element (fine print, disclaimers, captions).
+small, .small {
+    font-family: "Noto Sans", sans-serif;
+    font-size: 0.875em;
+}
+
+
+// Bootstrap's reboot styles bare `abbr[title]` with a dotted underline
+// and `cursor: help` — keep that behavior but swap the family in.
+abbr[title] {
+    font-family: "Playfair Display SC", serif;
+}
+
+// ============================================================
+// Font sizing utilities
+// ============================================================
+// Note: Bootstrap already ships `.small`/`small` at 0.875em and this
+// project's `.fs-small` at 0.85rem — decide if you want both or just
+// one; having near-duplicate scale utilities gets confusing fast.
+
+.fs-small   { font-size: 0.85rem; }
+.fs-smaller { font-size: 0.85em; }
+.fs-large   { font-size: 1.15rem; }
+.fs-larger  { font-size: 1.15em; }
+
+.headline,
+.headline span {
+    font-size: clamp(3rem, calc(1vw + 1rem), 5rem);
+    line-height: 1.2;
+    margin: 0;
+
+    @media (min-width: 769px) {
+        font-size: 4.5rem;
+    }
+}
+
+.sub-headline {
+    font-size: clamp(2rem, calc(4vw + 1rem), 2.5rem);
+    line-height: 1.3;
+    font-weight: 300;
+}
+
+.tagline {
+    font-size: clamp(1rem, calc(1vmin + 1rem), 2.5rem);
+    line-height: 1.618;
+    font-weight: 300;
+}
+
+
+// ============================================================
+// Bootstrap component overrides — display font (Playfair Display)
+// Anything acting as a "heading" inside a component
+// ============================================================
+
+.card-header,
+.card-title,
+.accordion-header,
+.accordion-button,
+.modal-title,
+.offcanvas-title,
+.popover-header,
+.toast-header strong,
+.list-group-item-heading {
+    font-family: "Playfair Display", serif;
+    font-weight: 400;
+}
+
+// Accordion buttons need this reasserted — Bootstrap's compiled CSS
+// sets font-family on .accordion-button directly (not via custom
+// property), and it's a <button>, so it won't inherit from body
+// the way a <div> would in some browsers' UA stylesheets.
+.accordion-button {
+    font-style: normal;
+}
+
+// ============================================================
+// Bootstrap component overrides — monospace (IntelOne Mono)
+// Navigation, badges, and adjacent "chrome" elements
+// ============================================================
+
+.navbar-brand,
+.nav-link,
+.nav-tabs .nav-link,
+.nav-pills .nav-link,
+.breadcrumb-item,
+.breadcrumb-item a,
+.page-link,
+.btn,
+.dropdown-item,
+.dropdown-toggle,
+.nav-link,
+.navbar-brand,
+.badge,
+.tooltip-inner,
+.popover-body,
+.form-control,
+.form-select {
+    font-family: "IntelOne Mono", monospace;
+}
+
+// Buttons are arguably part of the same "UI chrome" family as nav/badges.
+// Uncomment if you want that consistency too:
+// .btn {
+//     font-family: "IntelOne Mono", monospace;
+// }
+
+.ff-mono {
+    font-family: "IntelOne Mono", monospace;
+}
+
+// ============================================================
+// Uppercase treatment — badges & buttons
+// ============================================================
+
+.btn {
+    text-transform: capitalize;
+    letter-spacing: 0.03em;
+}
+
+.badge {
+    font-family: 'IntelOne Mono', monospace;
+    border: 1px solid black;
+    border-radius: 3em;
+    display: inline-block;
+    padding: 0.5em 1em;
+}
+
+.drop-shadow-hover {
+    will-change: box-shadow;
+    transition: box-shadow 0.2s;
+}
+
+.drop-shadow,
+.drop-shadow-hover:hover {
+    box-shadow: black 0.5rem 0.5rem 0 0;
+}
+
+.card {
+    border: 1px solid black;
+}

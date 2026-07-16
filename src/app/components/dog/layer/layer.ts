@@ -5,7 +5,6 @@ import {
   ElementRef,
   inject,
   Injector,
-  output,
   Renderer2,
   signal,
   Type,
@@ -18,10 +17,10 @@ import { XDogComponent } from '../xdog/xdog';
 import { FDogComponent } from '../fdog/fdog';
 import { ADogComponent } from '../adog/adog';
 import { HDogComponent } from '../hdog/hdog';
-import { BlendFunction, ChannelImage, extensions } from 'dogpack';
-import { DogComponentType, DogLayer, DogModelProvider, DogNode } from '../../../models/dog';
-import { DoGService } from '../../../services/dog/dog-service';
-import { luminanceToImageData } from 'dogpack/utils';
+import { extensions } from 'dogpack';
+import { DogComponentType, DogLayer, DogNode } from '../../../models/dog';
+import { DogPreviewableComponent } from '../base';
+import { DogFocusLabel } from '../../../services/dog/dog-service';
 import { BuiltinBlendMode } from 'dogpack/extensions';
 
 type DogLeaf = XDogComponent | FDogComponent | ADogComponent | HDogComponent;
@@ -55,7 +54,7 @@ function leafComponent(type: DogComponentType): Type<DogLeaf> {
   templateUrl: './layer.html',
   styleUrl: './layer.scss',
 })
-export class DogLayerComponent implements DogModelProvider<DogLayer> {
+export class DogLayerComponent extends DogPreviewableComponent<DogLayer> {
   /**
    * Hidden mounting point. createComponent() needs *some* ViewContainerRef to
    * instantiate into; every node is created here first and then its native
@@ -72,24 +71,20 @@ export class DogLayerComponent implements DogModelProvider<DogLayer> {
 
   private readonly renderer = inject(Renderer2);
   private readonly injector = inject(Injector);
-  private readonly dogService = inject(DoGService);
-  private nextId = 0;
+  /**
+   * Backs the collapse-target DOM id in layer.html (`dog-layer-collapse-{id}`).
+   * Must be unique across *every* DogLayerComponent instance, not just this
+   * one's own children - nested layers each used to start their own instance
+   * counter at 0, which produced duplicate ids across nesting levels and
+   * caused Bootstrap's querySelector-based collapse targeting to toggle the
+   * wrong accordion item. A shared static counter guarantees global
+   * uniqueness regardless of nesting depth.
+   */
+  private static nextGlobalId = 0;
 
   readonly name: WritableSignal<string> = signal('');
   readonly instances: WritableSignal<DogEntry[]> = signal([]);
   readonly blend: WritableSignal<BuiltinBlendMode | undefined> = signal(undefined);
-
-  /**
-   * Result of running this layer's own composed model (this node plus every
-   * descendant, per toModel()) through the DoG worker. Emitted for any
-   * declarative parent that happens to have one; the DoGService.show() push in
-   * runPreview() below is what actually reaches the Workbench, since most
-   * dog-layer instances are created dynamically with no such parent.
-   */
-  readonly channelImage = output<ChannelImage>();
-
-  /** True while a preview run is in flight - bind a spinner/disabled state to this. */
-  readonly previewPending = signal(false);
 
   /** Menu options rendered by the "Add node" dropdown in the template. */
   readonly nodeTypes: ReadonlyArray<{ kind: DogNodeKind; label: string }> = [
@@ -110,7 +105,7 @@ export class DogLayerComponent implements DogModelProvider<DogLayer> {
 
   add<T extends DogNodeInstance>(cmp: Type<T>, kind: DogNodeKind): ComponentRef<T> {
     const ref = this.container.createComponent(cmp);
-    const id = this.nextId++;
+    const id = DogLayerComponent.nextGlobalId++;
     this.instances.update(list => [...list, { id, kind, ref: ref as DogRef, attached: false }]);
     afterNextRender(() => this.attach(id), { injector: this.injector });
     return ref;
@@ -189,29 +184,7 @@ export class DogLayerComponent implements DogModelProvider<DogLayer> {
     };
   }
 
-  /**
-   * Wire this to a "Preview" button in layer.html. Runs this layer's full
-   * composed model - itself plus every nested layer/leaf - through the
-   * worker as one DogLayer; DoGService.run() passes it through unwrapped
-   * since it's already a layer, not a bare leaf config.
-   *
-   * Reports through DoGService's shared focus state (not just the
-   * channelImage output),
-   * since this component is usually created dynamically with no parent
-   * template able to bind to that output - see the class doc comment above.
-   */
-  async runPreview(): Promise<void> {
-    this.previewPending.set(true);
-    this.dogService.setPending({ kind: 'layer', name: this.name() });
-    try {
-      const layer = this.toModel();
-      const image = await this.dogService.run(layer);
-      if (image) {
-        this.channelImage.emit(image);
-        this.dogService.show({ kind: 'layer', name: this.name() }, luminanceToImageData(image));
-      }
-    } finally {
-      this.previewPending.set(false);
-    }
+  protected focusLabel(): DogFocusLabel {
+    return { kind: 'layer', name: this.name() };
   }
 }

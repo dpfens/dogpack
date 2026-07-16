@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, input, model, output, signal, untracked } from '@angular/core';
+import { Component, computed, effect, input, model, signal, untracked } from '@angular/core';
 import { FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
 import {
   DoGConfig,
@@ -8,12 +8,11 @@ import {
   ParamRange,
   ADOG_STYLE_PRESETS,
 } from 'dogpack/dog';
-import { ChannelImage } from 'dogpack';
 import { DogComponent } from '../dog/dog';
 import { ParamSliderComponent } from '../../ui/param-slider-component/param-slider-component';
-import { WireDoGConfig, ADogConfig, ADogPreset, DogModelProvider, WireADoGConfig, ThresholdStrategyDescriptor } from '../../../models/dog';
-import { DoGService } from '../../../services/dog/dog-service';
-import { luminanceToImageData } from 'dogpack/utils';
+import { WireDoGConfig, ADogConfig, ADogPreset, WireADoGConfig, ThresholdStrategyDescriptor } from '../../../models/dog';
+import { DogPreviewableComponent } from '../base';
+import { DogFocusLabel } from '../../../services/dog/dog-service';
 
 type ThresholdType = 'Soft' | 'Hard';
 
@@ -29,15 +28,11 @@ const THRESHOLD_TYPE_TO_DESCRIPTOR_KIND: Record<ThresholdType, ThresholdStrategy
   styleUrl: './adog.scss',
   providers: [],
 })
-export class ADogComponent implements DogModelProvider<ADogConfig> {
+export class ADogComponent extends DogPreviewableComponent<ADogConfig> {
   readonly paramRanges: Record<DogConfigParamType | ADogConfigParamType, ParamRange> =
     ADOG_PARAM_RANGES;
 
   readonly config = model<WireADoGConfig>({} as WireADoGConfig);
-
-  readonly channelImage = output<ChannelImage>();
-  readonly previewPending = signal(false);
-  private readonly dogService = inject(DoGService);
 
   private adogKeys: ADogConfigParamType[] = ['tau', 's', 'noiseScaleC', 'kernelSizeMultiplier'];
 
@@ -79,18 +74,8 @@ export class ADogComponent implements DogModelProvider<ADogConfig> {
     });
   });
 
-  async runPreview(): Promise<void> {
-    this.previewPending.set(true);
-    this.dogService.setPending({ kind: 'adog' });
-    try {
-      const image = await this.dogService.run(this.toModel());
-      if (image) {
-        this.channelImage.emit(image);
-        this.dogService.show({ kind: 'adog' }, luminanceToImageData(image));
-      }
-    } finally {
-      this.previewPending.set(false);
-    }
+  protected focusLabel(): DogFocusLabel {
+    return { kind: 'adog' };
   }
 
   private rangeControl(key: ADogConfigParamType): FormControl<number> {

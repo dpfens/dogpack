@@ -17,6 +17,8 @@ export class ImageCanvasComponent {
   status = input<ImageStatus>('ready');
   errorMessage = input<string>('');
   zoomEnabled = input(true);
+  downloadEnabled = input(false);
+  downloadFilename = input('image.png');
 
   private hostRef = viewChild.required<ElementRef<HTMLDivElement>>('host');
   private canvasRef = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
@@ -27,6 +29,7 @@ export class ImageCanvasComponent {
   private scale = signal(1);
   private offset = signal({ x: 0, y: 0 });
   comparePos = signal(50); // percent
+  downloading = signal(false);
 
   private panning = false;
   private draggingDivider = false;
@@ -195,5 +198,35 @@ export class ImageCanvasComponent {
   resetView() {
     this.scale.set(1);
     this.offset.set({ x: 0, y: 0 });
+  }
+
+  async downloadImage() {
+    const data = this.imageData();
+    if (!data || this.status() !== 'ready' || this.downloading()) return;
+
+    this.downloading.set(true);
+    try {
+      // Reuse the offscreen cache if it's already up to date (it's already at
+      // the image's native resolution), otherwise build one on the fly so a
+      // download can't be blocked by draw() not having run yet.
+      const source = this.afterCache && this.afterCache.data === data
+        ? this.afterCache.canvas
+        : this.getOffscreen(data, null).canvas;
+
+      const blob = await source.convertToBlob({ type: 'image/png' });
+      const url = URL.createObjectURL(blob);
+      try {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = this.downloadFilename();
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    } finally {
+      this.downloading.set(false);
+    }
   }
 }

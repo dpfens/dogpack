@@ -5,6 +5,27 @@
 
     <canvas #canvas class="w-100 h-100 d-block" [style.cursor]="cursorStyle()"></canvas>
 
+    @if (downloadEnabled() && status() === 'ready') {
+    <button type="button"
+            class="btn btn-sm btn-light position-absolute top-0 end-0 m-2 d-flex
+                   align-items-center justify-content-center
+                   border-1 border-black
+                   "
+            style="width: 36px; height: 36px;"
+            [title]="downloading() ? 'Downloading…' : 'Download original image'"
+            [disabled]="downloading()"
+            (pointerdown)="$event.stopPropagation()"
+            (click)="downloadImage()">
+            @if (downloading()) {
+                <i class="btl bt-gear bt-spin" style="pointer-events: none;">
+                    <span class="visually-hidden">Downloading…</span>
+                </i>
+            } @else {
+                <i class="btl bt-download bt-lg" style="pointer-events: none;"></i>
+            }
+    </button>
+    }
+
     @if (compareWith() && status() === 'ready') {
     <div class="position-absolute top-0 bottom-0 bg-white bg-opacity-75"
             style="width: 2px;" [style.left.%]="comparePos()">
@@ -13,7 +34,10 @@
                     align-items-center justify-content-center"
             style="width: 32px; height: 32px; cursor: ew-resize; touch-action: none; user-select: none;"
             (pointerdown)="onDividerStart($event)">
-        <i class="bi bi-arrows-expand" style="pointer-events: none; user-select: none;"></i>
+            <span class="bt-stack bt-2x" style="pointer-events: none; user-select: none;">
+                <i class="btl bt-long-arrow-left bt-stack-sm"></i>
+                <i class="btl bt-long-arrow-right bt-stack-sm"></i>
+            </span>
         </div>
     </div>
     }
@@ -21,9 +45,9 @@
     @if (status() === 'loading') {
     <div class="position-absolute top-0 start-0 w-100 h-100 d-flex
                 align-items-center justify-content-center bg-body bg-opacity-75">
-        <div class="spinner-border text-primary" role="status">
-        <span class="visually-hidden">Loading…</span>
-        </div>
+        <i class="btl bt-gear bt-spin bt-2x">
+            <span class="visually-hidden">Loading…</span>
+        </i>
     </div>
     }
 

@@ -8,17 +8,45 @@
   </select>
 </div>
 
-<div class="card mb-3">
-  <div class="card-header">FDoG (line drawing)</div>
-  <div class="card-body">
-    <fdog [preset]="fdogPreset()" />
+<div class="accordion mb-3">
+  <div class="accordion-item">
+    <h2 class="accordion-header fs-6">
+      <button
+        type="button"
+        class="accordion-button collapsed"
+        data-bs-toggle="collapse"
+        data-bs-target="#hdog-fdog-collapse"
+        aria-expanded="false"
+        aria-controls="hdog-fdog-collapse"
+      >
+        FDoG (line drawing)
+      </button>
+    </h2>
+    <div id="hdog-fdog-collapse" class="accordion-collapse collapse">
+      <div class="accordion-body">
+        <fdog [preset]="fdogPreset()" />
+      </div>
+    </div>
   </div>
-</div>
 
-<div class="card mb-3">
-  <div class="card-header">ADoG (primary tone)</div>
-  <div class="card-body">
-    <adog [preset]="adogPreset()" />
+  <div class="accordion-item">
+    <h2 class="accordion-header fs-6">
+      <button
+        type="button"
+        class="accordion-button collapsed"
+        data-bs-toggle="collapse"
+        data-bs-target="#hdog-adog-collapse"
+        aria-expanded="false"
+        aria-controls="hdog-adog-collapse"
+      >
+        ADoG (primary tone)
+      </button>
+    </h2>
+    <div id="hdog-adog-collapse" class="accordion-collapse collapse">
+      <div class="accordion-body">
+        <adog [preset]="adogPreset()" />
+      </div>
+    </div>
   </div>
 </div>
 

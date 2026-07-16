@@ -4,7 +4,7 @@
          regardless of whether that's preprocessing or a node anywhere in the
          pipeline tree below. -->
     <div class="col-12 col-lg-5 sticky-top" style="top: 1rem;">
-      <div class="card">
+      <div class="card drop-shadow">
         <div class="card-header d-flex align-items-center justify-content-between">
           <span>Preview</span>
           @if (activeLabelText(); as label) {
@@ -16,6 +16,8 @@
               [imageData]="activeImage()"
               [compareWith]="sourceImage()"
               [status]="canvasStatus()"
+              [downloadEnabled]="true"
+              [downloadFilename]="'dogpack-result.png'"
             />
         </div>
       </div>
@@ -28,14 +30,16 @@
       <!-- The pipeline builder. Its own runPreview() runs its FULL composed
            model (itself plus every nested layer/leaf) and reports through
            DoGService, same as every leaf's own Preview button does. -->
-      <div class="card mt-3">
+      <div class="card drop-shadow mt-3">
         <div class="card-header d-flex align-items-center justify-content-between">
           <span>Pipeline</span>
           <button type="button" class="btn btn-primary btn-sm" [disabled]="rootLayer.previewPending()" (click)="rootLayer.runPreview()">
             @if (rootLayer.previewPending()) {
-              <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+              <i class="btl bt-gear bt-spin bt-lg me-1" role="status"></i>
+            } @else {
+              <i class="btl bt-play bt-lg me-1" role="status"></i>
             }
-            Preview full pipeline
+            Run
           </button>
         </div>
         <div class="card-body">

@@ -1,11 +1,11 @@
-import { Component, inject, input, model, output, signal } from '@angular/core';
+import { Component, input, model, signal } from '@angular/core';
 import { FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
-import { DoGConfig, DogConfigParamType, ParamRange, STYLE_PRESETS, XDOG_PARAM_RANGES, XDoGConfig, XDogConfigParamType } from 'dogpack/dog';
-import { ChannelImage } from 'dogpack';
+import { DoGConfig, DogConfigParamType, ParamRange, STYLE_PRESETS, XDOG_PARAM_RANGES, XDogConfigParamType } from 'dogpack/dog';
 import { DogComponent } from '../dog/dog';
-import { BlurStrategyDescriptor, DogModelProvider, WireDoGConfig, XDogConfig, XDogPreset } from '../../../models/dog';
+import { BlurStrategyDescriptor, WireDoGConfig, XDogConfig, XDogPreset } from '../../../models/dog';
 import { ParamSliderComponent } from "../../ui/param-slider-component/param-slider-component";
-import { DoGService } from '../../../services/dog/dog-service';
+import { DogPreviewableComponent } from '../base';
+import { DogFocusLabel } from '../../../services/dog/dog-service';
 
 type BlurType = 'Isotropic';
 
@@ -22,18 +22,13 @@ const BLUR_TYPE_TO_DESCRIPTOR_KIND: Record<BlurType, BlurStrategyDescriptor['kin
   styleUrl: './xdog.scss',
   providers: [],
 })
-export class XDogComponent implements DogModelProvider<XDogConfig> {
+export class XDogComponent extends DogPreviewableComponent<XDogConfig> {
   readonly paramRanges: Record<DogConfigParamType | XDogConfigParamType, ParamRange> = XDOG_PARAM_RANGES;
 
   readonly config = model<XDogConfig>({} as XDogConfig);
   readonly presetNames = Object.keys(STYLE_PRESETS);
   readonly selectedPreset = signal<XDogPreset | null>(null);
   preset = input<XDogPreset | null>(null);
-
-  readonly channelImage = output<ChannelImage>();
-  readonly previewPending = signal(false);
-
-  private readonly dogService = inject(DoGService);
 
   readonly kernelSizeMultiplier = new FormControl<number>(
     this.paramRanges.kernelSizeMultiplier.default,
@@ -53,14 +48,8 @@ export class XDogComponent implements DogModelProvider<XDogConfig> {
     { key: 'Isotropic', label: 'Isotropic' }
   ];
 
-  async runPreview(): Promise<void> {
-    this.previewPending.set(true);
-    try {
-      const image = await this.dogService.run(this.toModel());
-      if (image) this.channelImage.emit(image);
-    } finally {
-      this.previewPending.set(false);
-    }
+  protected focusLabel(): DogFocusLabel {
+    return { kind: 'xdog' };
   }
 
   /**
@@ -96,7 +85,6 @@ export class XDogComponent implements DogModelProvider<XDogConfig> {
   }
 
   toModel(): XDogConfig {
-    console.log(this.config());
     return this.config();
   }
 }
