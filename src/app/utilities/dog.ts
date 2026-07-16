@@ -279,8 +279,6 @@ export async function executeDogProcessingContext(
   context: DogProcessingContext,
   input: ChannelImage,
 ): Promise<ChannelImage> {
-  const plan = buildExecutablePlan(context);
-  console.log(plan);
   return executeDogExecutablePlan(await buildExecutablePlan(context), input);
 }
 
