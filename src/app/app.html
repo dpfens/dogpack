@@ -1,8 +1,11 @@
 @if (sourceImage(); as image) {
-  <div class="d-flex justify-content-end p-2 pe-3">
-    <button type="button" class="btn btn-sm border-1 border-black" (click)="reset()">
-      <i class="btl bt-upload bt-lg"></i>
-    </button>
+  <div class="d-flex justify-content-between p-2 pe-3">
+    <h1 class="h3">DoG Studio</h1>
+    <div class="flex flex-column align-items-center mt-2">
+      <button type="button" class="btn btn-sm border-1 border-black" (click)="reset()">
+        <i class="btl bt-upload bt-lg"></i>
+      </button>
+    </div>
   </div>
 
   <app-workbench [sourceImage]="image" />

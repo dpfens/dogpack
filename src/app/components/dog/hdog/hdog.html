@@ -1,3 +1,15 @@
+<div class="d-flex align-items-center justify-content-between">
+  <span class="ff-display mb-3">HDoG</span>
+  <button type="button" class="btn btn-primary btn-sm" [disabled]="previewPending()" (click)="runPreview()">
+    @if (previewPending()) {
+      <i class="btl bt-gear bt-spin bt-lg me-1" role="status"></i>
+    } @else {
+      <i class="btl bt-play bt-lg me-1" role="status"></i>
+    }
+    Preview
+  </button>
+</div>
+
 <div class="mb-3">
   <label class="form-label">Preset</label>
   <select class="form-select" (change)="selectPreset($any($event.target).value)">

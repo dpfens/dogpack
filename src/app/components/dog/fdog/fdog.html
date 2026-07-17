@@ -1,64 +1,63 @@
-<div class="card">
-  <div class="card-header d-flex align-items-center justify-content-between">
-    <span>FDoG</span>
-    <button type="button" class="btn btn-primary btn-sm" [disabled]="previewPending()" (click)="runPreview()">
-      @if (previewPending()) {
-        <i class="btl bt-gear bt-spin bt-lg me-1" role="status"></i>
-      } @else {
-        <i class="btl bt-play bt-lg me-1" role="status"></i>
-      }
-      Preview
-    </button>
-  </div>
-  <div class="card-body">
-    @if (!preset()) {
-      <div class="mb-3">
-        <label class="form-label">Preset</label>
-        <select class="form-select" (change)="selectPreset($any($event.target).value)">
-          <option value="">Custom</option>
-          @for (name of presetNames; track name) {
-            <option [value]="name">{{ name }}</option>
-          }
-        </select>
-      </div>
+
+<div class="d-flex align-items-center justify-content-between">
+  <span class="ff-display mb-3">FDoG</span>
+  <button type="button" class="btn btn-primary btn-sm" [disabled]="previewPending()" (click)="runPreview()">
+    @if (previewPending()) {
+      <i class="btl bt-gear bt-spin bt-lg me-1" role="status"></i>
+    } @else {
+      <i class="btl bt-play bt-lg me-1" role="status"></i>
     }
-
-    <dog
-      [ranges]="paramRanges"
-      [preset]="preset() ?? selectedPreset()"
-      (configChange)="onConfig($event)" />
-
+    Preview
+  </button>
+</div>
+<div class="">
+  @if (!preset()) {
     <div class="mb-3">
-      <label class="form-label">σc (structure tensor smoothing)</label>
-      <param-slider
-        [sliderMin]="paramRanges.sigmaC.recommendedMin"
-        [sliderMax]="paramRanges.sigmaC.recommendedMax"
-        [hardMin]="paramRanges.sigmaC.hardMin"
-        [hardMax]="paramRanges.sigmaC.hardMax"
-        [step]="paramRanges.sigmaC.step"
-        [formControl]="sigmaC" />
+      <label class="form-label">Preset</label>
+      <select class="form-select" (change)="selectPreset($any($event.target).value)">
+        <option value="">Custom</option>
+        @for (name of presetNames; track name) {
+          <option [value]="name">{{ name }}</option>
+        }
+      </select>
     </div>
+  }
 
-    <div class="mb-3">
-      <label class="form-label">σm (flow-aligned smoothing)</label>
-      <param-slider
-        [sliderMin]="paramRanges.sigmaM.recommendedMin"
-        [sliderMax]="paramRanges.sigmaM.recommendedMax"
-        [hardMin]="paramRanges.sigmaM.hardMin"
-        [hardMax]="paramRanges.sigmaM.hardMax"
-        [step]="paramRanges.sigmaM.step"
-        [formControl]="sigmaM" />
-    </div>
+  <dog
+    [ranges]="paramRanges"
+    [preset]="preset() ?? selectedPreset()"
+    (configChange)="onConfig($event)" />
 
-    <div class="mb-3">
-      <label class="form-label">σa (anti-aliasing LIC)</label>
-      <param-slider
-        [sliderMin]="paramRanges.sigmaA.recommendedMin"
-        [sliderMax]="paramRanges.sigmaA.recommendedMax"
-        [hardMin]="paramRanges.sigmaA.hardMin"
-        [hardMax]="paramRanges.sigmaA.hardMax"
-        [step]="paramRanges.sigmaA.step"
-        [formControl]="sigmaA" />
-    </div>
+  <div class="mb-3">
+    <label class="form-label">σc (structure tensor smoothing)</label>
+    <param-slider
+      [sliderMin]="paramRanges.sigmaC.recommendedMin"
+      [sliderMax]="paramRanges.sigmaC.recommendedMax"
+      [hardMin]="paramRanges.sigmaC.hardMin"
+      [hardMax]="paramRanges.sigmaC.hardMax"
+      [step]="paramRanges.sigmaC.step"
+      [formControl]="sigmaC" />
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">σm (flow-aligned smoothing)</label>
+    <param-slider
+      [sliderMin]="paramRanges.sigmaM.recommendedMin"
+      [sliderMax]="paramRanges.sigmaM.recommendedMax"
+      [hardMin]="paramRanges.sigmaM.hardMin"
+      [hardMax]="paramRanges.sigmaM.hardMax"
+      [step]="paramRanges.sigmaM.step"
+      [formControl]="sigmaM" />
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">σa (anti-aliasing LIC)</label>
+    <param-slider
+      [sliderMin]="paramRanges.sigmaA.recommendedMin"
+      [sliderMax]="paramRanges.sigmaA.recommendedMax"
+      [hardMin]="paramRanges.sigmaA.hardMin"
+      [hardMax]="paramRanges.sigmaA.hardMax"
+      [step]="paramRanges.sigmaA.step"
+      [formControl]="sigmaA" />
   </div>
 </div>

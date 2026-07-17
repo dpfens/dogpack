@@ -1,53 +1,72 @@
 <div class="card">
-  <div class="card-header d-flex align-items-center gap-2 flex-wrap">
-    <input
-      type="text"
-      class="form-control form-control-sm w-auto"
-      style="min-width: 8rem"
-      placeholder="Layer"
-      [value]="name()"
-      (input)="name.set($any($event.target).value)"
-    />
+  <div class="card-header">
+    <div class="row g-2 align-items-center">
+      <!-- Layer name: full width on mobile, auto width from sm+ -->
+      <div class="col-12 col-sm-auto">
+        <input
+          type="text"
+          class="form-control form-control-sm"
+          style="min-width: 8rem"
+          placeholder="Layer"
+          [value]="name()"
+          (input)="name.set($any($event.target).value)"
+        />
+      </div>
 
-    <select
-      class="form-select form-select-sm w-auto ms-auto"
-      [value]="blend() ?? ''"
-      (change)="blend.set($any($event.target).value || undefined)"
-    >
-      <option value="" disabled>Blend mode</option>
-      @for (mode of blendModes; track mode) {
-        <option [value]="mode">{{ mode }}</option>
-      }
-    </select>
+      <!-- Blend mode: grows to fill on mobile, pushed right from sm+ -->
+      <div class="col col-sm-auto ms-sm-auto">
+        <select
+          class="form-select form-select-sm"
+          [value]="blend() ?? ''"
+          (change)="blend.set($any($event.target).value || undefined)"
+        >
+          <option value="" disabled>Blend mode</option>
+          @for (mode of blendModes; track mode) {
+            <option [value]="mode">{{ mode }}</option>
+          }
+        </select>
+      </div>
 
-    <div class="btn-group">
-      <button
-        type="button"
-        class="btn btn-sm btn-primary dropdown-toggle"
-        data-bs-toggle="dropdown"
-        aria-expanded="false"
-      >
-      <i class="btl bt-plus me-1"></i>
-      </button>
-      <ul class="dropdown-menu dropdown-menu-end">
-        @for (type of nodeTypes; track type.kind) {
-          <li>
-            <button class="dropdown-item" type="button" (click)="addNode(type.kind)">
-              {{ type.label }}
-            </button>
-          </li>
-        }
-      </ul>
+      <!-- Add-node dropdown: content width, sits beside blend mode -->
+      <div class="col-auto">
+        <div class="btn-group">
+          <button
+            type="button"
+            class="btn btn-sm btn-primary dropdown-toggle"
+            data-bs-toggle="dropdown"
+            aria-expanded="false"
+          >
+            <i class="btl bt-plus me-1"></i>
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end">
+            @for (type of nodeTypes; track type.kind) {
+              <li>
+                <button class="dropdown-item" type="button" (click)="addNode(type.kind)">
+                  {{ type.label }}
+                </button>
+              </li>
+            }
+          </ul>
+        </div>
+      </div>
+
+      <!-- Preview: full width row on mobile, auto width from sm+ -->
+      <div class="col-12 col-sm-auto">
+        <button
+          type="button"
+          class="btn btn-primary btn-sm w-100"
+          [disabled]="previewPending()"
+          (click)="runPreview()"
+        >
+          @if (previewPending()) {
+            <i class="btl bt-gear bt-spin bt-lg me-1" role="status"></i>
+          } @else {
+            <i class="btl bt-play bt-lg me-1" role="status"></i>
+          }
+          Preview
+        </button>
+      </div>
     </div>
-
-    <button type="button" class="btn btn-primary btn-sm" [disabled]="previewPending()" (click)="runPreview()">
-      @if (previewPending()) {
-        <i class="btl bt-gear bt-spin bt-lg me-1" role="status"></i>
-      } @else {
-        <i class="btl bt-play bt-lg me-1" role="status"></i>
-      }
-      Preview
-    </button>
   </div>
 
   <div class="card-body vstack gap-3">

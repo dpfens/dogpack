@@ -1,54 +1,52 @@
-<div class="card">
-  <div class="card-header d-flex align-items-center justify-content-between">
-    <span>XDoG</span>
-    <button type="button" class="btn btn-primary btn-sm" [disabled]="previewPending()" (click)="runPreview()">
-      @if (previewPending()) {
-        <i class="btl bt-gear bt-spin bt-lg me-1" role="status"></i>
-      } @else {
-        <i class="btl bt-play bt-lg me-1" role="status"></i>
-      }
-      Preview
-    </button>
-  </div>
-  <div class="card-body">
-    @if (!preset() && presetNames.length) {
-      <div class="mb-3">
-        <label class="form-label">Preset</label>
-        <select class="form-select" (change)="selectPreset($any($event.target).value)">
-          <option value="">Custom</option>
-          @for (name of presetNames; track name) {
-            <option [value]="name">{{ name }}</option>
-          }
-        </select>
-      </div>
+<div class="d-flex align-items-center justify-content-between">
+  <span class="ff-display mb-3">XDoG</span>
+  <button type="button" class="btn btn-primary btn-sm" [disabled]="previewPending()" (click)="runPreview()">
+    @if (previewPending()) {
+      <i class="btl bt-gear bt-spin bt-lg me-1" role="status"></i>
+    } @else {
+      <i class="btl bt-play bt-lg me-1" role="status"></i>
     }
-
-    <dog
-      [ranges]="paramRanges"
-      [preset]="preset() ?? selectedPreset()"
-      (configChange)="onConfig($event)" />
-
+    Preview
+  </button>
+</div>
+<div>
+  @if (!preset() && presetNames.length) {
     <div class="mb-3">
-      <label class="form-label">Kernel size multiplier</label>
-      <param-slider
-        [sliderMin]="paramRanges.kernelSizeMultiplier.recommendedMin"
-        [sliderMax]="paramRanges.kernelSizeMultiplier.recommendedMax"
-        [hardMin]="paramRanges.kernelSizeMultiplier.hardMin"
-        [hardMax]="paramRanges.kernelSizeMultiplier.hardMax"
-        [step]="paramRanges.kernelSizeMultiplier.step"
-        [formControl]="kernelSizeMultiplier" />
-    </div>
-
-    <div class="mb-3">
-      <label class="form-label">Blur strategy</label>
-      <select
-        class="form-select"
-        [value]="blurStrategyKey()"
-        (change)="blurStrategyKey.set($any($event.target).value)">
-        @for (opt of blurOptions; track opt.key) {
-          <option [value]="opt.key">{{ opt.label }}</option>
+      <label class="form-label">Preset</label>
+      <select class="form-select" (change)="selectPreset($any($event.target).value)">
+        <option value="">Custom</option>
+        @for (name of presetNames; track name) {
+          <option [value]="name">{{ name }}</option>
         }
       </select>
     </div>
+  }
+
+  <dog
+    [ranges]="paramRanges"
+    [preset]="preset() ?? selectedPreset()"
+    (configChange)="onConfig($event)" />
+
+  <div class="mb-3">
+    <label class="form-label">Kernel size multiplier</label>
+    <param-slider
+      [sliderMin]="paramRanges.kernelSizeMultiplier.recommendedMin"
+      [sliderMax]="paramRanges.kernelSizeMultiplier.recommendedMax"
+      [hardMin]="paramRanges.kernelSizeMultiplier.hardMin"
+      [hardMax]="paramRanges.kernelSizeMultiplier.hardMax"
+      [step]="paramRanges.kernelSizeMultiplier.step"
+      [formControl]="kernelSizeMultiplier" />
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Blur strategy</label>
+    <select
+      class="form-select"
+      [value]="blurStrategyKey()"
+      (change)="blurStrategyKey.set($any($event.target).value)">
+      @for (opt of blurOptions; track opt.key) {
+        <option [value]="opt.key">{{ opt.label }}</option>
+      }
+    </select>
   </div>
 </div>
