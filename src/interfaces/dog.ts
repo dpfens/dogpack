@@ -54,6 +54,25 @@ export interface DoGConfig {
    */
   phi: number | ChannelImage;
 
+  /**
+   * Strategy used to convert the sharpened DoG response into the final output image
+   * 
+   * Decouples how thresholding is performed from the edge-detection/sharpening
+   * pipeline (sigma, k, p).  Allows swapping strategies without touching the rest of the config.
+   * Consumes `epsilon` and `phi` from this config as its ThresholdConfig.
+   * 
+   * Built-in strategies (see threshold.ts):
+   * - `SoftThresholdStrategy`: tanh-based soft transition, governed by `phi`
+   *   (steepness) and `epsilon` (midpoint). Produces the smooth pencil/pastel-to-hard-edge
+   *   range described by `phi` above. This is the paper's standard XDoG threshold.
+   * - `HardThresholdStrategy`: binary step function at `epsilon` (ignores `phi`).
+   *   Equivalent to the φ → ∞ limit of the soft strategy; suited to styles like ADoG
+   *   that expect a strictly binarized screentone output.
+   * - `HysteresisThresholdStrategy`: Canny-style double threshold with flood-fill
+   *   linking, using `epsilon ± highOffset/lowOffset` as the high/low bounds. Produces
+   *   cleaner, more connected edge lines than a single global threshold, at the cost
+   *   of ignoring `phi` and requiring a full-image connectivity pass.
+   */
   thresholdStrategy: ThresholdStrategy;
 }
 
