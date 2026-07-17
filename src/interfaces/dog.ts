@@ -104,6 +104,22 @@ export interface FDoGConfig extends DoGConfig {
    * - >2: Stylistic smoothing effect
    */
   sigmaA: number;
+
+  /**
+   * Number of smoothing iterations applied when computing the Edge Tangent Flow (ETF)
+   * 
+   * The ETF is built iteratively by locally averaging tangent directions with 
+   * neighboring pixels, progressively refining the flow field so it follows 
+   * coherent edge structures rather than noisy per-pixel gradients (default: 3)
+   * - 0-1: Flow field closely follows raw gradients; noisy, jagged edge directions
+   * - 2-4: Typical range; smooth, stable flow suitable for line integral convolution
+   * - 5+: Very smooth flow, but expensive and can over-round sharp corners/junctions
+   * 
+   * This directly affects the quality of edges produced during LIC-based smoothing 
+   * (governed by sigmaM/sigmaA) an under-converged ETF will propagate noise into 
+   * the final stylized lines regardless of how sigmaM/sigmaA are tuned.
+   */
+  etfIterations?: number
 }
 
 /**

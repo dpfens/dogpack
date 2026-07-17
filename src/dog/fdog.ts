@@ -71,7 +71,7 @@ export class FDoG implements DoGImplementation {
     // Step 1: Compute Edge Tangent Flow
     const etfComputer = await EdgeTangentFlowComputer.create();
     const etf = await etfComputer.compute(input, {
-      iterations: DEFAULT_ETF_CONFIG.iterations,
+      iterations: params.etfIterations ?? DEFAULT_ETF_CONFIG.iterations,
       kernelSize: Math.ceil(params.sigmaC * 2.45) * 2 + 1,
     }, params.sigmaC);
 
