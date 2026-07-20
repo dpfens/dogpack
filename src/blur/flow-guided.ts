@@ -15,6 +15,9 @@ import {
   isWebGPUSupported,
 } from '../utils/index.js';
 import { BaseCPUStrategy, BaseWebGLStrategy, BaseWebGPUStrategy } from '../base.js';
+import FLOW_BLUR_SHADER_SOURCE_WEBGL from './shaders/flow-guided/webgl2-flow-blur.glsl.js';
+import VERTEX_SHADER_SOURCE from './shaders/flow-guided/webgl2-vertex.glsl.js';
+import FLOW_BLUR_SHADER_SOURCE_WEBGPU from './shaders/flow-guided/webgpu-flow-blur.wgsl.js'
 
 
 interface FlowGuidedBlurStrategy {
@@ -177,79 +180,6 @@ export class CPUFlowGuidedBlur extends BaseCPUStrategy implements BlurStrategy, 
 
 
 /**
- * Fragment shader for flow-guided blur (WebGL2)
- * Uses line integral convolution along edge tangent directions
- */
-const FLOW_BLUR_SHADER = `#version 300 es
-  precision highp float;
-  
-  uniform sampler2D u_image;
-  uniform sampler2D u_flowField;
-  uniform vec2 u_resolution;
-  uniform float u_kernel[64];
-  uniform int u_kernelSize;
-  
-  in vec2 v_texCoord;
-  out vec4 fragColor;
-  
-  void main() {
-    vec2 texelSize = 1.0 / u_resolution;
-    int halfSize = u_kernelSize / 2;
-    
-    vec2 flow = texture(u_flowField, v_texCoord).rg * 2.0 - 1.0;
-    
-    float result = 0.0;
-    float weightSum = 0.0;
-    
-    // Sample along positive flow direction
-    vec2 pos = v_texCoord;
-    for (int i = 0; i < 32; i++) {
-      if (i > halfSize) break;
-      int idx = halfSize + i;
-      if (idx >= u_kernelSize) break;
-      
-      result += texture(u_image, pos).r * u_kernel[idx];
-      weightSum += u_kernel[idx];
-      
-      vec2 localFlow = texture(u_flowField, pos).rg * 2.0 - 1.0;
-      pos += localFlow * texelSize;
-    }
-    
-    // Sample along negative flow direction
-    pos = v_texCoord;
-    for (int i = 1; i < 32; i++) {
-      if (i > halfSize) break;
-      int idx = halfSize - i;
-      if (idx < 0) break;
-      
-      vec2 localFlow = texture(u_flowField, pos).rg * 2.0 - 1.0;
-      pos -= localFlow * texelSize;
-      
-      result += texture(u_image, pos).r * u_kernel[idx];
-      weightSum += u_kernel[idx];
-    }
-    
-    result = weightSum > 0.0 ? result / weightSum : 0.0;
-    fragColor = vec4(result, result, result, 1.0);
-  }
-`;
-
-/**
- * Vertex shader for WebGL2 - simple fullscreen quad
- */
-const VERTEX_SHADER = `#version 300 es
-  in vec2 a_position;
-  in vec2 a_texCoord;
-  out vec2 v_texCoord;
-  
-  void main() {
-    gl_Position = vec4(a_position, 0.0, 1.0);
-    v_texCoord = a_texCoord;
-  }
-`;
-
-
-/**
  * Configuration for WebGL blur
  */
 export interface GLGPUBlurConfig {
@@ -368,7 +298,7 @@ export class WebGLFlowGuidedBlur extends BaseWebGLStrategy implements BlurStrate
     const gl = canvas.getContext('webgl2') as WebGL2RenderingContext;
     if (!gl) throw new Error('WebGL2 is not supported');
     
-    const program = createProgram(gl, VERTEX_SHADER, FLOW_BLUR_SHADER);
+    const program = createProgram(gl, VERTEX_SHADER_SOURCE, FLOW_BLUR_SHADER_SOURCE_WEBGL);
     
     const quadBuffer = gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
@@ -552,125 +482,6 @@ export class WebGLFlowGuidedBlur extends BaseWebGLStrategy implements BlurStrate
 
 
 /**
- * WebGPU compute shader for flow-guided blur
- */
-/**
- * NOTE ON THIS REWRITE:
- * The input image and flow field are now textures (r32float / rg32float)
- * instead of storage buffers. Storage buffers are bound by
- * maxStorageBufferBindingSize (commonly 128MB by default), while textures
- * are bound by the much larger maxTextureDimension2D — so a whole-image
- * input/flow texture is safe at sizes that would previously overflow the
- * storage-buffer limit and corrupt silently. `output` remains a storage
- * buffer, but is now sized per-tile (see `rowOffset`/`tileHeight` below)
- * rather than per-image, exactly like WebGPUGradientAlignedBlur's shader
- * in webgpu.ts.
- */
-const FLOW_BLUR_WGSL = `
-  struct Params {
-    width: u32,
-    height: u32,
-    kernelSize: u32,
-    rowOffset: u32,   // first global row this dispatch is responsible for
-    tileHeight: u32,  // number of rows in this tile's output buffer
-    _pad0: u32,
-    _pad1: u32,
-    _pad2: u32,
-  }
-  
-  @group(0) @binding(0) var<uniform> params: Params;
-  @group(0) @binding(1) var<storage, read> kernel: array<f32>;
-  @group(0) @binding(2) var inputTex: texture_2d<f32>;
-  @group(0) @binding(3) var flowTex: texture_2d<f32>;
-  @group(0) @binding(4) var<storage, read_write> output: array<f32>;
-  
-  fn fetchClamped(x: i32, y: i32, w: i32, h: i32) -> f32 {
-    let cx = clamp(x, 0, w - 1);
-    let cy = clamp(y, 0, h - 1);
-    return textureLoad(inputTex, vec2<i32>(cx, cy), 0).r;
-  }
-  
-  fn sampleBilinear(x: f32, y: f32, w: i32, h: i32) -> f32 {
-    let x0 = i32(floor(x));
-    let y0 = i32(floor(y));
-    let x1 = x0 + 1;
-    let y1 = y0 + 1;
-    
-    let fx = x - f32(x0);
-    let fy = y - f32(y0);
-    
-    let v00 = fetchClamped(x0, y0, w, h);
-    let v10 = fetchClamped(x1, y0, w, h);
-    let v01 = fetchClamped(x0, y1, w, h);
-    let v11 = fetchClamped(x1, y1, w, h);
-    
-    return v00 * (1.0 - fx) * (1.0 - fy) +
-           v10 * fx * (1.0 - fy) +
-           v01 * (1.0 - fx) * fy +
-           v11 * fx * fy;
-  }
-  
-  fn getTangent(x: f32, y: f32, w: i32, h: i32) -> vec2<f32> {
-    let cx = clamp(i32(round(x)), 0, w - 1);
-    let cy = clamp(i32(round(y)), 0, h - 1);
-    return textureLoad(flowTex, vec2<i32>(cx, cy), 0).rg;
-  }
-  
-  @compute @workgroup_size(16, 16)
-  fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let w = i32(params.width);
-    let h = i32(params.height);
-    let x = i32(global_id.x);
-    let localY = i32(global_id.y);
-    
-    // Bounds-check against this tile's height (output buffer is sized
-    // per-tile, not per-image) before the per-image height check.
-    if (x >= w || localY >= i32(params.tileHeight)) {
-      return;
-    }
-    let globalY = localY + i32(params.rowOffset);
-    if (globalY >= h) {
-      return;
-    }
-    
-    let halfKernel = i32(params.kernelSize) / 2;
-    var sum: f32 = 0.0;
-    var weightSum: f32 = 0.0;
-    
-    // Sample in positive flow direction
-    var px: f32 = f32(x);
-    var py: f32 = f32(globalY);
-    for (var i: i32 = halfKernel; i < i32(params.kernelSize); i++) {
-      sum += sampleBilinear(px, py, w, h) * kernel[i];
-      weightSum += kernel[i];
-      
-      let tangent = getTangent(px, py, w, h);
-      px += tangent.x;
-      py += tangent.y;
-    }
-    
-    // Sample in negative flow direction
-    px = f32(x);
-    py = f32(globalY);
-    for (var i: i32 = halfKernel - 1; i >= 0; i--) {
-      let tangent = getTangent(px, py, w, h);
-      px -= tangent.x;
-      py -= tangent.y;
-      
-      sum += sampleBilinear(px, py, w, h) * kernel[i];
-      weightSum += kernel[i];
-    }
-    
-    if (weightSum > 0.0) {
-      output[u32(localY) * params.width + u32(x)] = sum / weightSum;
-    } else {
-      output[u32(localY) * params.width + u32(x)] = 0.0;
-    }
-  }
-`;
-
-
-/**
  * Configuration for WebGPU blur
  */
 export interface GLGPUBlurConfig {
@@ -796,7 +607,7 @@ export class WebGPUFlowGuidedBlur extends BaseWebGPUStrategy implements BlurStra
     const flowPipeline = device.createComputePipeline({
       layout: pipelineLayout,
       compute: {
-        module: device.createShaderModule({ code: FLOW_BLUR_WGSL }),
+        module: device.createShaderModule({ code: FLOW_BLUR_SHADER_SOURCE_WEBGPU }),
         entryPoint: 'main',
       },
     });

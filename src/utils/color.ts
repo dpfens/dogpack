@@ -9,7 +9,15 @@
  */
 
 import type { ChannelImage, RGBImage } from '../interfaces/base.js';
-import { createChannelImage } from './index.js';
+
+function createChannelImage(width: number, height: number): ChannelImage {
+  return {
+    data: new Float32Array(width * height),
+    width,
+    height,
+  };
+}
+
 
 /**
  * Which color space to decompose an RGBImage into before computing

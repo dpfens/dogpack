@@ -329,3 +329,5 @@ export async function isWebGPUSupported(): Promise<boolean> {
     return false;
   }
 }
+
+export * as color from './color.js'

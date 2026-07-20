@@ -28,6 +28,42 @@ export class ADoG implements DoGImplementation {
   dispose(): void {
     this.blurStrategy.then(strategy => strategy.dispose());
   }
+
+  /**
+   * Estimate a good `epsilon` for a given input + config by running the
+   * ADoG pipeline once and taking the mean of the (pre-threshold) sharpened
+   * response. Since ADoG's response straddles the true edge/noise "zero"
+   * around the local mean rather than a fixed absolute constant (see Eq. 4/5),
+   * a fixed epsilon default doesn't transfer across images, tau/s/noiseScaleC
+   * choices, or resolutions -- this recomputes it per-input instead.
+   *
+   * @param biasOffset Shifts the estimate away from the raw mean to bias
+   *   density (positive -> denser/more black). Default 0 (balanced 50/50).
+   */
+  static async estimateEpsilon(
+    input: ChannelImage,
+    config: Partial<ADoGConfig> = {},
+    biasOffset = 0
+  ): Promise<number> {
+    const processor = new ADoG(config);
+    try {
+      const { sharpened } = await processor.processDetailed(input);
+      let sum = 0;
+      for (let i = 0; i < sharpened.data.length; i++) sum += sharpened.data[i];
+      return sum / sharpened.data.length - biasOffset;
+    } finally {
+      processor.dispose();
+    }
+  }
+
+
+  static estimateSigma(
+    input: ChannelImage,
+    { referenceDimension = 700, baseSigma = 1.0 }: { referenceDimension?: number; baseSigma?: number } = {}
+  ): number {
+    const scale = Math.min(input.width, input.height) / referenceDimension;
+    return baseSigma * Math.max(1, scale);
+  }
  
   /**
    * Process a grayscale image through the ADoG pipeline.

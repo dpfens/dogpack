@@ -145,8 +145,6 @@ export {
 
 // Utilities
 export * as utilities from './utils/index.js';
-// Extensions (composable strategies for advanced stylization)
-
 export * as extensions from './extensions/index.js';
 export type {
   ExtensionStrategy,
