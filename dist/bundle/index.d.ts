@@ -236,9 +236,33 @@ declare class SoftThresholdStrategy implements ThresholdStrategy {
 declare class HardThresholdStrategy implements ThresholdStrategy {
     threshold(input: ChannelImage, config: ThresholdConfig): ChannelImage;
 }
+/**
+ * Canny-style double-threshold strategy with hysteresis edge linking.
+ *
+ * Classifies each pixel against a high and low bound derived from `epsilon`
+ * (`epsilon + highOffset` and `epsilon - highOffset`... see note below) into
+ * strong edge, weak edge, and background tiers then promotes weak
+ * edges to strong ones if they are 8-connected to a strong edge via flood fill.
+ * This suppresses isolated noise pixels while preserving continuous edge lines
+ * that dip briefly below the main threshold, which a single global threshold
+ * (e.g. HardThresholdStrategy) cannot do.
+ *
+ * Note: `phi` from ThresholdConfig is unused by this strategy. Sharpness of
+ * the strong/weak/background split is controlled entirely by `highOffset` and
+ * `lowOffset`, not by a tanh steepness parameter.
+ */
 declare class HysteresisThresholdStrategy implements ThresholdStrategy {
     private readonly highOffset;
     private readonly lowOffset;
+    /**
+     * @param highOffset - Amount added to `epsilon` to form the high (strong-edge)
+     *   bound (default: 0.2). Pixels at or above `epsilon + highOffset` are
+     *   immediately classified as strong edges (seeds for flood fill).
+     * @param lowOffset - Amount subtracted from `epsilon` to form the low
+     *   (weak-edge) bound (default: 0.2). Pixels at or above `epsilon - lowOffset`
+     *   but below the high bound are classified as weak edges, which only survive
+     *   in the output if connected to a strong edge.
+     */
     constructor(highOffset?: number, lowOffset?: number);
     threshold(sharpened: ChannelImage, config: ThresholdConfig): ChannelImage;
     private floodFill;
@@ -305,6 +329,25 @@ interface DoGConfig {
      * - φ >> 10: Hard black/white threshold (approaches step function)
      */
     phi: number | ChannelImage;
+    /**
+     * Strategy used to convert the sharpened DoG response into the final output image
+     *
+     * Decouples how thresholding is performed from the edge-detection/sharpening
+     * pipeline (sigma, k, p).  Allows swapping strategies without touching the rest of the config.
+     * Consumes `epsilon` and `phi` from this config as its ThresholdConfig.
+     *
+     * Built-in strategies (see threshold.ts):
+     * - `SoftThresholdStrategy`: tanh-based soft transition, governed by `phi`
+     *   (steepness) and `epsilon` (midpoint). Produces the smooth pencil/pastel-to-hard-edge
+     *   range described by `phi` above. This is the paper's standard XDoG threshold.
+     * - `HardThresholdStrategy`: binary step function at `epsilon` (ignores `phi`).
+     *   Equivalent to the φ → ∞ limit of the soft strategy; suited to styles like ADoG
+     *   that expect a strictly binarized screentone output.
+     * - `HysteresisThresholdStrategy`: Canny-style double threshold with flood-fill
+     *   linking, using `epsilon ± highOffset/lowOffset` as the high/low bounds. Produces
+     *   cleaner, more connected edge lines than a single global threshold, at the cost
+     *   of ignoring `phi` and requiring a full-image connectivity pass.
+     */
     thresholdStrategy: ThresholdStrategy;
 }
 /**
@@ -348,6 +391,21 @@ interface FDoGConfig extends DoGConfig {
      * - >2: Stylistic smoothing effect
      */
     sigmaA: number;
+    /**
+     * Number of smoothing iterations applied when computing the Edge Tangent Flow (ETF)
+     *
+     * The ETF is built iteratively by locally averaging tangent directions with
+     * neighboring pixels, progressively refining the flow field so it follows
+     * coherent edge structures rather than noisy per-pixel gradients (default: 3)
+     * - 0-1: Flow field closely follows raw gradients; noisy, jagged edge directions
+     * - 2-4: Typical range; smooth, stable flow suitable for line integral convolution
+     * - 5+: Very smooth flow, but expensive and can over-round sharp corners/junctions
+     *
+     * This directly affects the quality of edges produced during LIC-based smoothing
+     * (governed by sigmaM/sigmaA) an under-converged ETF will propagate noise into
+     * the final stylized lines regardless of how sigmaM/sigmaA are tuned.
+     */
+    etfIterations?: number;
 }
 /**
  * Configuration for Adaptive Difference of Gaussians (ADoG)
@@ -630,31 +688,8 @@ declare class XDoG implements DoGImplementation {
     processGrayscaleImageData(input: ImageData, overrides?: Partial<DoGConfig>): Promise<ImageData>;
     /**
      * Get current configuration.
-     *
-     * NOTE: the original merged in `this.processor.getConfig()`, which may
-     * have applied its own internal defaulting on top of the raw dogConfig
-     * we constructed it with. Without a persistent processor to ask, this
-     * returns XDoG's own resolved config plus the raw (possibly
-     * not-fully-defaulted) dogConfig. If DoGProcessor.getConfig() does
-     * meaningful default-filling beyond what's here, please point me to
-     * processor.ts and I'll fold that logic in.
      */
     getConfig(): Readonly<XDoGConfig>;
-    /**
-     * Update configuration. Stays synchronous — a kernelSizeMultiplier
-     * change starts a new `IsotropicBlur.create()` and swaps in the new
-     * promise immediately, without waiting for it to resolve. The old
-     * strategy is disposed once it (already long-since resolved, in
-     * practice) settles.
-     *
-     * KNOWN RACE: if a process*() call is in flight — meaning it already
-     * awaited the *old* blurStrategyPromise and is mid-call on that
-     * strategy — and setConfig() runs before that call's `finally`
-     * completes, the old strategy could be disposed out from under it.
-     * This existed in some form in the original code too (no serialization
-     * between setConfig and in-flight process() calls). If that matters for
-     * your usage, serialize calls at the call site.
-     */
     setConfig(config: Partial<XDoGConfig>): void;
 }
 /**
@@ -1965,6 +2000,57 @@ declare namespace index$2 {
 }
 
 /**
+ * Color space conversion utilities
+ *
+ * Responsible for turning an RGBImage into a set of independent
+ * ChannelImage instances, either as raw RGB channels or as CIE Lab
+ * channels (L, a, b). Kept separate from the ETF/structure-tensor math
+ * so that flow.ts stays focused purely on the Di Zenzo / eigen-decomposition
+ * pipeline and doesn't need to know anything about color science.
+ */
+
+/**
+ * Which color space to decompose an RGBImage into before computing
+ * a multi-channel Edge Tangent Flow.
+ */
+type ColorSpace = 'rgb' | 'lab';
+/**
+ * Split an interleaved RGBImage into three independent ChannelImages,
+ * one per channel, each still in 0-1 range.
+ */
+declare function splitRGBChannels(rgb: RGBImage$1): [ChannelImage, ChannelImage, ChannelImage];
+/**
+ * Convert an interleaved RGBImage into three independent ChannelImages
+ * representing CIE Lab's L, a, and b components.
+ *
+ * L is normalized from its native [0, 100] range to [0, 1] by dividing by 100.
+ * a and b are normalized from their native (roughly [-128, 127]) range to
+ * [0, 1] via (v + 128) / 255.
+ *
+ * This normalization is a deliberate choice: it keeps all three channels in
+ * comparable numeric ranges before gradients/tensors are computed, so that
+ * chroma channels don't dominate or get drowned out purely due to differing
+ * native scales relative to L. Input RGB is assumed to be sRGB with values
+ * in [0, 1].
+ */
+declare function rgbToLabChannels(rgb: RGBImage$1): [ChannelImage, ChannelImage, ChannelImage];
+/**
+ * Convert a single sRGB pixel (each component in [0, 1]) to CIE Lab
+ * (D65 white point). L is in [0, 100]; a and b are roughly in [-128, 127]
+ * but are not hard-clamped.
+ */
+declare function srgbToLab(r: number, g: number, b: number): [number, number, number];
+
+type color_ColorSpace = ColorSpace;
+declare const color_rgbToLabChannels: typeof rgbToLabChannels;
+declare const color_splitRGBChannels: typeof splitRGBChannels;
+declare const color_srgbToLab: typeof srgbToLab;
+declare namespace color {
+  export { color_rgbToLabChannels as rgbToLabChannels, color_splitRGBChannels as splitRGBChannels, color_srgbToLab as srgbToLab };
+  export type { color_ColorSpace as ColorSpace };
+}
+
+/**
  * Image utility functions
  */
 
@@ -2081,6 +2167,7 @@ declare const index$1_andCombine: typeof andCombine;
 declare const index$1_at: typeof at;
 declare const index$1_clamp: typeof clamp;
 declare const index$1_cloneChannelImage: typeof cloneChannelImage;
+declare const index$1_color: typeof color;
 declare const index$1_computeKernelSize: typeof computeKernelSize;
 declare const index$1_createChannelImage: typeof createChannelImage;
 declare const index$1_dotVec2: typeof dotVec2;
@@ -2104,6 +2191,7 @@ declare namespace index$1 {
     index$1_at as at,
     index$1_clamp as clamp,
     index$1_cloneChannelImage as cloneChannelImage,
+    index$1_color as color,
     index$1_computeKernelSize as computeKernelSize,
     index$1_createChannelImage as createChannelImage,
     index$1_dotVec2 as dotVec2,

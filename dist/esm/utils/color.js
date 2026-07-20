@@ -7,7 +7,13 @@
  * so that flow.ts stays focused purely on the Di Zenzo / eigen-decomposition
  * pipeline and doesn't need to know anything about color science.
  */
-import { createChannelImage } from './index.js';
+function createChannelImage(width, height) {
+    return {
+        data: new Float32Array(width * height),
+        width,
+        height,
+    };
+}
 /**
  * Split an interleaved RGBImage into three independent ChannelImages,
  * one per channel, each still in 0-1 range.

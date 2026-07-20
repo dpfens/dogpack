@@ -3,6 +3,7 @@
  * Image utility functions
  */
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.color = void 0;
 exports.createChannelImage = createChannelImage;
 exports.cloneChannelImage = cloneChannelImage;
 exports.getPixel = getPixel;
@@ -304,4 +305,5 @@ async function isWebGPUSupported() {
         return false;
     }
 }
+exports.color = require("./color.js");
 //# sourceMappingURL=index.js.map

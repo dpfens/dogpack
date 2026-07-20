@@ -281,4 +281,5 @@ export async function isWebGPUSupported() {
         return false;
     }
 }
+export * as color from './color.js';
 //# sourceMappingURL=index.js.map

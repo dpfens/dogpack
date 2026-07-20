@@ -12,7 +12,13 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.splitRGBChannels = splitRGBChannels;
 exports.rgbToLabChannels = rgbToLabChannels;
 exports.srgbToLab = srgbToLab;
-const index_js_1 = require("./index.js");
+function createChannelImage(width, height) {
+    return {
+        data: new Float32Array(width * height),
+        width,
+        height,
+    };
+}
 /**
  * Split an interleaved RGBImage into three independent ChannelImages,
  * one per channel, each still in 0-1 range.
@@ -20,9 +26,9 @@ const index_js_1 = require("./index.js");
 function splitRGBChannels(rgb) {
     const { width, height, data } = rgb;
     const size = width * height;
-    const r = (0, index_js_1.createChannelImage)(width, height);
-    const g = (0, index_js_1.createChannelImage)(width, height);
-    const b = (0, index_js_1.createChannelImage)(width, height);
+    const r = createChannelImage(width, height);
+    const g = createChannelImage(width, height);
+    const b = createChannelImage(width, height);
     for (let i = 0; i < size; i++) {
         const o = i * 3;
         r.data[i] = data[o];
@@ -48,9 +54,9 @@ function splitRGBChannels(rgb) {
 function rgbToLabChannels(rgb) {
     const { width, height, data } = rgb;
     const size = width * height;
-    const l = (0, index_js_1.createChannelImage)(width, height);
-    const a = (0, index_js_1.createChannelImage)(width, height);
-    const bCh = (0, index_js_1.createChannelImage)(width, height);
+    const l = createChannelImage(width, height);
+    const a = createChannelImage(width, height);
+    const bCh = createChannelImage(width, height);
     for (let i = 0; i < size; i++) {
         const o = i * 3;
         const [labL, labA, labB] = srgbToLab(data[o], data[o + 1], data[o + 2]);

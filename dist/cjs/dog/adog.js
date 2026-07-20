@@ -50,6 +50,19 @@ class ADoG {
         const rhoMap = this.computeRhoMap(input, params.tau, params.s);
         // Step 4 (Eq. 4): ADoG(x) = G_sigmaC(x) - rho(x) * G_sigmaS(x)
         const sharpened = this.computeWeightedDoG(blurC, blurS, rhoMap);
+        const { min, mean, max } = (() => {
+            let min = Infinity, max = -Infinity, sum = 0;
+            for (let i = 0; i < sharpened.data.length; i++) {
+                const v = sharpened.data[i];
+                if (v < min)
+                    min = v;
+                if (v > max)
+                    max = v;
+                sum += v;
+            }
+            return { min, mean: sum / sharpened.data.length, max };
+        })();
+        console.log(`sharpened: min=${min.toFixed(5)} mean=${mean.toFixed(5)} max=${max.toFixed(5)}`);
         // Unweighted response (rho == 1 everywhere), i.e. standard DoG --
         // exposed for comparison purposes (Fig. 7(b) in the paper).
         const rawDoG = this.computeUnweightedDoG(blurC, blurS);

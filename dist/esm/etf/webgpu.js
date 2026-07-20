@@ -28,10 +28,48 @@
  * This module has no knowledge of color spaces — it only ever sees
  * ChannelImage scalar fields. RGB/Lab/etc. splitting and conversion is
  * the caller's responsibility (see utils/color.ts).
+ *
+ * ---- Row-band tiling (memory) ----
+ * Every WGSL shader here addresses purely through the `Params` uniform
+ * (width/height/radius/kernelSize) and clampIdx() — none of them assume
+ * anything about a "global" image size beyond what's passed in. That
+ * means a smaller sub-image ("band") of rows is, as far as every shader
+ * is concerned, just an image — no shader changes were needed to support
+ * tiling.
+ *
+ * computeInternal() splits the image into horizontal row bands and runs
+ * the full pipeline (gradient -> tensor accumulate -> finalize -> blur ->
+ * extract -> refine) once per band, on band-sized buffers, instead of
+ * allocating whole-image buffers. Peak GPU memory is therefore bounded by
+ * a fixed, tunable budget (bandMemoryBudgetBytes) rather than by image
+ * resolution — see planBandLayout() for the memory math and the
+ * `halo` comment in computeInternal() for why each band has to compute
+ * more rows than it ultimately outputs.
+ *
+ * ---- Pipelining (throughput) ----
+ * Tiling alone would still leave the GPU idle during every band's
+ * CPU-side readback if bands were processed strictly one-at-a-time.
+ * Instead, two full sets of band buffers ("slots") are allocated once and
+ * reused round-robin across bands: band N's compute is submitted without
+ * waiting for band N-1's result to be read back, so the GPU queue stays
+ * fed while the CPU drains the previous band's output. See the slot
+ * synchronization comment inside computeInternal() for the exact
+ * correctness argument (it relies on WebGPU's same-queue in-order
+ * execution guarantee, plus explicitly awaiting the relevant readback
+ * before a slot's buffers — in particular its mapped staging buffer — are
+ * reused).
  */
 import { DEFAULT_ETF_CONFIG, } from '../interfaces/base.js';
 import { TangentFlowField } from './flow-field.js';
 import { BaseWebGPUStrategy } from '../base.js';
+import COMMON_WGSL_SOURCE from './shaders/webgpu/common.wgsl.js';
+import RAW_GRADIENT_SOURCE from './shaders/webgpu/gradient.wgsl.js';
+import RAW_STRUCTURE_TENSOR_ACCUMULATE_SOURCE from './shaders/webgpu/structure_tensor_accumulate.wgsl.js';
+import RAW_FINALIZE_MAGNITUDE_SOURCE from './shaders/webgpu/finalize_magnitude.wgsl.js';
+import RAW_GAUSSIAN_BLUR_SOURCE from './shaders/webgpu/gaussian_blur.wgsl.js';
+import RAW_GAUSSIAN_BLUR_TILED_SOURCE from './shaders/webgpu/gaussian_blur_tiled.wgsl.js';
+import RAW_TANGENT_EXTRACT_SOURCE from './shaders/webgpu/tangent_extract.wgsl.js';
+import RAW_TANGENT_REFINE_SOURCE from './shaders/webgpu/tangent_refine.wgsl.js';
 // NOTE: isWebGPUComputeSupported() isn't assumed to exist in utils/index.js
 // yet (only isWebGLComputeSupported is referenced in webgl.ts), so a local
 // equivalent is defined at the bottom of this file. Feel free to hoist it
@@ -56,64 +94,40 @@ const WORKGROUP_SIZE = 8;
  * That leaves ~7KB of headroom for driver overhead/alignment. Radii above
  * this (i.e. large-sigma blurs) are rare in practice and still correct —
  * they just don't get the shared-memory win.
+ *
+ * Unrelated to row-band tiling below (that's about bounding *image*
+ * memory; this is about bounding *workgroup-shared* memory for the blur).
  */
 const TILE_RADIUS_CAP = 32;
-const TILE_WIDTH = WORKGROUP_SIZE + 2 * TILE_RADIUS_CAP; // 72
-const KERNEL_SHARED_SIZE = 2 * TILE_RADIUS_CAP + 1; // 65
-const REFINE_TILE_DIM = WORKGROUP_SIZE + 4; // fixed 5x5 (radius-2) footprint
+/**
+ * Target peak GPU memory for *one* band-buffer slot (see BandBufferSet
+ * and computeInternal()). There are two slots live at once for
+ * double-buffering, so actual peak usage is roughly 2x this, plus a
+ * small constant for pipelines/kernel/params.
+ *
+ * This is deliberately conservative (comfortably runs even on a weak
+ * integrated GPU) rather than tuned per-adapter, since WebGPU has no API
+ * to query *available* (as opposed to theoretical maximum) device memory.
+ * Override via WebGpuEdgeTangentFlowComputer.bandMemoryBudgetBytes if you
+ * know your target hardware can do better (bigger bands = fewer bands =
+ * less halo overhead = faster), or worse (smaller bands = safer).
+ */
+const DEFAULT_BAND_MEMORY_BUDGET_BYTES = 256 * 1024 * 1024; // 256 MiB
+/**
+ * Floor on band core-row count. Guards against degenerate configurations
+ * (huge halo relative to the memory budget) producing a zero/negative
+ * band size, at the cost of possibly exceeding bandMemoryBudgetBytes in
+ * that edge case — see planBandLayout().
+ */
+const MIN_BAND_ROWS = 64;
 // ============== WGSL Shader Sources ==============
-const COMMON_WGSL = `
-struct Params {
-  width: u32,
-  height: u32,
-  radius: u32,
-  kernelSize: u32,
-};
-
-fn clampIdx(x: i32, y: i32, w: i32, h: i32) -> u32 {
-  let cx = clamp(x, 0, w - 1);
-  let cy = clamp(y, 0, h - 1);
-  return u32(cy * w + cx);
-}
-`;
-const GRADIENT_SHADER = COMMON_WGSL + `
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> inputBuf: array<f32>;
-@group(0) @binding(2) var<storage, read_write> outputBuf: array<vec4<f32>>;
-
-@compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let w = i32(params.width);
-  let h = i32(params.height);
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= w || y >= h) { return; }
-
-  // Sobel operator
-  let p00 = inputBuf[clampIdx(x - 1, y - 1, w, h)];
-  let p10 = inputBuf[clampIdx(x,     y - 1, w, h)];
-  let p20 = inputBuf[clampIdx(x + 1, y - 1, w, h)];
-  let p01 = inputBuf[clampIdx(x - 1, y,     w, h)];
-  let p21 = inputBuf[clampIdx(x + 1, y,     w, h)];
-  let p02 = inputBuf[clampIdx(x - 1, y + 1, w, h)];
-  let p12 = inputBuf[clampIdx(x,     y + 1, w, h)];
-  let p22 = inputBuf[clampIdx(x + 1, y + 1, w, h)];
-
-  let gx = -p00 + p20 - 2.0 * p01 + 2.0 * p21 - p02 + p22;
-  let gy = -p00 - 2.0 * p10 - p20 + p02 + 2.0 * p12 + p22;
-
-  // R=gx, G=gy — B/A unused downstream (magnitude is re-derived from the
-  // structure tensor's trace after channel accumulation, not carried
-  // through from here; see FINALIZE_MAGNITUDE_SHADER).
-  outputBuf[u32(y * w + x)] = vec4<f32>(gx, gy, 0.0, 1.0);
-}
-`;
+const GRADIENT_SHADER = COMMON_WGSL_SOURCE + RAW_GRADIENT_SOURCE;
 // Computes one channel's structure tensor and *accumulates* it into
 // accumBuf (Di Zenzo multichannel summation) instead of overwriting it.
-// accumBuf must be zero-initialized before the first channel's pass —
-// freshly-created WebGPU storage buffers are guaranteed zero, so a
-// single-channel call (this pass runs exactly once) produces the same
-// result as a plain assignment would.
+// accumBuf must be zero before the first channel's pass each band — see
+// the encoder.clearBuffer() call in computeInternal(), which replaces the
+// "freshly-created buffers are zero" guarantee the single-shot version
+// used to rely on (band buffers are now allocated once and reused).
 //
 // .w (magnitude) is deliberately left untouched here. Summing each
 // channel's individual sqrt(e+g) would be wrong, since sqrt is nonlinear:
@@ -121,104 +135,17 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 // the Di Zenzo-consistent combined gradient magnitude, so it's computed
 // once from the final accumulated trace in FINALIZE_MAGNITUDE_SHADER
 // instead.
-const STRUCTURE_TENSOR_ACCUMULATE_SHADER = COMMON_WGSL + `
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> gradBuf: array<vec4<f32>>;
-@group(0) @binding(2) var<storage, read_write> accumBuf: array<vec4<f32>>;
-
-@compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let w = i32(params.width);
-  let h = i32(params.height);
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= w || y >= h) { return; }
-
-  let idx = u32(y * w + x);
-  let grad = gradBuf[idx];
-  let gx = grad.x;
-  let gy = grad.y;
-
-  // Structure tensor: E=gx^2, F=gx*gy, G=gy^2
-  let e = gx * gx;
-  let f = gx * gy;
-  let g = gy * gy;
-
-  accumBuf[idx] = accumBuf[idx] + vec4<f32>(e, f, g, 0.0);
-}
-`;
-// Runs once, after every channel's structure tensor has been accumulated.
-// Re-derives magnitude from the combined tensor's trace: sqrt(E + G).
-// For a single channel this equals sqrt(gx^2 + gy^2) == hypot(gx, gy), so
-// compute() (a single-channel computeMultiChannel() call) sees identical
-// behavior to before this pass existed.
-const FINALIZE_MAGNITUDE_SHADER = COMMON_WGSL + `
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read_write> tensorBuf: array<vec4<f32>>;
-
-@compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let w = i32(params.width);
-  let h = i32(params.height);
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= w || y >= h) { return; }
-
-  let idx = u32(y * w + x);
-  let t = tensorBuf[idx];
-  let mag = sqrt(max(t.x + t.z, 0.0));
-  tensorBuf[idx] = vec4<f32>(t.x, t.y, t.z, mag);
-}
-`;
+const STRUCTURE_TENSOR_ACCUMULATE_SHADER = COMMON_WGSL_SOURCE + RAW_STRUCTURE_TENSOR_ACCUMULATE_SOURCE;
+// Runs once per band, after every channel's structure tensor has been
+// accumulated. Re-derives magnitude from the combined tensor's trace:
+// sqrt(E + G). For a single channel this equals sqrt(gx^2 + gy^2) ==
+// hypot(gx, gy), so compute() (a single-channel computeMultiChannel()
+// call) sees identical behavior to before this pass existed.
+const FINALIZE_MAGNITUDE_SHADER = COMMON_WGSL_SOURCE + RAW_FINALIZE_MAGNITUDE_SOURCE;
 // Both blur directions live in the same module — WGSL allows multiple
 // @compute entry points per shader module, so this replaces the WebGL
 // version's two separate H/V programs with one module and two pipelines.
-const GAUSSIAN_BLUR_SHADER = COMMON_WGSL + `
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> inputBuf: array<vec4<f32>>;
-@group(0) @binding(2) var<storage, read_write> outputBuf: array<vec4<f32>>;
-@group(0) @binding(3) var<storage, read> kernelBuf: array<f32>;
-
-@compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
-fn blurH(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let w = i32(params.width);
-  let h = i32(params.height);
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= w || y >= h) { return; }
-
-  let radius = i32(params.radius);
-  let kernelSize = i32(params.kernelSize);
-  var sum = vec4<f32>(0.0);
-
-  for (var i = 0; i < kernelSize; i = i + 1) {
-    let sx = x + (i - radius);
-    sum = sum + inputBuf[clampIdx(sx, y, w, h)] * kernelBuf[i];
-  }
-
-  outputBuf[u32(y * w + x)] = sum;
-}
-
-@compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
-fn blurV(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let w = i32(params.width);
-  let h = i32(params.height);
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= w || y >= h) { return; }
-
-  let radius = i32(params.radius);
-  let kernelSize = i32(params.kernelSize);
-  var sum = vec4<f32>(0.0);
-
-  for (var i = 0; i < kernelSize; i = i + 1) {
-    let sy = y + (i - radius);
-    sum = sum + inputBuf[clampIdx(x, sy, w, h)] * kernelBuf[i];
-  }
-
-  outputBuf[u32(y * w + x)] = sum;
-}
-`;
+const GAUSSIAN_BLUR_SHADER = COMMON_WGSL_SOURCE + RAW_GAUSSIAN_BLUR_SOURCE;
 // Tiled counterpart to GAUSSIAN_BLUR_SHADER, used when radius <=
 // TILE_RADIUS_CAP (see that constant's comment for the sizing rationale).
 // Each workgroup loads its input footprint into workgroup-shared memory
@@ -226,259 +153,33 @@ fn blurV(@builtin(global_invocation_id) gid: vec3<u32>) {
 // re-issuing up to `kernelSize` independent global storage-buffer reads —
 // the redundant-read pattern the untiled version has, since neighboring
 // threads' kernel windows overlap almost entirely.
-const GAUSSIAN_BLUR_TILED_SHADER = COMMON_WGSL + `
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> inputBuf: array<vec4<f32>>;
-@group(0) @binding(2) var<storage, read_write> outputBuf: array<vec4<f32>>;
-@group(0) @binding(3) var<storage, read> kernelBuf: array<f32>;
-
-// Sized for the worst-case radius this tiled path supports
-// (TILE_RADIUS_CAP, defined JS-side); actual radius at dispatch time is
-// always <= that, so only a prefix of these arrays is used per call.
-var<workgroup> tileRow: array<vec4<f32>, ${TILE_WIDTH * WORKGROUP_SIZE}>;
-var<workgroup> kernelShared: array<f32, ${KERNEL_SHARED_SIZE}>;
-
-@compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
-fn blurHTiled(
-  @builtin(local_invocation_id) lid: vec3<u32>,
-  @builtin(workgroup_id) wgid: vec3<u32>
-) {
-  let w = i32(params.width);
-  let h = i32(params.height);
-  let radius = i32(params.radius);
-  let kernelSize = i32(params.kernelSize);
-
-  let localX = i32(lid.x);
-  let localY = i32(lid.y);
-  let flatLocal = localY * ${WORKGROUP_SIZE} + localX;
-  let wgOriginX = i32(wgid.x) * ${WORKGROUP_SIZE};
-  let wgOriginY = i32(wgid.y) * ${WORKGROUP_SIZE};
-  let tileWidth = ${WORKGROUP_SIZE} + 2 * radius;
-
-  // Kernel weights are identical for every thread in the workgroup — load
-  // once into shared memory rather than every thread hitting kernelBuf.
-  var loadIdx = flatLocal;
-  loop {
-    if (loadIdx >= kernelSize) { break; }
-    kernelShared[loadIdx] = kernelBuf[loadIdx];
-    loadIdx = loadIdx + ${WORKGROUP_SIZE * WORKGROUP_SIZE};
-  }
-
-  // Grid-stride load of the input tile (WORKGROUP_SIZE rows x tileWidth
-  // cols) so all columns get covered regardless of how tileWidth compares
-  // to WORKGROUP_SIZE.
-  let y = wgOriginY + localY;
-  var col = localX;
-  loop {
-    if (col >= tileWidth) { break; }
-    let sx = wgOriginX + col - radius;
-    tileRow[localY * ${TILE_WIDTH} + col] = inputBuf[clampIdx(sx, y, w, h)];
-    col = col + ${WORKGROUP_SIZE};
-  }
-
-  workgroupBarrier();
-
-  let x = wgOriginX + localX;
-  if (x >= w || y >= h) { return; }
-
-  var sum = vec4<f32>(0.0);
-  for (var i = 0; i < kernelSize; i = i + 1) {
-    sum = sum + tileRow[localY * ${TILE_WIDTH} + localX + i] * kernelShared[i];
-  }
-
-  outputBuf[u32(y * w + x)] = sum;
-}
-
-@compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
-fn blurVTiled(
-  @builtin(local_invocation_id) lid: vec3<u32>,
-  @builtin(workgroup_id) wgid: vec3<u32>
-) {
-  let w = i32(params.width);
-  let h = i32(params.height);
-  let radius = i32(params.radius);
-  let kernelSize = i32(params.kernelSize);
-
-  let localX = i32(lid.x);
-  let localY = i32(lid.y);
-  let flatLocal = localY * ${WORKGROUP_SIZE} + localX;
-  let wgOriginX = i32(wgid.x) * ${WORKGROUP_SIZE};
-  let wgOriginY = i32(wgid.y) * ${WORKGROUP_SIZE};
-  let tileHeight = ${WORKGROUP_SIZE} + 2 * radius;
-
-  var loadIdx = flatLocal;
-  loop {
-    if (loadIdx >= kernelSize) { break; }
-    kernelShared[loadIdx] = kernelBuf[loadIdx];
-    loadIdx = loadIdx + ${WORKGROUP_SIZE * WORKGROUP_SIZE};
-  }
-
-  // Reuses tileRow's backing storage, addressed as WORKGROUP_SIZE columns
-  // x tileHeight rows instead of blurHTiled's tileWidth cols x
-  // WORKGROUP_SIZE rows — same element count (WORKGROUP_SIZE * TILE_WIDTH)
-  // either way, just laid out for vertical taps instead of horizontal ones.
-  let x = wgOriginX + localX;
-  var row = localY;
-  loop {
-    if (row >= tileHeight) { break; }
-    let sy = wgOriginY + row - radius;
-    tileRow[row * ${WORKGROUP_SIZE} + localX] = inputBuf[clampIdx(x, sy, w, h)];
-    row = row + ${WORKGROUP_SIZE};
-  }
-
-  workgroupBarrier();
-
-  let y = wgOriginY + localY;
-  if (x >= w || y >= h) { return; }
-
-  var sum = vec4<f32>(0.0);
-  for (var i = 0; i < kernelSize; i = i + 1) {
-    sum = sum + tileRow[(localY + i) * ${WORKGROUP_SIZE} + localX] * kernelShared[i];
-  }
-
-  outputBuf[u32(y * w + x)] = sum;
-}
-`;
-const TANGENT_EXTRACT_SHADER = COMMON_WGSL + `
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> tensorBuf: array<vec4<f32>>;
-@group(0) @binding(2) var<storage, read_write> outputBuf: array<vec4<f32>>;
-
-@compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let w = i32(params.width);
-  let h = i32(params.height);
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= w || y >= h) { return; }
-
-  let idx = u32(y * w + x);
-  let tensor = tensorBuf[idx];
-  let e = tensor.x;
-  let f = tensor.y;
-  let g = tensor.z;
-  let mag = tensor.w;
-
-  // Eigenvector for smallest eigenvalue
-  let diff = e - g;
-  let disc = sqrt(diff * diff + 4.0 * f * f);
-
-  var tangent = vec2<f32>(0.0, 1.0);
-
-  if (abs(f) > 1e-10) {
-    let lambda1 = (e + g - disc) * 0.5;
-    tangent = vec2<f32>(lambda1 - g, f);
-  } else if (e < g) {
-    tangent = vec2<f32>(1.0, 0.0);
-  } else {
-    tangent = vec2<f32>(0.0, 1.0);
-  }
-
-  let len = length(tangent);
-  if (len > 1e-10) {
-    tangent = tangent / len;
-  }
-
-  // R=tx, G=ty, B=magnitude (for refinement weighting)
-  outputBuf[idx] = vec4<f32>(tangent, mag, 1.0);
-}
-`;
+const GAUSSIAN_BLUR_TILED_SHADER = COMMON_WGSL_SOURCE + RAW_GAUSSIAN_BLUR_TILED_SOURCE;
+const TANGENT_EXTRACT_SHADER = COMMON_WGSL_SOURCE + RAW_TANGENT_EXTRACT_SOURCE;
 // Unlike the blur radius, the refine neighborhood is a fixed 5x5 (radius
 // 2) — so the tile size is a compile-time constant with no data-dependent
 // cap/fallback needed, unlike GAUSSIAN_BLUR_TILED_SHADER above. Every
 // invocation in the untiled version re-read the same 5x5=25 neighbors its
 // neighbors were also reading independently from global storage; here
 // each workgroup loads its (WORKGROUP_SIZE+4)^2 footprint once instead.
-const TANGENT_REFINE_SHADER = COMMON_WGSL + `
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> inputBuf: array<vec4<f32>>;
-@group(0) @binding(2) var<storage, read_write> outputBuf: array<vec4<f32>>;
-
-var<workgroup> tile: array<vec4<f32>, ${REFINE_TILE_DIM * REFINE_TILE_DIM}>;
-
-@compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
-fn main(
-  @builtin(local_invocation_id) lid: vec3<u32>,
-  @builtin(workgroup_id) wgid: vec3<u32>
-) {
-  let w = i32(params.width);
-  let h = i32(params.height);
-
-  let localX = i32(lid.x);
-  let localY = i32(lid.y);
-  let wgOriginX = i32(wgid.x) * ${WORKGROUP_SIZE};
-  let wgOriginY = i32(wgid.y) * ${WORKGROUP_SIZE};
-  let tileDim = ${REFINE_TILE_DIM};
-  let tileCells = tileDim * tileDim;
-
-  // Grid-stride load over the full tileDim x tileDim footprint — flatten
-  // to 1D so WORKGROUP_SIZE*WORKGROUP_SIZE threads can cover a slightly
-  // larger (WORKGROUP_SIZE+4)^2 tile evenly regardless of its shape.
-  let flatLocal = localY * ${WORKGROUP_SIZE} + localX;
-  var loadIdx = flatLocal;
-  loop {
-    if (loadIdx >= tileCells) { break; }
-    let ty = loadIdx / tileDim;
-    let tx = loadIdx % tileDim;
-    let sx = wgOriginX + tx - 2;
-    let sy = wgOriginY + ty - 2;
-    tile[loadIdx] = inputBuf[clampIdx(sx, sy, w, h)];
-    loadIdx = loadIdx + ${WORKGROUP_SIZE * WORKGROUP_SIZE};
-  }
-
-  workgroupBarrier();
-
-  let x = wgOriginX + localX;
-  let y = wgOriginY + localY;
-  if (x >= w || y >= h) { return; }
-
-  let idx = u32(y * w + x);
-  let current = tile[(localY + 2) * tileDim + (localX + 2)];
-  let currentT = current.xy;
-
-  var sum = vec2<f32>(0.0);
-  var weightSum: f32 = 0.0;
-
-  // 5x5 kernel (radius 2)
-  for (var ky = -2; ky <= 2; ky = ky + 1) {
-    for (var kx = -2; kx <= 2; kx = kx + 1) {
-      let neighbor = tile[(localY + 2 + ky) * tileDim + (localX + 2 + kx)];
-      let neighborT = neighbor.xy;
-      let neighborMag = neighbor.z;
-
-      // Direction weight with sign handling
-      let dotVal = dot(currentT, neighborT);
-      let signVal = select(-1.0, 1.0, dotVal >= 0.0);
-      let dirWeight = abs(dotVal);
-      let weight = neighborMag * dirWeight;
-
-      sum = sum + signVal * neighborT * weight;
-      weightSum = weightSum + weight;
-    }
-  }
-
-  var refined = currentT;
-  if (weightSum > 1e-10) {
-    refined = sum / weightSum;
-    let len = length(refined);
-    if (len > 1e-10) {
-      refined = refined / len;
-    }
-  }
-
-  outputBuf[idx] = vec4<f32>(refined, current.z, 1.0);
-}
-`;
+const TANGENT_REFINE_SHADER = COMMON_WGSL_SOURCE + RAW_TANGENT_REFINE_SOURCE;
 /**
  * WebGPU-accelerated ETFComputer. Device/pipeline resources are cached
  * statically (shared across every instance) since acquiring a GPUDevice
  * is expensive and none of that state depends on image size or channel
- * count; per-call state (buffers) is still allocated fresh in
+ * count; per-call state (band buffers) is still allocated fresh in
  * computeInternal().
  */
 export class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy {
     static resources = null;
     static resourcesPromise = null;
+    /**
+     * Target peak GPU memory for one band-buffer slot. See the constant's
+     * doc comment above for context; exposed as a static so callers who
+     * know their target hardware can tune it without forking this file.
+     * Changing it takes effect on the next compute()/computeMultiChannel()
+     * call (band layout is computed fresh per call).
+     */
+    static bandMemoryBudgetBytes = DEFAULT_BAND_MEMORY_BUDGET_BYTES;
     /**
      * Cheap check — mirrors the shape of isWebGLComputeSupported(), just
      * wrapped in a resolved Promise to match the async `ETFComputerCtor`
@@ -531,11 +232,11 @@ export class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy {
             const hasTimestampQuery = adapter.features.has('timestamp-query');
             // Without explicit requiredLimits, WebGPU hands back the *default*
             // limits (maxBufferSize/maxStorageBufferBindingSize commonly 256MB/
-            // 128MB) rather than what the adapter can actually do. This computer
-            // allocates several whole-image vec4<f32> buffers (16 bytes/pixel) —
-            // a ~12MP image already needs ~192MB per buffer — so requesting the
-            // real adapter limits raises the ceiling before that becomes a
-            // problem, rather than silently truncating/corrupting large images.
+            // 128MB) rather than what the adapter can actually do. Band buffers
+            // are sized well under that regardless (see
+            // DEFAULT_BAND_MEMORY_BUDGET_BYTES), but requesting the real
+            // adapter limits still raises the ceiling for callers who bump
+            // bandMemoryBudgetBytes up on capable hardware.
             const device = await adapter.requestDevice({
                 requiredFeatures: hasTimestampQuery ? ['timestamp-query'] : [],
                 requiredLimits: {
@@ -551,30 +252,46 @@ export class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy {
                 }
                 console.warn(`WebGPU device lost: ${info.message}`);
             });
-            const makePipeline = (code, entryPoint = 'main') => device.createComputePipeline({
+            // Every shader module below declares `override WORKGROUP_SIZE: u32`
+            // (via #include "./_workgroup.wgsl") instead of having it baked in
+            // as a JS-side template value, so it has to be supplied here at
+            // pipeline-creation time. TILE_WIDTH/KERNEL_SHARED_SIZE/
+            // REFINE_TILE_DIM are override-expressions *derived* from
+            // WORKGROUP_SIZE (and TILE_RADIUS_CAP) inside the WGSL itself, so
+            // they don't need their own entries here.
+            const makePipeline = (code, entryPoint = 'main', constants = { WORKGROUP_SIZE }) => device.createComputePipeline({
                 layout: 'auto',
                 compute: {
                     module: device.createShaderModule({ code }),
                     entryPoint,
+                    constants,
                 },
             });
             const blurModule = device.createShaderModule({ code: GAUSSIAN_BLUR_SHADER });
             const blurHPipeline = device.createComputePipeline({
                 layout: 'auto',
-                compute: { module: blurModule, entryPoint: 'blurH' },
+                compute: { module: blurModule, entryPoint: 'blurH', constants: { WORKGROUP_SIZE } },
             });
             const blurVPipeline = device.createComputePipeline({
                 layout: 'auto',
-                compute: { module: blurModule, entryPoint: 'blurV' },
+                compute: { module: blurModule, entryPoint: 'blurV', constants: { WORKGROUP_SIZE } },
             });
             const blurTiledModule = device.createShaderModule({ code: GAUSSIAN_BLUR_TILED_SHADER });
             const blurHTiledPipeline = device.createComputePipeline({
                 layout: 'auto',
-                compute: { module: blurTiledModule, entryPoint: 'blurHTiled' },
+                compute: {
+                    module: blurTiledModule,
+                    entryPoint: 'blurHTiled',
+                    constants: { WORKGROUP_SIZE, TILE_RADIUS_CAP },
+                },
             });
             const blurVTiledPipeline = device.createComputePipeline({
                 layout: 'auto',
-                compute: { module: blurTiledModule, entryPoint: 'blurVTiled' },
+                compute: {
+                    module: blurTiledModule,
+                    entryPoint: 'blurVTiled',
+                    constants: { WORKGROUP_SIZE, TILE_RADIUS_CAP },
+                },
             });
             const resources = {
                 device,
@@ -638,300 +355,255 @@ export class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy {
     }
     /**
      * Shared implementation behind compute() and computeMultiChannel().
-     * Runs the gradient + structure-tensor-accumulate passes once per input
-     * channel (Di Zenzo summation), then a single finalize/blur/extract/
-     * refine pipeline identical to the pre-multichannel implementation.
      *
-     * Note this is async (unlike a hypothetical synchronous CPU-style
-     * compute()), since device acquisition and the final buffer readback
-     * (mapAsync) are both inherently asynchronous in WebGPU.
+     * Splits the image into horizontal row bands and runs the full
+     * gradient -> tensor-accumulate -> finalize -> blur -> extract ->
+     * refine pipeline once per band, on two round-robin, reused,
+     * band-sized buffer sets ("slots") — see the module-level doc comment
+     * for why this bounds memory and how the double-buffering keeps the
+     * GPU fed. Buffer allocation, band-size planning, and the halo math
+     * are the only real additions versus a single-shot whole-image run;
+     * every WGSL pipeline and bind-group-layout is identical to the
+     * non-tiled version, since every shader already only knows about
+     * whatever width/height it's told via Params.
      */
     async computeInternal(inputs, config, sigmaC) {
         const cfg = { ...DEFAULT_ETF_CONFIG, ...config };
         const { width, height } = inputs[0];
-        const pixelCount = width * height;
+        const channelCount = inputs.length;
         const res = await WebGpuEdgeTangentFlowComputer.initResources();
         const { device } = res;
-        // Every intermediate buffer below (tensorAccumBuf, gradientScratchBuf,
-        // blurTempBuf, blurOutputBuf, tangentBuf1, tangentBuf2) is a whole-image
-        // vec4<f32> buffer — 16 bytes/pixel — bound as a storage buffer. Check
-        // that against maxStorageBufferBindingSize *and* maxBufferSize up front:
-        // exceeding either is a WebGPU validation failure that surfaces via
-        // 'uncapturederror' rather than a catchable exception at the call site,
-        // so left unchecked this doesn't throw — it just silently reads back
-        // zeros/garbage for whatever the GPU couldn't actually bind, producing a
-        // corrupted (incoherent, low-contrast) flow field with no visible error.
-        // Fail loud instead, so callers relying on the ETFComputer wrapper's
-        // fallback (see index.ts) get a chance to demote to WebGL/CPU.
-        const vec4BufferBytes = pixelCount * 4 * 4;
-        const { maxStorageBufferBindingSize, maxBufferSize } = device.limits;
-        if (vec4BufferBytes > maxStorageBufferBindingSize || vec4BufferBytes > maxBufferSize) {
-            throw new Error(`[EdgeTangentFlowWebGPU] ${width}x${height} image needs ${vec4BufferBytes} ` +
-                `bytes per intermediate buffer, exceeding this device's ` +
-                `maxStorageBufferBindingSize (${maxStorageBufferBindingSize}) / ` +
-                `maxBufferSize (${maxBufferSize}). Downscale the image, or reduce ` +
-                `pixel count until it fits — this implementation processes the ` +
-                `whole image per buffer with no row-band tiling.`);
-        }
+        const smoothSigma = sigmaC ?? cfg.kernelSize / 2.45;
+        const radius = Math.min(MAX_BLUR_RADIUS, Math.max(1, Math.ceil(smoothSigma * 2.45)));
+        const kernelSize = radius * 2 + 1;
+        const kernel = generateGaussianKernel(smoothSigma, kernelSize);
+        // `halo` is how many extra rows above/below a band's *target* output
+        // rows have to be computed (and hence loaded) for those target rows
+        // to come out identical to a full, untiled run:
+        //   ±1        Sobel gradient stencil (gradient.wgsl)
+        //   ±radius   separable Gaussian blur (blurH then blurV — a single
+        //             `radius` margin covers both passes: blurH is computed
+        //             row-independently so needs no extra y-margin itself,
+        //             and blurV only needs blurH's output `radius` rows out,
+        //             which that single margin already provides)
+        //   ±2*iters  5x5 tangent-refine kernel, applied `iterations` times —
+        //             each pass "eats" 2 rows of validity from the band's
+        //             edges, so the untouched margin has to start
+        //             2*iterations rows out from the target rows
+        // These layers are consumed outside-in as you move inward from the
+        // band edge (refine's margin is "wrong" first, protecting the blur
+        // margin inside it, which protects the 1-row gradient margin inside
+        // that), which is why the contributions add rather than multiply.
+        const halo = radius + 1 + 2 * cfg.iterations;
+        const { bandRows, numBands } = planBandLayout(width, height, channelCount, halo, device.limits, WebGpuEdgeTangentFlowComputer.bandMemoryBudgetBytes);
+        const maxBandBufHeight = Math.min(bandRows, height) + 2 * halo;
+        const kernelBuf = createBufferWithData(device, kernel, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
+        const dispatchX = Math.ceil(width / WORKGROUP_SIZE);
         return this.runGuarded(device, async () => {
-            // ---- Buffers ----
-            // One accumulator, shared across all channels (Di Zenzo sum), plus one
-            // scratch gradient buffer reused sequentially per channel — safe
-            // because compute passes within a single command encoder execute in
-            // encoded order, so each channel's gradient pass fully completes
-            // before the next pass reads it, and before the next channel's
-            // gradient pass overwrites it.
-            const tensorAccumBuf = createEmptyVec4Buffer(device, pixelCount);
-            const gradientScratchBuf = createEmptyVec4Buffer(device, pixelCount);
-            const blurTempBuf = createEmptyVec4Buffer(device, pixelCount);
-            const blurOutputBuf = createEmptyVec4Buffer(device, pixelCount);
-            const tangentBuf1 = createEmptyVec4Buffer(device, pixelCount);
-            const tangentBuf2 = createEmptyVec4Buffer(device, pixelCount);
-            const channelInputBufs = inputs.map((channel) => createBufferWithData(device, channel.data, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST));
-            const smoothSigma = sigmaC ?? cfg.kernelSize / 2.45;
-            const radius = Math.min(MAX_BLUR_RADIUS, Math.max(1, Math.ceil(smoothSigma * 2.45)));
-            const kernelSize = radius * 2 + 1;
-            const kernel = generateGaussianKernel(smoothSigma, kernelSize);
-            const kernelBuf = createBufferWithData(device, kernel, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-            const dispatchX = Math.ceil(width / WORKGROUP_SIZE);
-            const dispatchY = Math.ceil(height / WORKGROUP_SIZE);
-            // ---- Optional per-pass GPU timing (requires 'timestamp-query') ----
-            // Two passes per input channel (gradient, tensorAccumulate), plus one
-            // finalize pass, plus 4 fixed passes (blurH, blurV, tangentExtract),
-            // plus one per refine iteration.
-            const passLabels = [];
-            const numPasses = inputs.length * 2 + 1 + 3 + cfg.iterations;
-            const querySet = res.hasTimestampQuery
-                ? device.createQuerySet({ type: 'timestamp', count: numPasses * 2 })
-                : null;
-            let passIdx = 0;
-            const nextTimestampWrites = (label) => {
-                if (!querySet)
-                    return undefined;
-                const writes = {
-                    querySet,
-                    beginningOfPassWriteIndex: passIdx * 2,
-                    endOfPassWriteIndex: passIdx * 2 + 1,
-                };
-                passLabels.push(label);
-                passIdx++;
-                return writes;
-            };
-            const encoder = device.createCommandEncoder();
-            // Steps 1-2: per channel, compute gradients then accumulate the
-            // resulting structure tensor into tensorAccumBuf (Di Zenzo sum).
-            for (let k = 0; k < inputs.length; k++) {
-                const channelBuf = channelInputBufs[k];
-                {
-                    const params = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
-                    const bindGroup = device.createBindGroup({
-                        layout: res.gradientPipeline.getBindGroupLayout(0),
-                        entries: [
-                            { binding: 0, resource: { buffer: params } },
-                            { binding: 1, resource: { buffer: channelBuf } },
-                            { binding: 2, resource: { buffer: gradientScratchBuf } },
-                        ],
-                    });
-                    const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites(`gradient[${k}]`) });
-                    pass.setPipeline(res.gradientPipeline);
-                    pass.setBindGroup(0, bindGroup);
-                    pass.dispatchWorkgroups(dispatchX, dispatchY);
-                    pass.end();
+            // Two full sets of band-sized buffers, alternated per band, so band
+            // N's compute can be submitted before band N-1's result has
+            // finished being read back — see synchronization note below.
+            const slots = [
+                createBandBufferSet(device, width, maxBandBufHeight, channelCount),
+                createBandBufferSet(device, width, maxBandBufHeight, channelCount),
+            ];
+            // Reusable JS-side scratch for building each band's halo-padded,
+            // edge-clamped channel rows — one buffer per (slot, channel), sized
+            // once up front instead of allocated fresh every band.
+            const channelScratch = [0, 1].map(() => inputs.map(() => new Float32Array(width * maxBandBufHeight)));
+            const tangents = new Float32Array(width * height * 2);
+            // Slot's in-flight "read this band's staging buffer back to the
+            // CPU" promise, if any. Indexed by slot (0 or 1), not by band.
+            const pendingReadback = [null, null];
+            try {
+                for (let bandIdx = 0; bandIdx < numBands; bandIdx++) {
+                    const slot = bandIdx % 2;
+                    const bufs = slots[slot];
+                    const bandStartY = bandIdx * bandRows;
+                    const bandRowsThisBand = Math.min(bandRows, height - bandStartY);
+                    const bandBufHeight = bandRowsThisBand + 2 * halo;
+                    const bandPixelCount = width * bandBufHeight;
+                    // This slot's buffers were last used two bands ago (or never,
+                    // for bandIdx < 2). Before touching them again — uploading new
+                    // channel data, clearing tensorAccumBuf, or recording new
+                    // commands that target them — make sure that band's GPU work
+                    // is done and, critically, that its staging buffer has been
+                    // unmap()'d: WebGPU rejects any submission that references a
+                    // still-mapped buffer, and mapAsync()/unmap() are the one part
+                    // of this loop that ISN'T covered by the queue's automatic
+                    // same-queue-in-order execution guarantee.
+                    if (pendingReadback[slot]) {
+                        await pendingReadback[slot];
+                        pendingReadback[slot] = null;
+                    }
+                    // ---- Build + upload this band's halo-padded channel rows ----
+                    for (let k = 0; k < channelCount; k++) {
+                        const scratch = channelScratch[slot][k];
+                        buildChannelBandData(inputs[k].data, width, height, bandStartY, bandRowsThisBand, halo, scratch);
+                        device.queue.writeBuffer(bufs.channelInputBufs[k], 0, scratch.buffer, 0, bandPixelCount * 4);
+                    }
+                    // Params for every pointwise/gradient/extract/refine pass this
+                    // band (radius/kernelSize unused by those shaders); a separate
+                    // one for the two blur passes, which do need radius/kernelSize.
+                    // `height` here is the *band's* local height, not the image's.
+                    const params = createParamsBuffer(device, { width, height: bandBufHeight, radius: 0, kernelSize: 0 });
+                    const blurParams = createParamsBuffer(device, { width, height: bandBufHeight, radius, kernelSize });
+                    const dispatchY = Math.ceil(bandBufHeight / WORKGROUP_SIZE);
+                    const encoder = device.createCommandEncoder();
+                    // tensorAccumBuf is reused across bands (unlike the one-shot
+                    // version, which relied on freshly-created WebGPU buffers being
+                    // guaranteed zero), so it has to be explicitly re-zeroed before
+                    // each band's per-channel accumulation loop.
+                    encoder.clearBuffer(bufs.tensorAccumBuf);
+                    // Steps 1-2: per channel, gradient then accumulate into tensorAccumBuf.
+                    for (let k = 0; k < channelCount; k++) {
+                        {
+                            const bindGroup = device.createBindGroup({
+                                layout: res.gradientPipeline.getBindGroupLayout(0),
+                                entries: [
+                                    { binding: 0, resource: { buffer: params } },
+                                    { binding: 1, resource: { buffer: bufs.channelInputBufs[k] } },
+                                    { binding: 2, resource: { buffer: bufs.gradientScratchBuf } },
+                                ],
+                            });
+                            const pass = encoder.beginComputePass();
+                            pass.setPipeline(res.gradientPipeline);
+                            pass.setBindGroup(0, bindGroup);
+                            pass.dispatchWorkgroups(dispatchX, dispatchY);
+                            pass.end();
+                        }
+                        {
+                            const bindGroup = device.createBindGroup({
+                                layout: res.structureTensorAccumulatePipeline.getBindGroupLayout(0),
+                                entries: [
+                                    { binding: 0, resource: { buffer: params } },
+                                    { binding: 1, resource: { buffer: bufs.gradientScratchBuf } },
+                                    { binding: 2, resource: { buffer: bufs.tensorAccumBuf } },
+                                ],
+                            });
+                            const pass = encoder.beginComputePass();
+                            pass.setPipeline(res.structureTensorAccumulatePipeline);
+                            pass.setBindGroup(0, bindGroup);
+                            pass.dispatchWorkgroups(dispatchX, dispatchY);
+                            pass.end();
+                        }
+                    }
+                    // Step 3: finalize magnitude from the combined trace.
+                    {
+                        const bindGroup = device.createBindGroup({
+                            layout: res.finalizeMagnitudePipeline.getBindGroupLayout(0),
+                            entries: [
+                                { binding: 0, resource: { buffer: params } },
+                                { binding: 1, resource: { buffer: bufs.tensorAccumBuf } },
+                            ],
+                        });
+                        const pass = encoder.beginComputePass();
+                        pass.setPipeline(res.finalizeMagnitudePipeline);
+                        pass.setBindGroup(0, bindGroup);
+                        pass.dispatchWorkgroups(dispatchX, dispatchY);
+                        pass.end();
+                    }
+                    // Step 4: Gaussian blur the structure tensor (horizontal then vertical).
+                    {
+                        const useTiledBlur = radius <= TILE_RADIUS_CAP;
+                        const blurHPipe = useTiledBlur ? res.blurHTiledPipeline : res.blurHPipeline;
+                        const blurVPipe = useTiledBlur ? res.blurVTiledPipeline : res.blurVPipeline;
+                        const bindGroupH = device.createBindGroup({
+                            layout: blurHPipe.getBindGroupLayout(0),
+                            entries: [
+                                { binding: 0, resource: { buffer: blurParams } },
+                                { binding: 1, resource: { buffer: bufs.tensorAccumBuf } },
+                                { binding: 2, resource: { buffer: bufs.blurTempBuf } },
+                                { binding: 3, resource: { buffer: kernelBuf } },
+                            ],
+                        });
+                        const passH = encoder.beginComputePass();
+                        passH.setPipeline(blurHPipe);
+                        passH.setBindGroup(0, bindGroupH);
+                        passH.dispatchWorkgroups(dispatchX, dispatchY);
+                        passH.end();
+                        const bindGroupV = device.createBindGroup({
+                            layout: blurVPipe.getBindGroupLayout(0),
+                            entries: [
+                                { binding: 0, resource: { buffer: blurParams } },
+                                { binding: 1, resource: { buffer: bufs.blurTempBuf } },
+                                { binding: 2, resource: { buffer: bufs.blurOutputBuf } },
+                                { binding: 3, resource: { buffer: kernelBuf } },
+                            ],
+                        });
+                        const passV = encoder.beginComputePass();
+                        passV.setPipeline(blurVPipe);
+                        passV.setBindGroup(0, bindGroupV);
+                        passV.dispatchWorkgroups(dispatchX, dispatchY);
+                        passV.end();
+                    }
+                    // Step 5: extract initial tangent field.
+                    {
+                        const bindGroup = device.createBindGroup({
+                            layout: res.tangentExtractPipeline.getBindGroupLayout(0),
+                            entries: [
+                                { binding: 0, resource: { buffer: params } },
+                                { binding: 1, resource: { buffer: bufs.blurOutputBuf } },
+                                { binding: 2, resource: { buffer: bufs.tangentBuf1 } },
+                            ],
+                        });
+                        const pass = encoder.beginComputePass();
+                        pass.setPipeline(res.tangentExtractPipeline);
+                        pass.setBindGroup(0, bindGroup);
+                        pass.dispatchWorkgroups(dispatchX, dispatchY);
+                        pass.end();
+                    }
+                    // Step 6: refine tangent field iteratively (ping-pong between buffers).
+                    let readBuf = bufs.tangentBuf1;
+                    let writeBuf = bufs.tangentBuf2;
+                    for (let i = 0; i < cfg.iterations; i++) {
+                        const bindGroup = device.createBindGroup({
+                            layout: res.tangentRefinePipeline.getBindGroupLayout(0),
+                            entries: [
+                                { binding: 0, resource: { buffer: params } },
+                                { binding: 1, resource: { buffer: readBuf } },
+                                { binding: 2, resource: { buffer: writeBuf } },
+                            ],
+                        });
+                        const pass = encoder.beginComputePass();
+                        pass.setPipeline(res.tangentRefinePipeline);
+                        pass.setBindGroup(0, bindGroup);
+                        pass.dispatchWorkgroups(dispatchX, dispatchY);
+                        pass.end();
+                        [readBuf, writeBuf] = [writeBuf, readBuf];
+                    }
+                    // Copy this band's final tangent buffer into its slot's staging
+                    // buffer. This is deliberately the LAST command in the
+                    // submission: awaiting its mapAsync (below) is then sufficient
+                    // proof that every earlier command in this band's submission —
+                    // and hence every buffer this slot owns — has finished on the
+                    // GPU, without any further explicit synchronization.
+                    encoder.copyBufferToBuffer(readBuf, 0, bufs.stagingBuf, 0, bandPixelCount * 4 * 4);
+                    device.queue.submit([encoder.finish()]);
+                    // Deliberately NOT awaited here — stashed instead. The next
+                    // time this slot comes up (two bands from now) we await it
+                    // before reusing these buffers. That gap is what lets band
+                    // N+1's upload + dispatch overlap with band N's GPU execution
+                    // and CPU-side readback instead of stalling on it.
+                    const capturedBandStartY = bandStartY;
+                    const capturedBandRows = bandRowsThisBand;
+                    pendingReadback[slot] = (async () => {
+                        await bufs.stagingBuf.mapAsync(GPUMapMode.READ);
+                        const mapped = new Float32Array(bufs.stagingBuf.getMappedRange(0, bandPixelCount * 4 * 4).slice(0));
+                        bufs.stagingBuf.unmap();
+                        writeBandOutputRows(mapped, width, capturedBandStartY, capturedBandRows, halo, tangents);
+                    })();
                 }
-                {
-                    const params = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
-                    const bindGroup = device.createBindGroup({
-                        layout: res.structureTensorAccumulatePipeline.getBindGroupLayout(0),
-                        entries: [
-                            { binding: 0, resource: { buffer: params } },
-                            { binding: 1, resource: { buffer: gradientScratchBuf } },
-                            { binding: 2, resource: { buffer: tensorAccumBuf } },
-                        ],
-                    });
-                    const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites(`tensorAccumulate[${k}]`) });
-                    pass.setPipeline(res.structureTensorAccumulatePipeline);
-                    pass.setBindGroup(0, bindGroup);
-                    pass.dispatchWorkgroups(dispatchX, dispatchY);
-                    pass.end();
-                }
+                // Drain whichever 1-2 bands are still in flight after the loop.
+                await Promise.all(pendingReadback.filter((p) => p !== null));
             }
-            // Step 3: finalize magnitude from the combined trace (no-op for the
-            // single-channel case beyond recomputing the same value).
-            {
-                const params = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
-                const bindGroup = device.createBindGroup({
-                    layout: res.finalizeMagnitudePipeline.getBindGroupLayout(0),
-                    entries: [
-                        { binding: 0, resource: { buffer: params } },
-                        { binding: 1, resource: { buffer: tensorAccumBuf } },
-                    ],
-                });
-                const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites('finalizeMagnitude') });
-                pass.setPipeline(res.finalizeMagnitudePipeline);
-                pass.setBindGroup(0, bindGroup);
-                pass.dispatchWorkgroups(dispatchX, dispatchY);
-                pass.end();
+            finally {
+                // Cleanup runs even if a band's compute/readback threw, so a
+                // mid-run failure on a huge image doesn't leak GPU memory.
+                for (const bufs of slots)
+                    destroyBandBufferSet(bufs);
+                kernelBuf.destroy();
             }
-            // Step 4: Gaussian blur the structure tensor (horizontal then vertical)
-            {
-                const params = createParamsBuffer(device, { width, height, radius, kernelSize });
-                // The tiled pipelines' workgroup-shared arrays are sized for
-                // TILE_RADIUS_CAP; above that we fall back to the original untiled
-                // pipelines rather than growing shared-memory usage further (see
-                // TILE_RADIUS_CAP's comment for the byte-budget math).
-                const useTiledBlur = radius <= TILE_RADIUS_CAP;
-                const blurHPipe = useTiledBlur ? res.blurHTiledPipeline : res.blurHPipeline;
-                const blurVPipe = useTiledBlur ? res.blurVTiledPipeline : res.blurVPipeline;
-                const tiledSuffix = useTiledBlur ? ' (tiled)' : ' (untiled, radius > cap)';
-                const bindGroupH = device.createBindGroup({
-                    layout: blurHPipe.getBindGroupLayout(0),
-                    entries: [
-                        { binding: 0, resource: { buffer: params } },
-                        { binding: 1, resource: { buffer: tensorAccumBuf } },
-                        { binding: 2, resource: { buffer: blurTempBuf } },
-                        { binding: 3, resource: { buffer: kernelBuf } },
-                    ],
-                });
-                const passH = encoder.beginComputePass({ timestampWrites: nextTimestampWrites(`blurH${tiledSuffix}`) });
-                passH.setPipeline(blurHPipe);
-                passH.setBindGroup(0, bindGroupH);
-                passH.dispatchWorkgroups(dispatchX, dispatchY);
-                passH.end();
-                const bindGroupV = device.createBindGroup({
-                    layout: blurVPipe.getBindGroupLayout(0),
-                    entries: [
-                        { binding: 0, resource: { buffer: params } },
-                        { binding: 1, resource: { buffer: blurTempBuf } },
-                        { binding: 2, resource: { buffer: blurOutputBuf } },
-                        { binding: 3, resource: { buffer: kernelBuf } },
-                    ],
-                });
-                const passV = encoder.beginComputePass({ timestampWrites: nextTimestampWrites(`blurV${tiledSuffix}`) });
-                passV.setPipeline(blurVPipe);
-                passV.setBindGroup(0, bindGroupV);
-                passV.dispatchWorkgroups(dispatchX, dispatchY);
-                passV.end();
-            }
-            // Step 5: Extract initial tangent field
-            {
-                const params = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
-                const bindGroup = device.createBindGroup({
-                    layout: res.tangentExtractPipeline.getBindGroupLayout(0),
-                    entries: [
-                        { binding: 0, resource: { buffer: params } },
-                        { binding: 1, resource: { buffer: blurOutputBuf } },
-                        { binding: 2, resource: { buffer: tangentBuf1 } },
-                    ],
-                });
-                const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites('tangentExtract') });
-                pass.setPipeline(res.tangentExtractPipeline);
-                pass.setBindGroup(0, bindGroup);
-                pass.dispatchWorkgroups(dispatchX, dispatchY);
-                pass.end();
-            }
-            // Step 6: Refine tangent field iteratively (ping-pong between buffers)
-            let readBuf = tangentBuf1;
-            let writeBuf = tangentBuf2;
-            const refineParams = createParamsBuffer(device, { width, height, radius: 0, kernelSize: 0 });
-            for (let i = 0; i < cfg.iterations; i++) {
-                const bindGroup = device.createBindGroup({
-                    layout: res.tangentRefinePipeline.getBindGroupLayout(0),
-                    entries: [
-                        { binding: 0, resource: { buffer: refineParams } },
-                        { binding: 1, resource: { buffer: readBuf } },
-                        { binding: 2, resource: { buffer: writeBuf } },
-                    ],
-                });
-                const pass = encoder.beginComputePass({ timestampWrites: nextTimestampWrites(`refine[${i}]`) });
-                pass.setPipeline(res.tangentRefinePipeline);
-                pass.setBindGroup(0, bindGroup);
-                pass.dispatchWorkgroups(dispatchX, dispatchY);
-                pass.end();
-                [readBuf, writeBuf] = [writeBuf, readBuf];
-            }
-            // ---- Phase A: submit compute passes only, wait for GPU completion ----
-            // (No buffer copies here yet — resolveQuerySet writes GPU-side only,
-            // it doesn't require a CPU-readable buffer.)
-            let queryResolveBuf = null;
-            if (querySet) {
-                queryResolveBuf = device.createBuffer({
-                    size: numPasses * 2 * 8, // one u64 timestamp per write index
-                    usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC,
-                });
-                encoder.resolveQuerySet(querySet, 0, numPasses * 2, queryResolveBuf, 0);
-            }
-            device.queue.submit([encoder.finish()]);
-            await device.queue.onSubmittedWorkDone();
-            // ---- Phase B: copy results into mappable buffers, then map+read ----
-            const byteSize = pixelCount * 4 * 4; // vec4<f32>
-            const stagingBuf = device.createBuffer({
-                size: byteSize,
-                usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-            });
-            let queryReadBuf = null;
-            const copyEncoder = device.createCommandEncoder();
-            copyEncoder.copyBufferToBuffer(readBuf, 0, stagingBuf, 0, byteSize);
-            if (querySet && queryResolveBuf) {
-                queryReadBuf = device.createBuffer({
-                    size: queryResolveBuf.size,
-                    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-                });
-                copyEncoder.copyBufferToBuffer(queryResolveBuf, 0, queryReadBuf, 0, queryResolveBuf.size);
-            }
-            device.queue.submit([copyEncoder.finish()]);
-            const mapPromises = [stagingBuf.mapAsync(GPUMapMode.READ)];
-            if (queryReadBuf)
-                mapPromises.push(queryReadBuf.mapAsync(GPUMapMode.READ));
-            await Promise.all(mapPromises);
-            if (queryReadBuf) {
-                const raw = new BigUint64Array(queryReadBuf.getMappedRange().slice(0));
-                queryReadBuf.unmap();
-                queryReadBuf.destroy();
-                queryResolveBuf.destroy();
-                querySet.destroy();
-                const gpuPassTimings = {};
-                for (let i = 0; i < passLabels.length; i++) {
-                    const beginNs = raw[i * 2];
-                    const endNs = raw[i * 2 + 1];
-                    // Aggregate refine[i] and per-channel entries under one key each
-                    // so a large `iterations` or channel count doesn't spam the log
-                    // with per-iteration/per-channel lines.
-                    let label = passLabels[i];
-                    if (label.startsWith('refine['))
-                        label = 'refine (sum)';
-                    else if (label.startsWith('gradient['))
-                        label = 'gradient (sum)';
-                    else if (label.startsWith('tensorAccumulate['))
-                        label = 'tensorAccumulate (sum)';
-                    const ms = Number(endNs - beginNs) / 1e6;
-                    gpuPassTimings[label] = (gpuPassTimings[label] ?? 0) + ms;
-                }
-            }
-            else if (res.hasTimestampQuery === false) {
-                // Only warn once per session-ish; cheap enough to just always note it.
-                console.debug('[EdgeTangentFlowWebGPU] timestamp-query unsupported on this device — ' +
-                    'submitAndGpuWait is a single coarse number, not broken down by pass.');
-            }
-            const mapped = new Float32Array(stagingBuf.getMappedRange().slice(0));
-            stagingBuf.unmap();
-            // Flat stride-2 copy — no per-pixel object allocation. `mapped` is
-            // stride-4 (x,y,mag,1); we only keep (x,y) per pixel.
-            const tangents = new Float32Array(pixelCount * 2);
-            for (let i = 0; i < pixelCount; i++) {
-                tangents[i * 2] = mapped[i * 4];
-                tangents[i * 2 + 1] = mapped[i * 4 + 1];
-            }
-            // Cleanup temporary (per-call) resources — pipelines/device are cached.
-            for (const buf of channelInputBufs)
-                buf.destroy();
-            gradientScratchBuf.destroy();
-            tensorAccumBuf.destroy();
-            blurTempBuf.destroy();
-            blurOutputBuf.destroy();
-            tangentBuf1.destroy();
-            tangentBuf2.destroy();
-            kernelBuf.destroy();
-            stagingBuf.destroy();
             return TangentFlowField.fromFloat32Array(tangents, width, height);
         });
     }
@@ -974,6 +646,108 @@ function generateGaussianKernel(sigma, size) {
         kernel[i] /= sum;
     }
     return kernel;
+}
+/**
+ * Decide how many core (non-halo) rows each band should cover, and how
+ * many bands that means for the image, given a per-slot memory budget.
+ *
+ * Every intermediate that scales with band height is a whole-band
+ * vec4<f32> buffer (16 bytes/pixel): tensorAccum, gradientScratch,
+ * blurTemp, blurOutput, tangentBuf1, tangentBuf2 (6 of them), plus one
+ * scalar f32 input buffer per channel (4 bytes/pixel), plus one vec4
+ * staging buffer for readback (16 bytes/pixel). `bandRows` is chosen so
+ * that (bandRows + 2*halo) rows of all of those together fit under
+ * budgetBytes, floored at MIN_BAND_ROWS so a large halo can't produce a
+ * degenerate (zero/negative) band — in that edge case the actual
+ * footprint may exceed budgetBytes; see the thrown error below for the
+ * case where it can't be made to fit even at the floor.
+ */
+function planBandLayout(width, height, channelCount, halo, limits, budgetBytes) {
+    const bytesPerRow = width * (6 * 16 + channelCount * 4 + 16);
+    let bandRows = Math.floor(budgetBytes / bytesPerRow) - 2 * halo;
+    bandRows = Math.max(MIN_BAND_ROWS, bandRows);
+    bandRows = Math.min(bandRows, height);
+    // Hard device ceiling: the padded band buffer still has to fit within
+    // a single storage binding. Shrink toward MIN_BAND_ROWS if needed.
+    const maxBindableBytes = Math.min(limits.maxStorageBufferBindingSize, limits.maxBufferSize);
+    while (bandRows > MIN_BAND_ROWS && (bandRows + 2 * halo) * width * 16 > maxBindableBytes) {
+        bandRows = Math.max(MIN_BAND_ROWS, bandRows - MIN_BAND_ROWS);
+    }
+    const bandBufHeight = bandRows + 2 * halo;
+    if (bandBufHeight * width * 16 > maxBindableBytes) {
+        throw new Error(`[EdgeTangentFlowWebGPU] Cannot fit even a ${MIN_BAND_ROWS}-row band ` +
+            `(halo=${halo} rows, from blur radius + refine iterations) within ` +
+            `this device's maxStorageBufferBindingSize/maxBufferSize ` +
+            `(${maxBindableBytes} bytes) at width=${width}. Reduce blur sigma/` +
+            `radius or refine iterations, or downscale the image.`);
+    }
+    const numBands = Math.max(1, Math.ceil(height / bandRows));
+    return { bandRows, numBands };
+}
+/**
+ * Allocate one full set of band-sized GPU buffers, sized for
+ * maxBandBufHeight rows (the largest band that will occur this call).
+ */
+function createBandBufferSet(device, width, maxBandBufHeight, channelCount) {
+    const pixelCount = width * maxBandBufHeight;
+    return {
+        channelInputBufs: Array.from({ length: channelCount }, () => device.createBuffer({
+            size: alignTo4(pixelCount * 4),
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        })),
+        gradientScratchBuf: createEmptyVec4Buffer(device, pixelCount),
+        tensorAccumBuf: createEmptyVec4Buffer(device, pixelCount),
+        blurTempBuf: createEmptyVec4Buffer(device, pixelCount),
+        blurOutputBuf: createEmptyVec4Buffer(device, pixelCount),
+        tangentBuf1: createEmptyVec4Buffer(device, pixelCount),
+        tangentBuf2: createEmptyVec4Buffer(device, pixelCount),
+        stagingBuf: device.createBuffer({
+            size: pixelCount * 4 * 4,
+            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+        }),
+    };
+}
+function destroyBandBufferSet(set) {
+    for (const buf of set.channelInputBufs)
+        buf.destroy();
+    set.gradientScratchBuf.destroy();
+    set.tensorAccumBuf.destroy();
+    set.blurTempBuf.destroy();
+    set.blurOutputBuf.destroy();
+    set.tangentBuf1.destroy();
+    set.tangentBuf2.destroy();
+    set.stagingBuf.destroy();
+}
+/**
+ * Fill `out` (length must be width * (bandRows + 2*halo)) with this
+ * channel's rows [bandStartY - halo, bandStartY + bandRows + halo),
+ * clamping source row indices to [0, height-1] — i.e. replicating the
+ * true image's top/bottom edge rows exactly where clampIdx() would have,
+ * had this been computed as part of a single whole-image run. Interior
+ * band boundaries (not at the true image edge) get real neighboring row
+ * data, not clamped/replicated data.
+ */
+function buildChannelBandData(src, width, height, bandStartY, bandRows, halo, out) {
+    const bandBufHeight = bandRows + 2 * halo;
+    for (let localY = 0; localY < bandBufHeight; localY++) {
+        const srcY = Math.max(0, Math.min(height - 1, bandStartY - halo + localY));
+        out.set(src.subarray(srcY * width, srcY * width + width), localY * width);
+    }
+}
+/**
+ * Crop the halo off a band's mapped (stride-4: x, y, magnitude, 1)
+ * readback and write the core (stride-2: x, y) rows into the full-image
+ * output buffer at the right offset.
+ */
+function writeBandOutputRows(mapped, width, bandStartY, bandRows, halo, tangentsOut) {
+    for (let localY = 0; localY < bandRows; localY++) {
+        const srcRowOffset = (halo + localY) * width * 4;
+        const dstRowOffset = (bandStartY + localY) * width * 2;
+        for (let x = 0; x < width; x++) {
+            tangentsOut[dstRowOffset + x * 2] = mapped[srcRowOffset + x * 4];
+            tangentsOut[dstRowOffset + x * 2 + 1] = mapped[srcRowOffset + x * 4 + 1];
+        }
+    }
 }
 /**
  * Local equivalent of isWebGLComputeSupported() from utils/index.js.

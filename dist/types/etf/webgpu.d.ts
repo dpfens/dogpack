@@ -28,6 +28,36 @@
  * This module has no knowledge of color spaces — it only ever sees
  * ChannelImage scalar fields. RGB/Lab/etc. splitting and conversion is
  * the caller's responsibility (see utils/color.ts).
+ *
+ * ---- Row-band tiling (memory) ----
+ * Every WGSL shader here addresses purely through the `Params` uniform
+ * (width/height/radius/kernelSize) and clampIdx() — none of them assume
+ * anything about a "global" image size beyond what's passed in. That
+ * means a smaller sub-image ("band") of rows is, as far as every shader
+ * is concerned, just an image — no shader changes were needed to support
+ * tiling.
+ *
+ * computeInternal() splits the image into horizontal row bands and runs
+ * the full pipeline (gradient -> tensor accumulate -> finalize -> blur ->
+ * extract -> refine) once per band, on band-sized buffers, instead of
+ * allocating whole-image buffers. Peak GPU memory is therefore bounded by
+ * a fixed, tunable budget (bandMemoryBudgetBytes) rather than by image
+ * resolution — see planBandLayout() for the memory math and the
+ * `halo` comment in computeInternal() for why each band has to compute
+ * more rows than it ultimately outputs.
+ *
+ * ---- Pipelining (throughput) ----
+ * Tiling alone would still leave the GPU idle during every band's
+ * CPU-side readback if bands were processed strictly one-at-a-time.
+ * Instead, two full sets of band buffers ("slots") are allocated once and
+ * reused round-robin across bands: band N's compute is submitted without
+ * waiting for band N-1's result to be read back, so the GPU queue stays
+ * fed while the CPU drains the previous band's output. See the slot
+ * synchronization comment inside computeInternal() for the exact
+ * correctness argument (it relies on WebGPU's same-queue in-order
+ * execution guarantee, plus explicitly awaiting the relevant readback
+ * before a slot's buffers — in particular its mapped staging buffer — are
+ * reused).
  */
 import { type ChannelImage, type FlowField, type ETFConfig, type ETFComputer } from '../interfaces/base.js';
 import { BaseWebGPUStrategy } from '../base.js';
@@ -35,12 +65,20 @@ import { BaseWebGPUStrategy } from '../base.js';
  * WebGPU-accelerated ETFComputer. Device/pipeline resources are cached
  * statically (shared across every instance) since acquiring a GPUDevice
  * is expensive and none of that state depends on image size or channel
- * count; per-call state (buffers) is still allocated fresh in
+ * count; per-call state (band buffers) is still allocated fresh in
  * computeInternal().
  */
 export declare class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy implements ETFComputer {
     private static resources;
     private static resourcesPromise;
+    /**
+     * Target peak GPU memory for one band-buffer slot. See the constant's
+     * doc comment above for context; exposed as a static so callers who
+     * know their target hardware can tune it without forking this file.
+     * Changing it takes effect on the next compute()/computeMultiChannel()
+     * call (band layout is computed fresh per call).
+     */
+    static bandMemoryBudgetBytes: number;
     /**
      * Cheap check — mirrors the shape of isWebGLComputeSupported(), just
      * wrapped in a resolved Promise to match the async `ETFComputerCtor`
@@ -84,13 +122,17 @@ export declare class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy im
     dispose(): void;
     /**
      * Shared implementation behind compute() and computeMultiChannel().
-     * Runs the gradient + structure-tensor-accumulate passes once per input
-     * channel (Di Zenzo summation), then a single finalize/blur/extract/
-     * refine pipeline identical to the pre-multichannel implementation.
      *
-     * Note this is async (unlike a hypothetical synchronous CPU-style
-     * compute()), since device acquisition and the final buffer readback
-     * (mapAsync) are both inherently asynchronous in WebGPU.
+     * Splits the image into horizontal row bands and runs the full
+     * gradient -> tensor-accumulate -> finalize -> blur -> extract ->
+     * refine pipeline once per band, on two round-robin, reused,
+     * band-sized buffer sets ("slots") — see the module-level doc comment
+     * for why this bounds memory and how the double-buffering keeps the
+     * GPU fed. Buffer allocation, band-size planning, and the halo math
+     * are the only real additions versus a single-shot whole-image run;
+     * every WGSL pipeline and bind-group-layout is identical to the
+     * non-tiled version, since every shader already only knows about
+     * whatever width/height it's told via Params.
      */
     private computeInternal;
 }

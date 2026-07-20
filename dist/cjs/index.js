@@ -102,6 +102,5 @@ var base_js_1 = require("./interfaces/base.js");
 Object.defineProperty(exports, "DEFAULT_ETF_CONFIG", { enumerable: true, get: function () { return base_js_1.DEFAULT_ETF_CONFIG; } });
 // Utilities
 exports.utilities = require("./utils/index.js");
-// Extensions (composable strategies for advanced stylization)
 exports.extensions = require("./extensions/index.js");
 //# sourceMappingURL=index.js.map

@@ -13,6 +13,13 @@ import type {
 } from '../interfaces/base.js';
 import { generateGaussianKernel, isWebGLComputeSupported } from '../utils/index.js';
 import { BaseWebGPUStrategy } from '../base.js';
+import BILATERAL_SHADER from './shaders/webgpu/bilateral.wgsl.js';
+import KUWAHARA_SHADER from './shaders/webgpu/kuwahara.wgsl.js';
+import GAUSSIAN_SHADER from './shaders/webgpu/gaussian.wgsl.js';
+import HISTOGRAM_SHADER from './shaders/webgpu/histogram.wgsl.js';
+import STRETCH_SHADER from './shaders/webgpu/stretch.wgsl.js';
+import QUANTIZE_SHADER from './shaders/webgpu/quantize.wgsl.js';
+import MEDIAN_SHADER_TEMPLATE from './shaders/webgpu/median.wgsl.js';
 
 /* ==================================================================== */
 /* GPU device management                                                */
@@ -166,7 +173,7 @@ function getPipeline(
     const module = getShaderModule(device, cacheKey, code);
     pipeline = device.createComputePipeline({
       layout: 'auto',
-      compute: { module, entryPoint },
+      compute: { module, entryPoint, constants: { WORKGROUP_SIZE } },
     });
     pipelineCache.set(key, pipeline);
   }
@@ -208,62 +215,6 @@ const DEFAULT_BILATERAL_CONFIG: BilateralFilterConfig = {
  * of calling `exp()` for it on every shader invocation roughly halves the
  * transcendental-function work in the inner loop.
  */
-const BILATERAL_SHADER = /* wgsl */ `
-struct Params {
-  width: u32,
-  height: u32,
-  radius: u32,
-  rowOffset: u32,
-  sigmaSpatial2: f32,
-  sigmaRange2: f32,
-  _pad1: f32,
-  _pad2: f32,
-};
-
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
-@group(0) @binding(2) var<storage, read_write> outputImage: array<f32>;
-@group(0) @binding(3) var<storage, read> spatialWeights: array<f32>;
-
-fn samplePixel(x: i32, y: i32) -> f32 {
-  let cx = clamp(x, 0, i32(params.width) - 1);
-  let cy = clamp(y, 0, i32(params.height) - 1);
-  return inputImage[cy * i32(params.width) + cx];
-}
-
-@compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let x = i32(gid.x);
-  // gid.y is relative to the current chunk; rowOffset shifts it back into
-  // the coordinate space of the full image.
-  let y = i32(gid.y) + i32(params.rowOffset);
-  if (x >= i32(params.width) || y >= i32(params.height)) {
-    return;
-  }
-
-  let r = i32(params.radius);
-  let center = samplePixel(x, y);
-
-  var sum: f32 = 0.0;
-  var weightSum: f32 = 0.0;
-  var idx: u32 = 0u;
-
-  for (var dy = -r; dy <= r; dy = dy + 1) {
-    for (var dx = -r; dx <= r; dx = dx + 1) {
-      let neighbor = samplePixel(x + dx, y + dy);
-      let diff = neighbor - center;
-      let rangeWeight = exp(-(diff * diff) / params.sigmaRange2);
-      let weight = spatialWeights[idx] * rangeWeight;
-      sum = sum + neighbor * weight;
-      weightSum = weightSum + weight;
-      idx = idx + 1u;
-    }
-  }
-
-  outputImage[y * i32(params.width) + x] = select(center, sum / weightSum, weightSum > 0.0);
-}
-`;
-
 export class GPUBilateralFilter extends BaseWebGPUStrategy implements Preprocessor {
   private readonly config: BilateralFilterConfig;
 
@@ -383,62 +334,17 @@ const DEFAULT_MEDIAN_CONFIG: MedianFilterConfig = {
   radius: 2,
 };
 
+// N (the per-pixel neighborhood size) sizes a function-local `var`, not a
+// `var<workgroup>` one, so it can't become a WGSL `override` — the
+// override-as-array-size exception only covers workgroup-address-space
+// arrays (see median.wgsl's comment for the full explanation). It's a
+// genuine `const`, so it still has to be baked per radius at the string
+// level; a new shader module is compiled (and cached by getPipeline's
+// cacheKey) for each distinct radius, same as before this migration.
 function medianShaderSource(radius: number): string {
   const side = 2 * radius + 1;
   const n = side * side;
-  return /* wgsl */ `
-struct Params {
-  width: u32,
-  height: u32,
-  radius: u32,
-  _pad: u32,
-};
-
-const N: u32 = ${n}u;
-
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
-@group(0) @binding(2) var<storage, read_write> outputImage: array<f32>;
-
-fn samplePixel(x: i32, y: i32) -> f32 {
-  let cx = clamp(x, 0, i32(params.width) - 1);
-  let cy = clamp(y, 0, i32(params.height) - 1);
-  return inputImage[cy * i32(params.width) + cx];
-}
-
-@compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= i32(params.width) || y >= i32(params.height)) {
-    return;
-  }
-
-  let r = i32(params.radius);
-  var vals: array<f32, N>;
-  var idx: u32 = 0u;
-  for (var dy = -r; dy <= r; dy = dy + 1) {
-    for (var dx = -r; dx <= r; dx = dx + 1) {
-      vals[idx] = samplePixel(x + dx, y + dy);
-      idx = idx + 1u;
-    }
-  }
-
-  // Insertion sort: O(n^2), fine for the small neighborhoods used here
-  // (n = (2*radius+1)^2, e.g. 25 at radius 2).
-  for (var i = 1u; i < N; i = i + 1u) {
-    let key = vals[i];
-    var j = i;
-    while (j > 0u && vals[j - 1u] > key) {
-      vals[j] = vals[j - 1u];
-      j = j - 1u;
-    }
-    vals[j] = key;
-  }
-
-  outputImage[y * i32(params.width) + x] = vals[N / 2u];
-}
-`;
+  return MEDIAN_SHADER_TEMPLATE.replace('__N__', String(n));
 }
 
 export class GPUMedianFilter extends BaseWebGPUStrategy implements Preprocessor {
@@ -511,68 +417,6 @@ const DEFAULT_KUWAHARA_CONFIG: KuwaharaFilterConfig = {
   radius: 3,
 };
 
-const KUWAHARA_SHADER = /* wgsl */ `
-struct Params {
-  width: u32,
-  height: u32,
-  radius: u32,
-  _pad: u32,
-};
-
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
-@group(0) @binding(2) var<storage, read_write> outputImage: array<f32>;
-
-fn samplePixel(x: i32, y: i32) -> f32 {
-  let cx = clamp(x, 0, i32(params.width) - 1);
-  let cy = clamp(y, 0, i32(params.height) - 1);
-  return inputImage[cy * i32(params.width) + cx];
-}
-
-fn quadrantStats(x: i32, y: i32, x0: i32, x1: i32, y0: i32, y1: i32) -> vec2<f32> {
-  var sum: f32 = 0.0;
-  var sumSq: f32 = 0.0;
-  var count: f32 = 0.0;
-  for (var dy = y0; dy <= y1; dy = dy + 1) {
-    for (var dx = x0; dx <= x1; dx = dx + 1) {
-      let v = samplePixel(x + dx, y + dy);
-      sum = sum + v;
-      sumSq = sumSq + v * v;
-      count = count + 1.0;
-    }
-  }
-  let mean = sum / count;
-  let variance = (sumSq / count) - (mean * mean);
-  return vec2<f32>(mean, variance);
-}
-
-@compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= i32(params.width) || y >= i32(params.height)) {
-    return;
-  }
-
-  let r = i32(params.radius);
-
-  // Four quadrants: top-left, top-right, bottom-left, bottom-right.
-  let q0 = quadrantStats(x, y, -r, 0, -r, 0);
-  let q1 = quadrantStats(x, y, 0, r, -r, 0);
-  let q2 = quadrantStats(x, y, -r, 0, 0, r);
-  let q3 = quadrantStats(x, y, 0, r, 0, r);
-
-  var bestMean = q0.x;
-  var minVariance = q0.y;
-
-  if (q1.y < minVariance) { minVariance = q1.y; bestMean = q1.x; }
-  if (q2.y < minVariance) { minVariance = q2.y; bestMean = q2.x; }
-  if (q3.y < minVariance) { minVariance = q3.y; bestMean = q3.x; }
-
-  outputImage[y * i32(params.width) + x] = bestMean;
-}
-`;
-
 export class GPUKuwaharaFilter extends BaseWebGPUStrategy implements Preprocessor {
   private readonly config: KuwaharaFilterConfig;
 
@@ -629,52 +473,6 @@ export class GPUKuwaharaFilter extends BaseWebGPUStrategy implements Preprocesso
 /* ==================================================================== */
 /* Gaussian Blur (separable, two compute passes)                        */
 /* ==================================================================== */
-
-const GAUSSIAN_SHADER = /* wgsl */ `
-struct Params {
-  width: u32,
-  height: u32,
-  radius: u32,
-  _pad: u32,
-};
-
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
-@group(0) @binding(2) var<storage, read> kernelWeights: array<f32>;
-@group(0) @binding(3) var<storage, read_write> outputImage: array<f32>;
-
-@compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
-fn main_h(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= i32(params.width) || y >= i32(params.height)) {
-    return;
-  }
-  let r = i32(params.radius);
-  var sum: f32 = 0.0;
-  for (var k = 0; k <= 2 * r; k = k + 1) {
-    let sx = clamp(x + k - r, 0, i32(params.width) - 1);
-    sum = sum + inputImage[y * i32(params.width) + sx] * kernelWeights[k];
-  }
-  outputImage[y * i32(params.width) + x] = sum;
-}
-
-@compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
-fn main_v(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= i32(params.width) || y >= i32(params.height)) {
-    return;
-  }
-  let r = i32(params.radius);
-  var sum: f32 = 0.0;
-  for (var k = 0; k <= 2 * r; k = k + 1) {
-    let sy = clamp(y + k - r, 0, i32(params.height) - 1);
-    sum = sum + inputImage[sy * i32(params.width) + x] * kernelWeights[k];
-  }
-  outputImage[y * i32(params.width) + x] = sum;
-}
-`;
 
 export class GPUGaussianBlur extends BaseWebGPUStrategy implements Preprocessor {
   private readonly sigma: number;
@@ -774,56 +572,6 @@ export class GPUGaussianBlur extends BaseWebGPUStrategy implements Preprocessor 
 /* ==================================================================== */
 /* Contrast Enhancement (histogram-based percentile approximation)      */
 /* ==================================================================== */
-
-const HISTOGRAM_SHADER = /* wgsl */ `
-struct Params {
-  width: u32,
-  height: u32,
-  _pad0: u32,
-  _pad1: u32,
-};
-
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
-@group(0) @binding(2) var<storage, read_write> histogram: array<atomic<u32>>;
-
-@compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= i32(params.width) || y >= i32(params.height)) {
-    return;
-  }
-  let v = clamp(inputImage[y * i32(params.width) + x], 0.0, 1.0);
-  let bin = u32(v * 255.0 + 0.5);
-  atomicAdd(&histogram[min(bin, 255u)], 1u);
-}
-`;
-
-const STRETCH_SHADER = /* wgsl */ `
-struct Params {
-  width: u32,
-  height: u32,
-  minVal: f32,
-  range: f32,
-};
-
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
-@group(0) @binding(2) var<storage, read_write> outputImage: array<f32>;
-
-@compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= i32(params.width) || y >= i32(params.height)) {
-    return;
-  }
-  let idx = y * i32(params.width) + x;
-  let v = (inputImage[idx] - params.minVal) / params.range;
-  outputImage[idx] = clamp(v, 0.0, 1.0);
-}
-`;
 
 export class GPUContrastEnhancer extends BaseWebGPUStrategy implements Preprocessor {
   private readonly blackPoint: number;
@@ -979,30 +727,6 @@ async function readUint32Buffer(
 /* ==================================================================== */
 /* Quantizer                                                             */
 /* ==================================================================== */
-
-const QUANTIZE_SHADER = /* wgsl */ `
-struct Params {
-  width: u32,
-  height: u32,
-  step: f32,
-  _pad: f32,
-};
-
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
-@group(0) @binding(2) var<storage, read_write> outputImage: array<f32>;
-
-@compute @workgroup_size(${WORKGROUP_SIZE}, ${WORKGROUP_SIZE})
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= i32(params.width) || y >= i32(params.height)) {
-    return;
-  }
-  let idx = y * i32(params.width) + x;
-  outputImage[idx] = round(inputImage[idx] / params.step) * params.step;
-}
-`;
 
 export class GPUQuantizer extends BaseWebGPUStrategy implements Preprocessor {
   private readonly levels: number;

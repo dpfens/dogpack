@@ -13,6 +13,15 @@ export declare function getWebGPUUnsupportedReason(): Promise<string | undefined
 /** Release the cached device. Mainly useful for tests / hot reload. */
 export declare function disposeWebGPU(): void;
 export declare function clearShaderCaches(): void;
+/**
+ * The `rowOffset` field lets a single dispatch cover only a band of rows
+ * of a much taller image (see the chunking loop in `process()` below).
+ * `spatialWeights` is a precomputed (2*radius+1)^2 lookup table for the
+ * spatial term of the bilateral weight, which depends only on (dx, dy)
+ * and is identical for every pixel — computing it on the CPU once instead
+ * of calling `exp()` for it on every shader invocation roughly halves the
+ * transcendental-function work in the inner loop.
+ */
 export declare class GPUBilateralFilter extends BaseWebGPUStrategy implements Preprocessor {
     private readonly config;
     static isSupported(): Promise<boolean>;

@@ -110,4 +110,5 @@ export declare function gaussianSample(): number;
 export declare function andCombine(images: ChannelImage[]): ChannelImage;
 export declare function isWebGLComputeSupported(): boolean;
 export declare function isWebGPUSupported(): Promise<boolean>;
+export * as color from './color.js';
 //# sourceMappingURL=index.d.ts.map

@@ -17,6 +17,11 @@ import {
   isWebGPUSupported,
 } from '../utils/index.js';
 import { BaseCPUStrategy, BaseWebGLStrategy, BaseWebGPUStrategy } from '../base.js';
+import VERTEX_SHADER_SOURCE from '../shaders/vertex-shader.wgsl.js'
+import WEBGL2_HORIZONTAL_BLUE_SOURCE from './shaders/isotropic/webgl-horizontal-blur.glsl.js'
+import WEBGL2_VERTICAL_BLUE_SOURCE from './shaders/isotropic/webgl-vertical-blur.glsl.js'
+import WEBGPU_HORIZONTAL_BLUE_SOURCE from './shaders/isotropic/webgpu-horizontal-blur.wgsl.js'
+import WEBGPU_VERTICAL_BLUE_SOURCE from './shaders/isotropic/webgpu-vertical-blur.wgsl.js'
 
 /**
  * Configuration for isotropic Gaussian blur
@@ -126,79 +131,6 @@ interface WebGLResources {
   texCoordBuffer: WebGLBuffer;
 }
 
-/**
- * Vertex shader for WebGL2 - simple fullscreen quad
- */
-const VERTEX_SHADER = `#version 300 es
-  in vec2 a_position;
-  in vec2 a_texCoord;
-  out vec2 v_texCoord;
-  
-  void main() {
-    gl_Position = vec4(a_position, 0.0, 1.0);
-    v_texCoord = a_texCoord;
-  }
-`;
-
-/**
- * Fragment shader for horizontal Gaussian blur pass (WebGL2)
- */
-const HORIZONTAL_BLUR_SHADER = `#version 300 es
-  precision highp float;
-  
-  uniform sampler2D u_image;
-  uniform vec2 u_resolution;
-  uniform float u_kernel[64];
-  uniform int u_kernelSize;
-  
-  in vec2 v_texCoord;
-  out vec4 fragColor;
-  
-  void main() {
-    vec2 texelSize = 1.0 / u_resolution;
-    float result = 0.0;
-    int halfSize = u_kernelSize / 2;
-    
-    for (int i = 0; i < 64; i++) {
-      if (i >= u_kernelSize) break;
-      int offset = i - halfSize;
-      vec2 samplePos = v_texCoord + vec2(float(offset) * texelSize.x, 0.0);
-      result += texture(u_image, samplePos).r * u_kernel[i];
-    }
-    
-    fragColor = vec4(result, result, result, 1.0);
-  }
-`;
-
-/**
- * Fragment shader for vertical Gaussian blur pass (WebGL2)
- */
-const VERTICAL_BLUR_SHADER = `#version 300 es
-  precision highp float;
-  
-  uniform sampler2D u_image;
-  uniform vec2 u_resolution;
-  uniform float u_kernel[64];
-  uniform int u_kernelSize;
-  
-  in vec2 v_texCoord;
-  out vec4 fragColor;
-  
-  void main() {
-    vec2 texelSize = 1.0 / u_resolution;
-    float result = 0.0;
-    int halfSize = u_kernelSize / 2;
-    
-    for (int i = 0; i < 64; i++) {
-      if (i >= u_kernelSize) break;
-      int offset = i - halfSize;
-      vec2 samplePos = v_texCoord + vec2(0.0, float(offset) * texelSize.y);
-      result += texture(u_image, samplePos).r * u_kernel[i];
-    }
-    
-    fragColor = vec4(result, result, result, 1.0);
-  }
-`;
 
 /**
  * Compile a WebGL2 shader
@@ -323,8 +255,8 @@ export class WebGLIsotropicBlur extends BaseWebGLStrategy implements BlurStrateg
       gl.STATIC_DRAW
     );
     
-    const horizontalBlurProgram = createProgram(gl, VERTEX_SHADER, HORIZONTAL_BLUR_SHADER);
-    const verticalBlurProgram = createProgram(gl, VERTEX_SHADER, VERTICAL_BLUR_SHADER);
+    const horizontalBlurProgram = createProgram(gl, VERTEX_SHADER_SOURCE, WEBGL2_HORIZONTAL_BLUE_SOURCE);
+    const verticalBlurProgram = createProgram(gl, VERTEX_SHADER_SOURCE, WEBGL2_VERTICAL_BLUE_SOURCE);
     
     this.resources = {
       gl,
@@ -491,92 +423,6 @@ interface WebGPUResources {
   bindGroupLayout: GPUBindGroupLayout;
 }
 
-const HORIZONTAL_BLUR_WGSL = `
-struct Params {
-  width: u32,
-  height: u32,
-  kernelSize: u32,
-  _pad: u32,
-}
-
-@group(0) @binding(0)
-var<uniform> params: Params;
-
-@group(0) @binding(1)
-var<storage, read> kernel: array<f32>;
-
-@group(0) @binding(2)
-var<storage, read> input: array<f32>;
-
-@group(0) @binding(3)
-var<storage, read_write> output: array<f32>;
-
-@compute @workgroup_size(16, 16)
-fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-  let x = global_id.x;
-  let y = global_id.y;
-  
-  if (x >= params.width || y >= params.height) {
-    return;
-  }
-  
-  let halfSize = i32(params.kernelSize) / 2;
-  var sum = 0.0;
-  
-  for (var k = 0; k < i32(params.kernelSize); k = k + 1) {
-    let sampleX = i32(x) + k - halfSize;
-    let clampedX = clamp(sampleX, 0, i32(params.width) - 1);
-    let sampleIdx = u32(clampedX) + y * params.width;
-    sum = sum + input[sampleIdx] * kernel[u32(k)];
-  }
-  
-  output[x + y * params.width] = sum;
-}
-`;
-
-const VERTICAL_BLUR_WGSL = `
-struct Params {
-  width: u32,
-  height: u32,
-  kernelSize: u32,
-  _pad: u32,
-}
-
-@group(0) @binding(0)
-var<uniform> params: Params;
-
-@group(0) @binding(1)
-var<storage, read> kernel: array<f32>;
-
-@group(0) @binding(2)
-var<storage, read> input: array<f32>;
-
-@group(0) @binding(3)
-var<storage, read_write> output: array<f32>;
-
-@compute @workgroup_size(16, 16)
-fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-  let x = global_id.x;
-  let y = global_id.y;
-  
-  if (x >= params.width || y >= params.height) {
-    return;
-  }
-  
-  let halfSize = i32(params.kernelSize) / 2;
-  var sum = 0.0;
-  
-  for (var k = 0; k < i32(params.kernelSize); k = k + 1) {
-    let sampleY = i32(y) + k - halfSize;
-    let clampedY = clamp(sampleY, 0, i32(params.height) - 1);
-    let sampleIdx = x + u32(clampedY) * params.width;
-    sum = sum + input[sampleIdx] * kernel[u32(k)];
-  }
-  
-  output[x + y * params.width] = sum;
-}
-`;
-
 /**
  * WebGPU-accelerated isotropic Gaussian blur
  * Uses compute shaders with separable convolution
@@ -639,7 +485,7 @@ export class WebGPUIsotropicBlur extends BaseWebGPUStrategy implements BlurStrat
     const horizontalPipeline = device.createComputePipeline({
       layout: pipelineLayout,
       compute: {
-        module: device.createShaderModule({ code: HORIZONTAL_BLUR_WGSL }),
+        module: device.createShaderModule({ code: WEBGPU_HORIZONTAL_BLUE_SOURCE }),
         entryPoint: 'main',
       },
     });
@@ -647,7 +493,7 @@ export class WebGPUIsotropicBlur extends BaseWebGPUStrategy implements BlurStrat
     const verticalPipeline = device.createComputePipeline({
       layout: pipelineLayout,
       compute: {
-        module: device.createShaderModule({ code: VERTICAL_BLUR_WGSL }),
+        module: device.createShaderModule({ code: WEBGPU_VERTICAL_BLUE_SOURCE }),
         entryPoint: 'main',
       },
     });
@@ -879,7 +725,7 @@ export class IsotropicBlur implements BlurStrategy {
         try {
           return new IsotropicBlur(new Ctor(config), Ctor, config);
         } catch {
-          continue; // isSupported() lied — try the next candidate
+          continue; // isSupported() lied; try the next candidate
         }
       }
     }

@@ -48,6 +48,25 @@ export interface DoGConfig {
      * - φ >> 10: Hard black/white threshold (approaches step function)
      */
     phi: number | ChannelImage;
+    /**
+     * Strategy used to convert the sharpened DoG response into the final output image
+     *
+     * Decouples how thresholding is performed from the edge-detection/sharpening
+     * pipeline (sigma, k, p).  Allows swapping strategies without touching the rest of the config.
+     * Consumes `epsilon` and `phi` from this config as its ThresholdConfig.
+     *
+     * Built-in strategies (see threshold.ts):
+     * - `SoftThresholdStrategy`: tanh-based soft transition, governed by `phi`
+     *   (steepness) and `epsilon` (midpoint). Produces the smooth pencil/pastel-to-hard-edge
+     *   range described by `phi` above. This is the paper's standard XDoG threshold.
+     * - `HardThresholdStrategy`: binary step function at `epsilon` (ignores `phi`).
+     *   Equivalent to the φ → ∞ limit of the soft strategy; suited to styles like ADoG
+     *   that expect a strictly binarized screentone output.
+     * - `HysteresisThresholdStrategy`: Canny-style double threshold with flood-fill
+     *   linking, using `epsilon ± highOffset/lowOffset` as the high/low bounds. Produces
+     *   cleaner, more connected edge lines than a single global threshold, at the cost
+     *   of ignoring `phi` and requiring a full-image connectivity pass.
+     */
     thresholdStrategy: ThresholdStrategy;
 }
 /**
@@ -91,6 +110,21 @@ export interface FDoGConfig extends DoGConfig {
      * - >2: Stylistic smoothing effect
      */
     sigmaA: number;
+    /**
+     * Number of smoothing iterations applied when computing the Edge Tangent Flow (ETF)
+     *
+     * The ETF is built iteratively by locally averaging tangent directions with
+     * neighboring pixels, progressively refining the flow field so it follows
+     * coherent edge structures rather than noisy per-pixel gradients (default: 3)
+     * - 0-1: Flow field closely follows raw gradients; noisy, jagged edge directions
+     * - 2-4: Typical range; smooth, stable flow suitable for line integral convolution
+     * - 5+: Very smooth flow, but expensive and can over-round sharp corners/junctions
+     *
+     * This directly affects the quality of edges produced during LIC-based smoothing
+     * (governed by sigmaM/sigmaA) an under-converged ETF will propagate noise into
+     * the final stylized lines regardless of how sigmaM/sigmaA are tuned.
+     */
+    etfIterations?: number;
 }
 /**
  * Configuration for Adaptive Difference of Gaussians (ADoG)

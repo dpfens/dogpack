@@ -113,33 +113,10 @@ export class XDoG {
     }
     /**
      * Get current configuration.
-     *
-     * NOTE: the original merged in `this.processor.getConfig()`, which may
-     * have applied its own internal defaulting on top of the raw dogConfig
-     * we constructed it with. Without a persistent processor to ask, this
-     * returns XDoG's own resolved config plus the raw (possibly
-     * not-fully-defaulted) dogConfig. If DoGProcessor.getConfig() does
-     * meaningful default-filling beyond what's here, please point me to
-     * processor.ts and I'll fold that logic in.
      */
     getConfig() {
         return { ...this.config, ...this.dogConfig };
     }
-    /**
-     * Update configuration. Stays synchronous — a kernelSizeMultiplier
-     * change starts a new `IsotropicBlur.create()` and swaps in the new
-     * promise immediately, without waiting for it to resolve. The old
-     * strategy is disposed once it (already long-since resolved, in
-     * practice) settles.
-     *
-     * KNOWN RACE: if a process*() call is in flight — meaning it already
-     * awaited the *old* blurStrategyPromise and is mid-call on that
-     * strategy — and setConfig() runs before that call's `finally`
-     * completes, the old strategy could be disposed out from under it.
-     * This existed in some form in the original code too (no serialization
-     * between setConfig and in-flight process() calls). If that matters for
-     * your usage, serialize calls at the call site.
-     */
     setConfig(config) {
         const { kernelSizeMultiplier, blurStrategy, ...dogConfig } = config;
         this.config = { ...this.config, ...config };

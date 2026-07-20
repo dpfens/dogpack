@@ -64,7 +64,7 @@ class FDoG {
         // Step 1: Compute Edge Tangent Flow
         const etfComputer = await index_js_1.EdgeTangentFlowComputer.create();
         const etf = await etfComputer.compute(input, {
-            iterations: base_js_1.DEFAULT_ETF_CONFIG.iterations,
+            iterations: params.etfIterations ?? base_js_1.DEFAULT_ETF_CONFIG.iterations,
             kernelSize: Math.ceil(params.sigmaC * 2.45) * 2 + 1,
         }, params.sigmaC);
         const gradientBlur = await index_js_3.GradientAlignedBlur.create(etf);

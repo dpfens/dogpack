@@ -6,6 +6,14 @@
  */
 import type { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig, Preprocessor } from '../interfaces/base.js';
 import { BaseWebGLStrategy } from '../base.js';
+import BILATERAL_SOURCE from './shaders/webgl/bilateral.glsl.js'
+import CONTRAST_SOURCE from './shaders/webgl/contrast.glsl.js'
+import GAUSSIAN_H_SOURCE from './shaders/webgl/guassian-horizontal.glsl.js'
+import GAUSSIAN_V_SOURCE from './shaders/webgl/guassian-vertical.glsl.js'
+import KUWAHARA_SOURCE from './shaders/webgl/kuwahara.glsl.js'
+import MEDIAN_SMALL_SOURCE from './shaders/webgl/median-small.glsl.js'
+import MEDIAN_SOURCE from './shaders/webgl/median.glsl.js'
+import QUANTIZE_SOURCE from './shaders/webgl/quantize.glsl.js'
 
 // Default config values (mirrors the CPU implementation in cpu.ts)
 const DEFAULT_BILATERAL_CONFIG: BilateralFilterConfig = {
@@ -319,49 +327,6 @@ function renderPass(
 // BILATERAL FILTER - WebGL Implementation
 // ============================================================================
 
-const BILATERAL_FRAG = `#version 300 es
-precision highp float;
-precision highp sampler2D;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-uniform sampler2D u_image;
-uniform vec2 u_texelSize;
-uniform float u_sigmaSpatial2;
-uniform float u_sigmaRange2;
-uniform int u_radius;
-
-void main() {
-  float centerValue = texture(u_image, v_texCoord).r;
-  
-  float sum = 0.0;
-  float weightSum = 0.0;
-  
-  for (int dy = -u_radius; dy <= u_radius; dy++) {
-    for (int dx = -u_radius; dx <= u_radius; dx++) {
-      vec2 offset = vec2(float(dx), float(dy)) * u_texelSize;
-      float neighborValue = texture(u_image, v_texCoord + offset).r;
-      
-      // Spatial weight
-      float dist2 = float(dx * dx + dy * dy);
-      float spatialWeight = exp(-dist2 / u_sigmaSpatial2);
-      
-      // Range weight
-      float diff = neighborValue - centerValue;
-      float rangeWeight = exp(-(diff * diff) / u_sigmaRange2);
-      
-      float weight = spatialWeight * rangeWeight;
-      sum += neighborValue * weight;
-      weightSum += weight;
-    }
-  }
-  
-  float result = weightSum > 0.0 ? sum / weightSum : centerValue;
-  fragColor = vec4(result, 0.0, 0.0, 1.0);
-}
-`;
-
 export class BilateralFilterWebGL extends BaseWebGLStrategy implements Preprocessor {
   private readonly config: BilateralFilterConfig;
 
@@ -398,7 +363,7 @@ export class BilateralFilterWebGL extends BaseWebGLStrategy implements Preproces
     }
 
     return this.runGuarded(gl, () => {
-      const program = createProgram(BILATERAL_FRAG, 'bilateral');
+      const program = createProgram(BILATERAL_SOURCE, 'bilateral');
       if (!program) {
         throw new Error('BilateralFilterWebGL: failed to compile/link shader program.');
       }
@@ -434,63 +399,6 @@ export class BilateralFilterWebGL extends BaseWebGLStrategy implements Preproces
 // GAUSSIAN BLUR - Separable WebGL Implementation (Very Fast)
 // ============================================================================
 
-const GAUSSIAN_H_FRAG = `#version 300 es
-precision highp float;
-precision highp sampler2D;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-uniform sampler2D u_image;
-uniform float u_texelSizeX;
-uniform int u_radius;
-uniform float u_sigma2;
-
-void main() {
-  float sum = 0.0;
-  float weightSum = 0.0;
-  
-  for (int dx = -u_radius; dx <= u_radius; dx++) {
-    float offset = float(dx) * u_texelSizeX;
-    float value = texture(u_image, v_texCoord + vec2(offset, 0.0)).r;
-    
-    float weight = exp(-float(dx * dx) / u_sigma2);
-    sum += value * weight;
-    weightSum += weight;
-  }
-  
-  fragColor = vec4(sum / weightSum, 0.0, 0.0, 1.0);
-}
-`;
-
-const GAUSSIAN_V_FRAG = `#version 300 es
-precision highp float;
-precision highp sampler2D;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-uniform sampler2D u_image;
-uniform float u_texelSizeY;
-uniform int u_radius;
-uniform float u_sigma2;
-
-void main() {
-  float sum = 0.0;
-  float weightSum = 0.0;
-  
-  for (int dy = -u_radius; dy <= u_radius; dy++) {
-    float offset = float(dy) * u_texelSizeY;
-    float value = texture(u_image, v_texCoord + vec2(0.0, offset)).r;
-    
-    float weight = exp(-float(dy * dy) / u_sigma2);
-    sum += value * weight;
-    weightSum += weight;
-  }
-  
-  fragColor = vec4(sum / weightSum, 0.0, 0.0, 1.0);
-}
-`;
 
 export class GaussianBlurWebGL extends BaseWebGLStrategy implements Preprocessor {
   private readonly sigma: number;
@@ -529,8 +437,8 @@ export class GaussianBlurWebGL extends BaseWebGLStrategy implements Preprocessor
     }
 
     return this.runGuarded(gl, () => {
-      const hProgram = createProgram(GAUSSIAN_H_FRAG, 'gaussianH');
-      const vProgram = createProgram(GAUSSIAN_V_FRAG, 'gaussianV');
+      const hProgram = createProgram(GAUSSIAN_H_SOURCE, 'gaussianH');
+      const vProgram = createProgram(GAUSSIAN_V_SOURCE, 'gaussianV');
 
       if (!hProgram || !vProgram) {
         throw new Error('GaussianBlurWebGL: failed to compile/link shader program.');
@@ -578,107 +486,6 @@ export class GaussianBlurWebGL extends BaseWebGLStrategy implements Preprocessor
 // MEDIAN FILTER - WebGL Approximation using Weighted Histogram
 // ============================================================================
 
-// True median requires sorting which isn't efficient in shaders.
-// We use a weighted percentile approximation that's very close to median.
-const MEDIAN_FRAG = `#version 300 es
-precision highp float;
-precision highp sampler2D;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-uniform sampler2D u_image;
-uniform vec2 u_texelSize;
-uniform int u_radius;
-
-// Histogram-based median approximation
-// We use 32 bins for speed while maintaining accuracy
-#define NUM_BINS 32
-
-void main() {
-  float bins[NUM_BINS];
-  for (int i = 0; i < NUM_BINS; i++) bins[i] = 0.0;
-  
-  float totalWeight = 0.0;
-  int kernelSize = (2 * u_radius + 1) * (2 * u_radius + 1);
-  
-  // Build histogram
-  for (int dy = -u_radius; dy <= u_radius; dy++) {
-    for (int dx = -u_radius; dx <= u_radius; dx++) {
-      vec2 offset = vec2(float(dx), float(dy)) * u_texelSize;
-      float value = texture(u_image, v_texCoord + offset).r;
-      
-      // Map value to bin
-      int binIdx = int(clamp(value * float(NUM_BINS - 1), 0.0, float(NUM_BINS - 1)));
-      bins[binIdx] += 1.0;
-      totalWeight += 1.0;
-    }
-  }
-  
-  // Find median (50th percentile)
-  float targetWeight = totalWeight * 0.5;
-  float cumWeight = 0.0;
-  float median = 0.5;
-  
-  for (int i = 0; i < NUM_BINS; i++) {
-    cumWeight += bins[i];
-    if (cumWeight >= targetWeight) {
-      median = (float(i) + 0.5) / float(NUM_BINS);
-      break;
-    }
-  }
-  
-  fragColor = vec4(median, 0.0, 0.0, 1.0);
-}
-`;
-
-// For small radius, use direct sorting approach (more accurate)
-const MEDIAN_SMALL_FRAG = `#version 300 es
-precision highp float;
-precision highp sampler2D;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-uniform sampler2D u_image;
-uniform vec2 u_texelSize;
-uniform int u_radius;
-
-// Partial sort network for finding median of small kernels
-// This is exact for radius 1-2 (3x3 to 5x5 kernels)
-
-void swap(inout float a, inout float b) {
-  float t = min(a, b);
-  b = max(a, b);
-  a = t;
-}
-
-void main() {
-  // Collect all values
-  float values[25]; // Max 5x5
-  int count = 0;
-  
-  for (int dy = -u_radius; dy <= u_radius; dy++) {
-    for (int dx = -u_radius; dx <= u_radius; dx++) {
-      vec2 offset = vec2(float(dx), float(dy)) * u_texelSize;
-      values[count] = texture(u_image, v_texCoord + offset).r;
-      count++;
-    }
-  }
-  
-  // Partial bubble sort to find median
-  int medianIdx = count / 2;
-  
-  for (int i = 0; i <= medianIdx; i++) {
-    for (int j = i + 1; j < count; j++) {
-      swap(values[i], values[j]);
-    }
-  }
-  
-  fragColor = vec4(values[medianIdx], 0.0, 0.0, 1.0);
-}
-`;
-
 export class MedianFilterWebGL extends BaseWebGLStrategy implements Preprocessor {
   private readonly config: MedianFilterConfig;
 
@@ -712,7 +519,7 @@ export class MedianFilterWebGL extends BaseWebGLStrategy implements Preprocessor
 
     return this.runGuarded(gl, () => {
       // Use exact sorting for small kernels, histogram for large
-      const shaderSource = radius <= 2 ? MEDIAN_SMALL_FRAG : MEDIAN_FRAG;
+      const shaderSource = radius <= 2 ? MEDIAN_SMALL_SOURCE : MEDIAN_SOURCE;
       const cacheKey = radius <= 2 ? 'medianSmall' : 'medianLarge';
 
       const program = createProgram(shaderSource, cacheKey);
@@ -749,60 +556,6 @@ export class MedianFilterWebGL extends BaseWebGLStrategy implements Preprocessor
 // KUWAHARA FILTER - WebGL Implementation
 // ============================================================================
 
-const KUWAHARA_FRAG = `#version 300 es
-precision highp float;
-precision highp sampler2D;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-uniform sampler2D u_image;
-uniform vec2 u_texelSize;
-uniform int u_radius;
-
-// Calculate mean and variance for a quadrant
-vec2 quadrantStats(vec2 center, int startX, int endX, int startY, int endY) {
-  float sum = 0.0;
-  float sumSq = 0.0;
-  float count = 0.0;
-  
-  for (int dy = startY; dy <= endY; dy++) {
-    for (int dx = startX; dx <= endX; dx++) {
-      vec2 offset = vec2(float(dx), float(dy)) * u_texelSize;
-      float val = texture(u_image, center + offset).r;
-      sum += val;
-      sumSq += val * val;
-      count += 1.0;
-    }
-  }
-  
-  float mean = sum / count;
-  float variance = (sumSq / count) - (mean * mean);
-  
-  return vec2(mean, variance);
-}
-
-void main() {
-  int r = u_radius;
-  
-  // Four quadrants: top-left, top-right, bottom-left, bottom-right
-  vec2 q0 = quadrantStats(v_texCoord, -r, 0, -r, 0);
-  vec2 q1 = quadrantStats(v_texCoord, 0, r, -r, 0);
-  vec2 q2 = quadrantStats(v_texCoord, -r, 0, 0, r);
-  vec2 q3 = quadrantStats(v_texCoord, 0, r, 0, r);
-  
-  // Find quadrant with minimum variance
-  float minVar = q0.y;
-  float result = q0.x;
-  
-  if (q1.y < minVar) { minVar = q1.y; result = q1.x; }
-  if (q2.y < minVar) { minVar = q2.y; result = q2.x; }
-  if (q3.y < minVar) { result = q3.x; }
-  
-  fragColor = vec4(result, 0.0, 0.0, 1.0);
-}
-`;
-
 export class KuwaharaFilterWebGL extends BaseWebGLStrategy implements Preprocessor {
   private readonly config: KuwaharaFilterConfig;
 
@@ -835,7 +588,7 @@ export class KuwaharaFilterWebGL extends BaseWebGLStrategy implements Preprocess
     }
 
     return this.runGuarded(gl, () => {
-      const program = createProgram(KUWAHARA_FRAG, 'kuwahara');
+      const program = createProgram(KUWAHARA_SOURCE, 'kuwahara');
       if (!program) {
         throw new Error('KuwaharaFilterWebGL: failed to compile/link shader program.');
       }
@@ -868,29 +621,6 @@ export class KuwaharaFilterWebGL extends BaseWebGLStrategy implements Preprocess
 // ============================================================================
 // CONTRAST ENHANCEMENT - WebGL Implementation
 // ============================================================================
-
-const CONTRAST_FRAG = `#version 300 es
-precision highp float;
-precision highp sampler2D;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-uniform sampler2D u_image;
-uniform float u_minVal;
-uniform float u_maxVal;
-
-void main() {
-  float value = texture(u_image, v_texCoord).r;
-  float range = u_maxVal - u_minVal;
-  
-  float result = range > 0.01 
-    ? clamp((value - u_minVal) / range, 0.0, 1.0)
-    : value;
-    
-  fragColor = vec4(result, 0.0, 0.0, 1.0);
-}
-`;
 
 export class ContrastEnhancerWebGL extends BaseWebGLStrategy implements Preprocessor {
   private readonly blackPoint: number;
@@ -931,7 +661,7 @@ export class ContrastEnhancerWebGL extends BaseWebGLStrategy implements Preproce
     }
 
     return this.runGuarded(gl, () => {
-      const program = createProgram(CONTRAST_FRAG, 'contrast');
+      const program = createProgram(CONTRAST_SOURCE, 'contrast');
       if (!program) {
         throw new Error('ContrastEnhancerWebGL: failed to compile/link shader program.');
       }
@@ -965,23 +695,6 @@ export class ContrastEnhancerWebGL extends BaseWebGLStrategy implements Preproce
 // QUANTIZATION - WebGL Implementation
 // ============================================================================
 
-const QUANTIZE_FRAG = `#version 300 es
-precision highp float;
-precision highp sampler2D;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-uniform sampler2D u_image;
-uniform float u_levels;
-
-void main() {
-  float value = texture(u_image, v_texCoord).r;
-  float step = 1.0 / (u_levels - 1.0);
-  float result = floor(value / step + 0.5) * step;
-  fragColor = vec4(clamp(result, 0.0, 1.0), 0.0, 0.0, 1.0);
-}
-`;
 
 export class QuantizerWebGL extends BaseWebGLStrategy implements Preprocessor {
   private readonly levels: number;
@@ -1014,7 +727,7 @@ export class QuantizerWebGL extends BaseWebGLStrategy implements Preprocessor {
     }
 
     return this.runGuarded(gl, () => {
-      const program = createProgram(QUANTIZE_FRAG, 'quantize');
+      const program = createProgram(QUANTIZE_SOURCE, 'quantize');
       if (!program) {
         throw new Error('QuantizerWebGL: failed to compile/link shader program.');
       }

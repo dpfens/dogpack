@@ -1,0 +1,16 @@
+"use strict";
+// AUTO-GENERATED FILE — DO NOT EDIT.
+// Source: etf/shaders/webgl/vertex.glsl
+// Regenerate with `npm run build:shaders`.
+Object.defineProperty(exports, "__esModule", { value: true });
+const source = `#version 300 es
+precision highp float;
+in vec2 a_position;
+out vec2 v_texCoord;
+
+void main() {
+  v_texCoord = a_position * 0.5 + 0.5;
+  gl_Position = vec4(a_position, 0.0, 1.0);
+}`;
+exports.default = source;
+//# sourceMappingURL=vertex.glsl.js.map
