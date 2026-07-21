@@ -12,7 +12,7 @@ void main() {
   float f = tensor.g;
   float g = tensor.b;
   float mag = tensor.a;
-  
+    
   // Compute eigenvector for smallest eigenvalue
   float diff = e - g;
   float disc = sqrt(diff * diff + 4.0 * f * f);

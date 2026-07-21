@@ -30,6 +30,7 @@ import type {
   Gradients,
   ChannelTensor,
   ETFComputer,
+  ETFDetailedResult,
 } from '../interfaces/base.js';
 import { DEFAULT_ETF_CONFIG } from '../interfaces/base.js';
 import { normalizeVec2, dotVec2, generateGaussianKernel } from '../utils/index.js';
@@ -42,20 +43,30 @@ import { BaseCPUStrategy } from '../base.js';
  * can swap implementations without caring which one they have.
  */
 export class CpuEdgeTangentFlowComputer extends BaseCPUStrategy implements ETFComputer {
-  async compute(
-    input: ChannelImage,
-    config: Partial<ETFConfig> = {},
-    sigmaC?: number
-  ): Promise<FlowField> {
+  async compute(input: ChannelImage, config: Partial<ETFConfig> = {}, sigmaC?: number): Promise<FlowField> {
+    const { flowField } = await this.computeDetailed(input, config, sigmaC);
+    return flowField;
+  }
+
+  async computeMultiChannel(inputs: ChannelImage[], config: Partial<ETFConfig> = {}, sigmaC?: number): Promise<FlowField> {
+    const { flowField } = await this.computeMultiChannelDetailed(inputs, config, sigmaC);
+    return flowField;
+  }
+
+  async computeDetailed(input: ChannelImage, config: Partial<ETFConfig> = {}, sigmaC?: number): Promise<ETFDetailedResult> {
     const channelTensor = computeChannelTensor(input);
     return buildFlowField(channelTensor, input.width, input.height, config, sigmaC);
   }
 
-  async computeMultiChannel(
-    inputs: ChannelImage[],
-    config: Partial<ETFConfig> = {},
-    sigmaC?: number
-  ): Promise<FlowField> {
+  async computeMultiChannelDetailed(inputs: ChannelImage[], config: Partial<ETFConfig> = {}, sigmaC?: number): Promise<ETFDetailedResult> {
+    this.validateChannels(inputs);
+    const { width, height } = inputs[0];
+    const channelTensors = inputs.map(computeChannelTensor);
+    const combined = sumChannelTensors(channelTensors, width, height);
+    return buildFlowField(combined, width, height, config, sigmaC);
+  }
+
+  private validateChannels(inputs: ChannelImage[]): void {
     if (inputs.length === 0) {
       throw new Error('computeMultiChannel requires at least one channel');
     }
@@ -65,11 +76,6 @@ export class CpuEdgeTangentFlowComputer extends BaseCPUStrategy implements ETFCo
         throw new Error('All channels passed to computeMultiChannel must share the same dimensions');
       }
     }
-
-    const channelTensors = inputs.map(computeChannelTensor);
-    const combined = sumChannelTensors(channelTensors, width, height);
-
-    return buildFlowField(combined, width, height, config, sigmaC);
   }
 }
 
@@ -85,25 +91,22 @@ function buildFlowField(
   height: number,
   config: Partial<ETFConfig>,
   sigmaC?: number
-): TangentFlowField {
+): ETFDetailedResult {
   const cfg = { ...DEFAULT_ETF_CONFIG, ...config };
 
-  // Smooth the structure tensor with Gaussian (not box filter!)
-  // Paper specifies sampling within 2.45 * σc for structure tensor blur
   const smoothSigma = sigmaC ?? (cfg.kernelSize / 2.45);
-  const smoothedTensor = smoothStructureTensorGaussian(
-    channelTensor.tensor, width, height, smoothSigma
-  );
+  const smoothedTensor = smoothStructureTensorGaussian(channelTensor.tensor, width, height, smoothSigma);
 
-  // Extract initial tangent field from smoothed tensor
   let tangents = extractTangentField(smoothedTensor, width, height);
 
-  // Refine tangent field iteratively
   for (let i = 0; i < cfg.iterations; i++) {
     tangents = refineTangentField(tangents, channelTensor.magnitude, width, height);
   }
 
-  return TangentFlowField.fromVec2Array(tangents, width, height);
+  return {
+    flowField: TangentFlowField.fromVec2Array(tangents, width, height),
+    magnitude: { data: channelTensor.magnitude, width, height },
+  };
 }
 
 /**
@@ -130,16 +133,15 @@ function sumChannelTensors(channelTensors: ChannelTensor[], width: number, heigh
   const e = new Float32Array(size);
   const f = new Float32Array(size);
   const g = new Float32Array(size);
-  const magnitude = new Float32Array(size);
 
-  for (const { tensor, magnitude: mag } of channelTensors) {
+  for (const { tensor } of channelTensors) {
     for (let i = 0; i < size; i++) {
       e[i] += tensor.e[i];
       f[i] += tensor.f[i];
       g[i] += tensor.g[i];
-      magnitude[i] += mag[i];
     }
   }
+  const magnitude = tensorMagnitude({ e, f, g }, size);
 
   return { tensor: { e, f, g }, magnitude };
 }

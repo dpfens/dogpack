@@ -260,6 +260,18 @@ export interface ChannelTensor {
 }
 
 /**
+ * Result of a *Detailed ETF computation: the flow field plus its
+ * underlying magnitude field (the structure tensor's trace), exposed as
+ * an ordinary ChannelImage so it composes with the rest of the library's
+ * scalar-field tooling — e.g. as a stroke-opacity or seed-density map via
+ * the same adaptiveMap() pattern used for spatially-varying p/epsilon.
+ */
+export interface ETFDetailedResult {
+  flowField: FlowField;
+  magnitude: ChannelImage;
+}
+
+/**
  * Common interface implemented by every Edge Tangent Flow backend
  * (CPU, WebGL, WebGPU, ...).
  *
@@ -303,6 +315,20 @@ export interface ETFComputer extends Disposable, BackendIdentifiable {
     config?: Partial<ETFConfig>,
     sigmaC?: number
   ): Promise<FlowField>;
+
+  /** Same as compute(), but also returns the per-pixel structure-tensor
+   *  magnitude instead of discarding it. */
+  computeDetailed(
+    input: ChannelImage,
+    config?: Partial<ETFConfig>,
+    sigmaC?: number
+  ): Promise<ETFDetailedResult>;
+
+  computeMultiChannelDetailed(
+    inputs: ChannelImage[],
+    config?: Partial<ETFConfig>,
+    sigmaC?: number
+  ): Promise<ETFDetailedResult>;
 }
 
 /**
