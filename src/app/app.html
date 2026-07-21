@@ -34,4 +34,45 @@
       <div class="alert alert-danger mt-3 mb-0" role="alert">{{ message }}</div>
     }
   </div>
+
+  <div class="container">
+    <div class="row">
+      <div class="col-12">
+        @for (section of faqs; track section.name; let i = $index) {
+          <div class="section-block mt-5">
+            <div class="section-label">{{ section.name }}</div>
+
+            <div class="accordion" [id]="'acc-' + i">
+              @for (item of section.items; track item.question; let j = $index) {
+                <div class="accordion-item">
+                  <h2 class="accordion-header">
+                    <button
+                      class="accordion-button"
+                      [class.collapsed]="!(i === 0 && j === 0)"
+                      type="button"
+                      data-bs-toggle="collapse"
+                      [attr.data-bs-target]="'#item-' + i + '-' + j"
+                      [attr.aria-expanded]="i === 0 && j === 0"
+                      [attr.aria-controls]="'item-' + i + '-' + j"
+                    >
+                      {{ item.question }}
+                    </button>
+                  </h2>
+                  <div
+                    [id]="'item-' + i + '-' + j"
+                    class="accordion-collapse collapse"
+                    [class.show]="i === 0 && j === 0"
+                    [attr.data-bs-parent]="'#acc-' + i"
+                  >
+                    <div class="accordion-body" [innerHTML]="item.answer"></div>
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+        }
+      </div>
+
+    </div>
+  </div>
 }
