@@ -13,6 +13,7 @@ import { ParamSliderComponent } from '../../ui/param-slider-component/param-slid
 import { WireDoGConfig, ADogConfig, ADogPreset, WireADoGConfig, ThresholdStrategyDescriptor } from '../../../models/dog';
 import { DogPreviewableComponent } from '../base';
 import { DogFocusLabel } from '../../../services/dog/dog-service';
+import { ADOG_EXTRA_PARAM_HINTS, withRange } from '../../content/pipeline-help-content';
 
 type ThresholdType = 'Soft' | 'Hard';
 
@@ -92,6 +93,10 @@ export class ADogComponent extends DogPreviewableComponent<ADogConfig> {
 
   private buildThresholdStrategyDescriptor(): ThresholdStrategyDescriptor {
     return { kind: THRESHOLD_TYPE_TO_DESCRIPTOR_KIND[this.thresholdStrategyKey()] };
+  }
+
+  hint(key: ADogConfigParamType): string {
+    return withRange(ADOG_EXTRA_PARAM_HINTS[key].hint, this.paramRanges[key]);
   }
 
   selectPreset(name: string): void {

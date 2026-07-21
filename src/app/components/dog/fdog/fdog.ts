@@ -1,7 +1,6 @@
 import { Component, computed, effect, input, model, signal, untracked } from '@angular/core';
 import { FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
 import {
-  DoGConfig,
   DogConfigParamType,
   FDOG_PARAM_RANGES,
   FDOG_STYLE_PRESETS,
@@ -13,6 +12,7 @@ import { ParamSliderComponent } from '../../ui/param-slider-component/param-slid
 import { FDogConfig, FDogPreset, WireDoGConfig, WireFDoGConfig } from '../../../models/dog';
 import { DogPreviewableComponent } from '../base';
 import { DogFocusLabel } from '../../../services/dog/dog-service';
+import { FDOG_EXTRA_PARAM_HINTS, withRange } from '../../content/pipeline-help-content';
 
 @Component({
   selector: 'fdog',
@@ -78,6 +78,10 @@ export class FDogComponent extends DogPreviewableComponent<FDogConfig> {
         Validators.max(r.hardMax),
       ],
     });
+  }
+
+  hint(key: FDogConfigParamType): string {
+    return withRange(FDOG_EXTRA_PARAM_HINTS[key].hint, this.paramRanges[key]);
   }
 
   selectPreset(name: string): void {

@@ -1,11 +1,12 @@
 import { Component, input, model, signal } from '@angular/core';
 import { FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
-import { DoGConfig, DogConfigParamType, ParamRange, STYLE_PRESETS, XDOG_PARAM_RANGES, XDogConfigParamType } from 'dogpack/dog';
+import { DogConfigParamType, ParamRange, STYLE_PRESETS, XDOG_PARAM_RANGES, XDogConfigParamType } from 'dogpack/dog';
 import { DogComponent } from '../dog/dog';
 import { BlurStrategyDescriptor, WireDoGConfig, XDogConfig, XDogPreset } from '../../../models/dog';
 import { ParamSliderComponent } from "../../ui/param-slider-component/param-slider-component";
 import { DogPreviewableComponent } from '../base';
 import { DogFocusLabel } from '../../../services/dog/dog-service';
+import { XDOG_EXTRA_PARAM_HINTS, BLUR_STRATEGY_HINTS, withRange } from '../../content/pipeline-help-content';
 
 type BlurType = 'Isotropic';
 
@@ -64,6 +65,14 @@ export class XDogComponent extends DogPreviewableComponent<XDogConfig> {
       kind: BLUR_TYPE_TO_DESCRIPTOR_KIND[this.blurStrategyKey()],
       kernelSizeMultiplier: this.kernelSizeMultiplier.value,
     };
+  }
+
+  hint(key: XDogConfigParamType): string {
+    return withRange(XDOG_EXTRA_PARAM_HINTS[key].hint, this.paramRanges[key]);
+  }
+
+  blurHint(key: BlurType): string {
+    return BLUR_STRATEGY_HINTS[key] ?? '';
   }
 
   onConfig(config: WireDoGConfig) {

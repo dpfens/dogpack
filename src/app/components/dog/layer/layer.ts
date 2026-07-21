@@ -22,6 +22,7 @@ import { DogComponentType, DogLayer, DogNode } from '../../../models/dog';
 import { DogPreviewableComponent } from '../base';
 import { DogFocusLabel } from '../../../services/dog/dog-service';
 import { BuiltinBlendMode } from 'dogpack/extensions';
+import { NODE_TYPE_INFO } from '../../content/pipeline-help-content';
 
 type DogLeaf = XDogComponent | FDogComponent | ADogComponent | HDogComponent;
 type DogNodeInstance = DogLayerComponent | DogLeaf;
@@ -102,6 +103,15 @@ export class DogLayerComponent extends DogPreviewableComponent<DogLayer> {
    * explicit literal array of the modes you support.
    */
   readonly blendModes: BuiltinBlendMode[] = Object.keys(extensions.multiScale.BlendFunctions) as BuiltinBlendMode[];
+
+  /** Description for a node kind, including 'layer' itself for nested groups. */
+  nodeHint(kind: DogNodeKind): string {
+    return NODE_TYPE_INFO[kind]?.hint ?? '';
+  }
+
+  nodeShortHint(kind: DogNodeKind): string {
+    return NODE_TYPE_INFO[kind]?.shortHint ?? '';
+  }
 
   add<T extends DogNodeInstance>(cmp: Type<T>, kind: DogNodeKind): ComponentRef<T> {
     const ref = this.container.createComponent(cmp);

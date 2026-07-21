@@ -36,6 +36,7 @@
       [hardMax]="paramRanges.kernelSizeMultiplier.hardMax"
       [step]="paramRanges.kernelSizeMultiplier.step"
       [formControl]="kernelSizeMultiplier" />
+      <div class="form-text">{{ hint('kernelSizeMultiplier') }}</div>
   </div>
 
   <div class="mb-3">
@@ -48,5 +49,6 @@
         <option [value]="opt.key">{{ opt.label }}</option>
       }
     </select>
+    <div class="form-text">{{ blurHint(blurStrategyKey()) }}</div>
   </div>
 </div>

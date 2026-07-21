@@ -14,6 +14,7 @@ import { ADogComponent } from '../adog/adog';
 import { ParamSliderComponent } from '../../ui/param-slider-component/param-slider-component';
 import { DogModelProvider, HDogConfig, HDogPresetConfig, WireHDoGConfig } from '../../../models/dog';
 import { DoGService } from '../../../services/dog/dog-service';
+import { HDOG_EXTRA_PARAM_HINTS, withRange } from '../../content/pipeline-help-content';
 
 @Component({
   selector: 'hdog',
@@ -85,6 +86,13 @@ export class HDogComponent implements DogModelProvider<HDogConfig> {
       });
     });
   });
+
+  hint(): string {
+    return withRange(
+      HDOG_EXTRA_PARAM_HINTS.adogSecondaryScaleFactor.hint,
+      this.paramRanges.adogSecondaryScaleFactor,
+    );
+  }
 
   async runPreview(): Promise<void> {
     this.previewPending.set(true);

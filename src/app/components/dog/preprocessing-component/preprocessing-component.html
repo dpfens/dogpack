@@ -7,7 +7,7 @@
   <ul class="list-group list-group-flush">
     @for (step of steps(); track $index; let i = $index, first = $first, last = $last) {
       <li class="list-group-item">
-        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-1">
           <span class="fw-semibold text-truncate">{{ stepLabels[step.type] }}</span>
           <div class="btn-group btn-group-sm flex-shrink-0">
             <button type="button" class="btn btn-outline-secondary" [disabled]="first" (click)="moveStepUp(i)">
@@ -20,6 +20,8 @@
           </div>
         </div>
 
+        <p class="text-body-secondary small mb-2">{{ stepSummary(step.type) }}</p>
+
         @if (step.type === 'preset') {
           <select
             class="form-select form-select-sm"
@@ -27,9 +29,10 @@
             (change)="updatePresetName(i, $any($event.target).value)"
           >
             @for (name of presetNames; track name) {
-              <option [value]="name">{{ name }}</option>
+              <option [value]="name" class="text-capitalize">{{ name }}</option>
             }
           </select>
+          <div class="form-text">{{ presetHint(step.name) }}</div>
         }
 
         @if (step.type === 'bilateral') {
@@ -45,6 +48,7 @@
                 [ngModel]="step.config?.sigmaSpatial ?? 4"
                 (ngModelChange)="updateBilateral(i, 'sigmaSpatial', $event)"
               />
+              <div class="form-text">{{ stepParamHint('bilateral', 'sigmaSpatial') }}</div>
             </div>
             <div class="col-12 col-sm-6">
               <label class="form-label small mb-0">Range σ</label>
@@ -57,6 +61,7 @@
                 [ngModel]="step.config?.sigmaRange ?? 0.1"
                 (ngModelChange)="updateBilateral(i, 'sigmaRange', $event)"
               />
+              <div class="form-text">{{ stepParamHint('bilateral', 'sigmaRange') }}</div>
             </div>
           </div>
         }
@@ -72,6 +77,7 @@
             [ngModel]="step.config?.radius ?? 3"
             (ngModelChange)="updateRadius(i, $event)"
           />
+          <div class="form-text">{{ stepParamHint(step.type, 'radius') }}</div>
         }
 
         @if (step.type === 'gaussian') {
@@ -85,6 +91,7 @@
             [ngModel]="step.sigma ?? 1"
             (ngModelChange)="updateGaussianSigma(i, $event)"
           />
+          <div class="form-text">{{ stepParamHint('gaussian', 'sigma') }}</div>
         }
 
         @if (step.type === 'contrast') {
@@ -100,6 +107,7 @@
                 [ngModel]="step.blackPoint ?? 0.01"
                 (ngModelChange)="updateContrast(i, 'blackPoint', $event)"
               />
+              <div class="form-text">{{ stepParamHint('contrast', 'blackPoint') }}</div>
             </div>
             <div class="col-12 col-sm-6">
               <label class="form-label small mb-0">White point</label>
@@ -112,6 +120,7 @@
                 [ngModel]="step.whitePoint ?? 0.99"
                 (ngModelChange)="updateContrast(i, 'whitePoint', $event)"
               />
+              <div class="form-text">{{ stepParamHint('contrast', 'whitePoint') }}</div>
             </div>
           </div>
         }
@@ -127,6 +136,7 @@
             [ngModel]="step.levels ?? 8"
             (ngModelChange)="updateQuantizeLevels(i, $event)"
           />
+          <div class="form-text">{{ stepParamHint('quantize', 'levels') }}</div>
         }
       </li>
     } @empty {
@@ -139,6 +149,7 @@
       class="form-select flex-grow-1"
       [value]="selectedAddIndex()"
       (change)="onAddIndexChange(+$any($event.target).value)"
+      [title]="stepSummary(addableSteps[selectedAddIndex()]?.type)"
     >
       @for (step of addableSteps; track $index; let idx = $index) {
         <option [value]="idx">{{ stepLabels[step.type] }}</option>

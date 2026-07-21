@@ -9,6 +9,7 @@ import {
 import { DoGService } from '../../../services/dog/dog-service';
 import { ParamSliderComponent } from "../../ui/param-slider-component/param-slider-component";
 import { FormsModule } from '@angular/forms';
+import { PIPELINE_STEP_HINTS, PREPROCESSING_PRESET_HINTS, PreprocessingPresetName } from '../../content/pipeline-help-content';
 
 type PresetName = 'light' | 'standard' | 'heavy' | 'artistic' | 'nature';
 
@@ -61,6 +62,19 @@ export class PreprocessingComponent {
     this.dogService.show({ kind: 'preprocessing' }, imageData);
     this.dogService.setWorkingImage(channel);
   });
+
+  stepSummary(type: PipelineStepConfig['type'] | undefined): string {
+    if (!type) return '';
+    return PIPELINE_STEP_HINTS[type].summary;
+  }
+
+  stepParamHint(type: PipelineStepConfig['type'], param: string): string {
+    return PIPELINE_STEP_HINTS[type].params?.[param]?.hint ?? '';
+  }
+
+  presetHint(name: PreprocessingPresetName): string {
+    return PREPROCESSING_PRESET_HINTS[name] ?? '';
+  }
 
   setChannelMode(mode: ChannelMode): void {
     this.channelMode.set(mode);

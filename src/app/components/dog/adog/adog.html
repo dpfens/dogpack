@@ -37,6 +37,7 @@
       [hardMax]="paramRanges.tau.hardMax"
       [step]="paramRanges.tau.step"
       [formControl]="tau" />
+    <div class="form-text">{{ hint('tau') }}</div>
   </div>
 
   <div class="mb-3">
@@ -48,6 +49,7 @@
       [hardMax]="paramRanges.s.hardMax"
       [step]="paramRanges.s.step"
       [formControl]="s" />
+    <div class="form-text">{{ hint('s') }}</div>
   </div>
 
   <div class="mb-3">
@@ -59,6 +61,7 @@
       [hardMax]="paramRanges.noiseScaleC.hardMax"
       [step]="paramRanges.noiseScaleC.step"
       [formControl]="noiseScaleC" />
+    <div class="form-text">{{ hint('noiseScaleC') }}</div>
   </div>
 
   <div class="mb-3">
@@ -70,5 +73,6 @@
       [hardMax]="paramRanges.kernelSizeMultiplier.hardMax"
       [step]="paramRanges.kernelSizeMultiplier.step"
       [formControl]="kernelSizeMultiplier" />
+    <div class="form-text">{{ hint('kernelSizeMultiplier') }}</div>
   </div>
 </div>

@@ -74,6 +74,7 @@
           <option [value]="opt.key">{{ opt.label }}</option>
         }
       </select>
+      <div class="form-text">{{ strategyHint() }}</div>
     </div>
 
     @if (isHysteresis()) {
@@ -81,10 +82,12 @@
         <div class="col-6">
           <label class="form-label">High offset</label>
           <input type="number" step="0.05" class="form-control" [formControl]="form.controls.highOffset" (blur)="onCommit()" />
+          <div class="form-text">{{ hysteresisHint('highOffset') }}</div>
         </div>
         <div class="col-6">
           <label class="form-label">Low offset</label>
           <input type="number" step="0.05" class="form-control" [formControl]="form.controls.lowOffset" (blur)="onCommit()" />
+          <div class="form-text">{{ hysteresisHint('lowOffset') }}</div>
         </div>
       </div>
     }

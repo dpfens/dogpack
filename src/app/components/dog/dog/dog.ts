@@ -16,6 +16,13 @@ import {
 import { ParamRange, DogConfigParamType } from 'dogpack';
 import { ThresholdStrategyDescriptor, ThresholdType, WireDoGConfig } from '../../../models/dog';
 import { ParamSliderComponent } from '../../ui/param-slider-component/param-slider-component';
+import {
+  DOG_PARAM_HINTS,
+  THRESHOLD_STRATEGIES,
+  HYSTERESIS_PARAM_HINTS,
+  findThresholdStrategy,
+  withRange,
+} from '../../content/pipeline-help-content'; // adjust path to wherever you place it
 
 const THRESHOLD_TYPE_TO_DESCRIPTOR_KIND: Record<ThresholdType, ThresholdStrategyDescriptor['kind']> = {
   Soft: 'soft',
@@ -41,15 +48,9 @@ export class DogComponent {
   ranges = input.required<Record<DogConfigParamType, ParamRange>>();
 
   preset = input<Partial<WireDoGConfig> | null>(null);
-
-  // Wire type -- no ThresholdStrategy instance lives on this event.
   configChange = output<WireDoGConfig>();
 
-  strategyOptions: { key: ThresholdType; label: string }[] = [
-    { key: 'Soft', label: 'Soft' },
-    { key: 'Hard', label: 'Hard' },
-    { key: 'Hysteresis', label: 'Hysteresis' },
-  ];
+  strategyOptions = THRESHOLD_STRATEGIES.map(({ key, label }) => ({ key, label }));
 
   private paramKeys: DogConfigParamType[] = ['sigma', 'k', 'p', 'epsilon', 'phi'];
 
@@ -58,6 +59,18 @@ export class DogComponent {
   private strategyValue = signal<ThresholdType>(this.form.controls.strategyKey.value);
 
   isHysteresis = computed(() => this.strategyValue() === 'Hysteresis');
+
+  /** Description shown under the "Threshold strategy" <select>. */
+  readonly strategyHint = computed(
+    () => findThresholdStrategy(this.strategyValue())?.hint ?? ''
+  );
+
+  /** highOffset/lowOffset aren't in `ranges()` (they're plain FormControls
+   * with a hardcoded min, not ParamRange-backed), so they get their own
+   * lookup instead of going through hint(). */
+  hysteresisHint(key: 'highOffset' | 'lowOffset'): string {
+    return HYSTERESIS_PARAM_HINTS[key].hint;
+  }
 
   constructor() {
     this.form.controls.strategyKey.valueChanges.subscribe((v) =>
@@ -149,10 +162,8 @@ export class DogComponent {
   }
 
   hint(key: DogConfigParamType): string {
-    const r = this.ranges()[key];
-    const max = r.recommendedMax === Infinity ? '∞' : r.recommendedMax;
-    return `recommended ${r.recommendedMin}–${max}`;
-  }
+  return withRange(DOG_PARAM_HINTS[key].hint, this.ranges()[key]);
+}
 
   /**
    * Builds a wire-safe descriptor, NOT a live ThresholdStrategy instance --

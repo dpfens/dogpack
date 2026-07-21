@@ -38,11 +38,12 @@
           >
             <i class="btl bt-plus me-1"></i>
           </button>
-          <ul class="dropdown-menu dropdown-menu-end">
+          <ul class="dropdown-menu dropdown-menu-end" style="max-width: 20rem;">
             @for (type of nodeTypes; track type.kind) {
               <li>
-                <button class="dropdown-item" type="button" (click)="addNode(type.kind)">
-                  {{ type.label }}
+                <button class="dropdown-item py-2" type="button" (click)="addNode(type.kind)">
+                  <span class="fw-semibold d-block">{{ type.label }}</span>
+                  <small class="text-body-secondary text-wrap d-block lh-sm">{{ nodeShortHint(type.kind) }}</small>
                 </button>
               </li>
             }
@@ -109,6 +110,7 @@
             class="accordion-collapse collapse"
           >
             <div class="accordion-body">
+              <p class="text-body-secondary small mb-2">{{ nodeHint(entry.kind) }}</p>
               <!-- The actual XDog/FDog/ADog/HDog/Layer component is relocated here
                    right after creation — see attach() in layer.ts. -->
               <div #slot></div>
