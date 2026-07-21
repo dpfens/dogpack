@@ -180,6 +180,17 @@ interface ETFConfig {
  */
 declare const DEFAULT_ETF_CONFIG: ETFConfig;
 /**
+ * Result of a *Detailed ETF computation: the flow field plus its
+ * underlying magnitude field (the structure tensor's trace), exposed as
+ * an ordinary ChannelImage so it composes with the rest of the library's
+ * scalar-field tooling — e.g. as a stroke-opacity or seed-density map via
+ * the same adaptiveMap() pattern used for spatially-varying p/epsilon.
+ */
+interface ETFDetailedResult {
+    flowField: FlowField;
+    magnitude: ChannelImage;
+}
+/**
  * Common interface implemented by every Edge Tangent Flow backend
  * (CPU, WebGL, WebGPU, ...).
  *
@@ -214,6 +225,10 @@ interface ETFComputer extends Disposable, BackendIdentifiable {
      * @param sigmaC Structure tensor smoothing sigma (optional override)
      */
     computeMultiChannel(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
+    /** Same as compute(), but also returns the per-pixel structure-tensor
+     *  magnitude instead of discarding it. */
+    computeDetailed(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number): Promise<ETFDetailedResult>;
+    computeMultiChannelDetailed(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<ETFDetailedResult>;
 }
 
 interface ThresholdStrategy {
@@ -792,6 +807,22 @@ declare class ADoG implements DoGImplementation {
     private blurStrategy;
     constructor(config?: Partial<ADoGConfig>);
     dispose(): void;
+    /**
+     * Estimate a good `epsilon` for a given input + config by running the
+     * ADoG pipeline once and taking the mean of the (pre-threshold) sharpened
+     * response. Since ADoG's response straddles the true edge/noise "zero"
+     * around the local mean rather than a fixed absolute constant (see Eq. 4/5),
+     * a fixed epsilon default doesn't transfer across images, tau/s/noiseScaleC
+     * choices, or resolutions -- this recomputes it per-input instead.
+     *
+     * @param biasOffset Shifts the estimate away from the raw mean to bias
+     *   density (positive -> denser/more black). Default 0 (balanced 50/50).
+     */
+    static estimateEpsilon(input: ChannelImage, config?: Partial<ADoGConfig>, biasOffset?: number): Promise<number>;
+    static estimateSigma(input: ChannelImage, { referenceDimension, baseSigma }?: {
+        referenceDimension?: number;
+        baseSigma?: number;
+    }): number;
     /**
      * Process a grayscale image through the ADoG pipeline.
      */
@@ -1531,7 +1562,9 @@ declare class EdgeTangentFlowComputer implements ETFComputer {
     get backend(): "webgpu" | "webgl" | "cpu";
     dispose(): void;
     compute(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
+    computeDetailed(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number): Promise<ETFDetailedResult>;
     computeMultiChannel(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
+    computeMultiChannelDetailed(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<ETFDetailedResult>;
     callWithFallback<T>(op: (computer: ETFComputer) => Promise<T>): Promise<T>;
     private demoteAndFindNext;
 }

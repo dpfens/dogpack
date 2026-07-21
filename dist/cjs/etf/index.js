@@ -49,8 +49,14 @@ class EdgeTangentFlowComputer {
     async compute(input, config = {}, sigmaC) {
         return this.callWithFallback(computer => computer.compute(input, config, sigmaC));
     }
+    async computeDetailed(input, config = {}, sigmaC) {
+        return this.callWithFallback(computer => computer.computeDetailed(input, config, sigmaC));
+    }
     async computeMultiChannel(inputs, config = {}, sigmaC) {
         return this.callWithFallback(computer => computer.computeMultiChannel(inputs, config, sigmaC));
+    }
+    async computeMultiChannelDetailed(inputs, config = {}, sigmaC) {
+        return this.callWithFallback(computer => computer.computeMultiChannelDetailed(inputs, config, sigmaC));
     }
     async callWithFallback(op) {
         let current = this.instance;

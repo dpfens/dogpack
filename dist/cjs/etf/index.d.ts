@@ -1,4 +1,4 @@
-import type { ETFComputer, ETFConfig, FlowField, ChannelImage } from '../interfaces/base.js';
+import type { ETFComputer, ETFConfig, FlowField, ChannelImage, ETFDetailedResult } from '../interfaces/base.js';
 /**
  * Edge Tangent Flow computer that automatically resolves to the best
  * supported backend, with graceful single-retry fallback if that backend
@@ -19,7 +19,9 @@ export declare class EdgeTangentFlowComputer implements ETFComputer {
     get backend(): "cpu" | "webgl" | "webgpu";
     dispose(): void;
     compute(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
+    computeDetailed(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number): Promise<ETFDetailedResult>;
     computeMultiChannel(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
+    computeMultiChannelDetailed(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<ETFDetailedResult>;
     callWithFallback<T>(op: (computer: ETFComputer) => Promise<T>): Promise<T>;
     private demoteAndFindNext;
 }

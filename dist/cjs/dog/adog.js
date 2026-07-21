@@ -25,6 +25,34 @@ class ADoG {
         this.blurStrategy.then(strategy => strategy.dispose());
     }
     /**
+     * Estimate a good `epsilon` for a given input + config by running the
+     * ADoG pipeline once and taking the mean of the (pre-threshold) sharpened
+     * response. Since ADoG's response straddles the true edge/noise "zero"
+     * around the local mean rather than a fixed absolute constant (see Eq. 4/5),
+     * a fixed epsilon default doesn't transfer across images, tau/s/noiseScaleC
+     * choices, or resolutions -- this recomputes it per-input instead.
+     *
+     * @param biasOffset Shifts the estimate away from the raw mean to bias
+     *   density (positive -> denser/more black). Default 0 (balanced 50/50).
+     */
+    static async estimateEpsilon(input, config = {}, biasOffset = 0) {
+        const processor = new ADoG(config);
+        try {
+            const { sharpened } = await processor.processDetailed(input);
+            let sum = 0;
+            for (let i = 0; i < sharpened.data.length; i++)
+                sum += sharpened.data[i];
+            return sum / sharpened.data.length - biasOffset;
+        }
+        finally {
+            processor.dispose();
+        }
+    }
+    static estimateSigma(input, { referenceDimension = 700, baseSigma = 1.0 } = {}) {
+        const scale = Math.min(input.width, input.height) / referenceDimension;
+        return baseSigma * Math.max(1, scale);
+    }
+    /**
      * Process a grayscale image through the ADoG pipeline.
      */
     async process(input, overrides = {}) {
@@ -50,19 +78,6 @@ class ADoG {
         const rhoMap = this.computeRhoMap(input, params.tau, params.s);
         // Step 4 (Eq. 4): ADoG(x) = G_sigmaC(x) - rho(x) * G_sigmaS(x)
         const sharpened = this.computeWeightedDoG(blurC, blurS, rhoMap);
-        const { min, mean, max } = (() => {
-            let min = Infinity, max = -Infinity, sum = 0;
-            for (let i = 0; i < sharpened.data.length; i++) {
-                const v = sharpened.data[i];
-                if (v < min)
-                    min = v;
-                if (v > max)
-                    max = v;
-                sum += v;
-            }
-            return { min, mean: sum / sharpened.data.length, max };
-        })();
-        console.log(`sharpened: min=${min.toFixed(5)} mean=${mean.toFixed(5)} max=${max.toFixed(5)}`);
         // Unweighted response (rho == 1 everywhere), i.e. standard DoG --
         // exposed for comparison purposes (Fig. 7(b) in the paper).
         const rawDoG = this.computeUnweightedDoG(blurC, blurS);

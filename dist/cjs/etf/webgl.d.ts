@@ -13,7 +13,7 @@
  * summing them there. Everything from the Gaussian blur pass onward is
  * identical whether the accumulated tensor came from one channel or many.
  */
-import type { ChannelImage, FlowField, ETFConfig, ETFComputer } from '../interfaces/base.js';
+import type { ChannelImage, FlowField, ETFConfig, ETFComputer, ETFDetailedResult } from '../interfaces/base.js';
 import { BaseWebGLStrategy } from '../base.js';
 /**
  * WebGL-backed ETFComputer. Holds a lazily-initialized GPU context and
@@ -30,7 +30,9 @@ export declare class WebGLEdgeTangentFlowComputer extends BaseWebGLStrategy impl
     static isSupported(): Promise<boolean>;
     static getUnsupportedReason(): string | undefined;
     compute(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
+    computeDetailed(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number): Promise<ETFDetailedResult>;
     computeMultiChannel(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
+    computeMultiChannelDetailed(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<ETFDetailedResult>;
     /**
      * Release WebGL resources held by this computer (programs, VAO/VBO,
      * and implicitly the canvas/context). Safe to call multiple times.

@@ -31,10 +31,25 @@ import { BaseCPUStrategy } from '../base.js';
  */
 export class CpuEdgeTangentFlowComputer extends BaseCPUStrategy {
     async compute(input, config = {}, sigmaC) {
+        const { flowField } = await this.computeDetailed(input, config, sigmaC);
+        return flowField;
+    }
+    async computeMultiChannel(inputs, config = {}, sigmaC) {
+        const { flowField } = await this.computeMultiChannelDetailed(inputs, config, sigmaC);
+        return flowField;
+    }
+    async computeDetailed(input, config = {}, sigmaC) {
         const channelTensor = computeChannelTensor(input);
         return buildFlowField(channelTensor, input.width, input.height, config, sigmaC);
     }
-    async computeMultiChannel(inputs, config = {}, sigmaC) {
+    async computeMultiChannelDetailed(inputs, config = {}, sigmaC) {
+        this.validateChannels(inputs);
+        const { width, height } = inputs[0];
+        const channelTensors = inputs.map(computeChannelTensor);
+        const combined = sumChannelTensors(channelTensors, width, height);
+        return buildFlowField(combined, width, height, config, sigmaC);
+    }
+    validateChannels(inputs) {
         if (inputs.length === 0) {
             throw new Error('computeMultiChannel requires at least one channel');
         }
@@ -44,9 +59,6 @@ export class CpuEdgeTangentFlowComputer extends BaseCPUStrategy {
                 throw new Error('All channels passed to computeMultiChannel must share the same dimensions');
             }
         }
-        const channelTensors = inputs.map(computeChannelTensor);
-        const combined = sumChannelTensors(channelTensors, width, height);
-        return buildFlowField(combined, width, height, config, sigmaC);
     }
 }
 /**
@@ -57,17 +69,16 @@ export class CpuEdgeTangentFlowComputer extends BaseCPUStrategy {
  */
 function buildFlowField(channelTensor, width, height, config, sigmaC) {
     const cfg = { ...DEFAULT_ETF_CONFIG, ...config };
-    // Smooth the structure tensor with Gaussian (not box filter!)
-    // Paper specifies sampling within 2.45 * σc for structure tensor blur
     const smoothSigma = sigmaC ?? (cfg.kernelSize / 2.45);
     const smoothedTensor = smoothStructureTensorGaussian(channelTensor.tensor, width, height, smoothSigma);
-    // Extract initial tangent field from smoothed tensor
     let tangents = extractTangentField(smoothedTensor, width, height);
-    // Refine tangent field iteratively
     for (let i = 0; i < cfg.iterations; i++) {
         tangents = refineTangentField(tangents, channelTensor.magnitude, width, height);
     }
-    return TangentFlowField.fromVec2Array(tangents, width, height);
+    return {
+        flowField: TangentFlowField.fromVec2Array(tangents, width, height),
+        magnitude: { data: channelTensor.magnitude, width, height },
+    };
 }
 /**
  * Compute a channel's structure tensor and its trace-derived magnitude
@@ -92,15 +103,14 @@ function sumChannelTensors(channelTensors, width, height) {
     const e = new Float32Array(size);
     const f = new Float32Array(size);
     const g = new Float32Array(size);
-    const magnitude = new Float32Array(size);
-    for (const { tensor, magnitude: mag } of channelTensors) {
+    for (const { tensor } of channelTensors) {
         for (let i = 0; i < size; i++) {
             e[i] += tensor.e[i];
             f[i] += tensor.f[i];
             g[i] += tensor.g[i];
-            magnitude[i] += mag[i];
         }
     }
+    const magnitude = tensorMagnitude({ e, f, g }, size);
     return { tensor: { e, f, g }, magnitude };
 }
 /**

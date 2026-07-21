@@ -311,21 +311,7 @@ export class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy {
         })();
         return this.resourcesPromise;
     }
-    /**
-     * Compute ETF from a single scalar channel using WebGPU compute shaders.
-     * Implemented as computeMultiChannel() with a single-element array — the
-     * per-channel accumulate pass degenerates to a plain assignment when
-     * there's only one channel (see STRUCTURE_TENSOR_ACCUMULATE_SHADER).
-     */
-    async compute(input, config = {}, sigmaC) {
-        return this.computeInternal([input], config, sigmaC);
-    }
-    /**
-     * Compute ETF jointly from several co-registered scalar channels (e.g.
-     * R/G/B or L/a/b), using Di Zenzo's multichannel structure tensor. All
-     * channels must share the same width/height.
-     */
-    async computeMultiChannel(inputs, config = {}, sigmaC) {
+    validateChannels(inputs) {
         if (inputs.length === 0) {
             throw new Error('computeMultiChannel requires at least one channel');
         }
@@ -335,6 +321,32 @@ export class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy {
                 throw new Error('All channels passed to computeMultiChannel must share the same dimensions');
             }
         }
+    }
+    /**
+     * Compute ETF from a single scalar channel using WebGPU compute shaders.
+     * Implemented as computeMultiChannel() with a single-element array — the
+     * per-channel accumulate pass degenerates to a plain assignment when
+     * there's only one channel (see STRUCTURE_TENSOR_ACCUMULATE_SHADER).
+     */
+    async compute(input, config = {}, sigmaC) {
+        const { flowField } = await this.computeInternal([input], config, sigmaC);
+        return flowField;
+    }
+    /**
+     * Compute ETF jointly from several co-registered scalar channels (e.g.
+     * R/G/B or L/a/b), using Di Zenzo's multichannel structure tensor. All
+     * channels must share the same width/height.
+     */
+    async computeMultiChannel(inputs, config = {}, sigmaC) {
+        this.validateChannels(inputs);
+        const { flowField } = await this.computeInternal(inputs, config, sigmaC);
+        return flowField;
+    }
+    async computeDetailed(input, config = {}, sigmaC) {
+        return this.computeInternal([input], config, sigmaC);
+    }
+    async computeMultiChannelDetailed(inputs, config = {}, sigmaC) {
+        this.validateChannels(inputs);
         return this.computeInternal(inputs, config, sigmaC);
     }
     /**
@@ -412,6 +424,7 @@ export class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy {
             // once up front instead of allocated fresh every band.
             const channelScratch = [0, 1].map(() => inputs.map(() => new Float32Array(width * maxBandBufHeight)));
             const tangents = new Float32Array(width * height * 2);
+            const magnitude = new Float32Array(width * height);
             // Slot's in-flight "read this band's staging buffer back to the
             // CPU" promise, if any. Indexed by slot (0 or 1), not by band.
             const pendingReadback = [null, null];
@@ -591,9 +604,10 @@ export class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy {
                         await bufs.stagingBuf.mapAsync(GPUMapMode.READ);
                         const mapped = new Float32Array(bufs.stagingBuf.getMappedRange(0, bandPixelCount * 4 * 4).slice(0));
                         bufs.stagingBuf.unmap();
-                        writeBandOutputRows(mapped, width, capturedBandStartY, capturedBandRows, halo, tangents);
+                        writeBandOutputRows(mapped, width, capturedBandStartY, capturedBandRows, halo, tangents, magnitude);
                     })();
                 }
+                await Promise.all(pendingReadback.filter((p) => p !== null));
                 // Drain whichever 1-2 bands are still in flight after the loop.
                 await Promise.all(pendingReadback.filter((p) => p !== null));
             }
@@ -604,7 +618,10 @@ export class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy {
                     destroyBandBufferSet(bufs);
                 kernelBuf.destroy();
             }
-            return TangentFlowField.fromFloat32Array(tangents, width, height);
+            return {
+                flowField: TangentFlowField.fromFloat32Array(tangents, width, height),
+                magnitude: { data: magnitude, width, height },
+            };
         });
     }
 }
@@ -739,13 +756,15 @@ function buildChannelBandData(src, width, height, bandStartY, bandRows, halo, ou
  * readback and write the core (stride-2: x, y) rows into the full-image
  * output buffer at the right offset.
  */
-function writeBandOutputRows(mapped, width, bandStartY, bandRows, halo, tangentsOut) {
+function writeBandOutputRows(mapped, width, bandStartY, bandRows, halo, tangentsOut, magnitudeOut) {
     for (let localY = 0; localY < bandRows; localY++) {
         const srcRowOffset = (halo + localY) * width * 4;
         const dstRowOffset = (bandStartY + localY) * width * 2;
+        const dstScalarOffset = (bandStartY + localY) * width;
         for (let x = 0; x < width; x++) {
             tangentsOut[dstRowOffset + x * 2] = mapped[srcRowOffset + x * 4];
             tangentsOut[dstRowOffset + x * 2 + 1] = mapped[srcRowOffset + x * 4 + 1];
+            magnitudeOut[dstScalarOffset + x] = mapped[srcRowOffset + x * 4 + 2];
         }
     }
 }

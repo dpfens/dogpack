@@ -12,6 +12,22 @@ export declare class ADoG implements DoGImplementation {
     constructor(config?: Partial<ADoGConfig>);
     dispose(): void;
     /**
+     * Estimate a good `epsilon` for a given input + config by running the
+     * ADoG pipeline once and taking the mean of the (pre-threshold) sharpened
+     * response. Since ADoG's response straddles the true edge/noise "zero"
+     * around the local mean rather than a fixed absolute constant (see Eq. 4/5),
+     * a fixed epsilon default doesn't transfer across images, tau/s/noiseScaleC
+     * choices, or resolutions -- this recomputes it per-input instead.
+     *
+     * @param biasOffset Shifts the estimate away from the raw mean to bias
+     *   density (positive -> denser/more black). Default 0 (balanced 50/50).
+     */
+    static estimateEpsilon(input: ChannelImage, config?: Partial<ADoGConfig>, biasOffset?: number): Promise<number>;
+    static estimateSigma(input: ChannelImage, { referenceDimension, baseSigma }?: {
+        referenceDimension?: number;
+        baseSigma?: number;
+    }): number;
+    /**
      * Process a grayscale image through the ADoG pipeline.
      */
     process(input: ChannelImage, overrides?: Partial<ADoGConfig>): Promise<ChannelImage>;

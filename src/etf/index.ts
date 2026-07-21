@@ -1,4 +1,4 @@
-import type { ETFComputer, ETFComputerCtor, ETFConfig, FlowField, ChannelImage } from '../interfaces/base.js';
+import type { ETFComputer, ETFComputerCtor, ETFConfig, FlowField, ChannelImage, ETFDetailedResult } from '../interfaces/base.js';
 import { WebGpuEdgeTangentFlowComputer } from './webgpu.js';
 import { WebGLEdgeTangentFlowComputer } from './webgl.js';
 import { CpuEdgeTangentFlowComputer } from './cpu.js';
@@ -56,12 +56,28 @@ export class EdgeTangentFlowComputer implements ETFComputer {
     return this.callWithFallback(computer => computer.compute(input, config, sigmaC));
   }
 
+  async computeDetailed(
+    input: ChannelImage,
+    config: Partial<ETFConfig> = {},
+    sigmaC?: number
+  ): Promise<ETFDetailedResult> {
+    return this.callWithFallback(computer => computer.computeDetailed(input, config, sigmaC));
+  }
+
   async computeMultiChannel(
     inputs: ChannelImage[],
     config: Partial<ETFConfig> = {},
     sigmaC?: number
   ): Promise<FlowField> {
     return this.callWithFallback(computer => computer.computeMultiChannel(inputs, config, sigmaC));
+  }
+
+  async computeMultiChannelDetailed(
+    inputs: ChannelImage[],
+    config: Partial<ETFConfig> = {},
+    sigmaC?: number
+  ): Promise<ETFDetailedResult> {
+    return this.callWithFallback(computer => computer.computeMultiChannelDetailed(inputs, config, sigmaC));
   }
 
   async callWithFallback<T>(op: (computer: ETFComputer) => Promise<T>): Promise<T> {

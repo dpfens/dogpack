@@ -27,10 +27,14 @@ void main() {
   
   float gx = -p00 + p20 - 2.0 * p01 + 2.0 * p21 - p02 + p22;
   float gy = -p00 - 2.0 * p10 - p20 + p02 + 2.0 * p12 + p22;
-  float mag = length(vec2(gx, gy));
-  
-  // Output: R=gx, G=gy, B=magnitude
-  fragColor = vec4(gx, gy, mag, 1.0);
+
+  // Structure tensor components: E = Ix^2, F = Ix*Iy, G = Iy^2.
+  float e = gx * gx;
+  float f = gx * gy;
+  float g = gy * gy;
+
+  // Magnitude deliberately NOT computed here — see finalize_magnitude.glsl.
+  fragColor = vec4(e, f, g, 1.0);
 }`;
 exports.default = source;
 //# sourceMappingURL=structural_tensor.glsl.js.map

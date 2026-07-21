@@ -1252,7 +1252,7 @@ class BaseWebGPUStrategy {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: shaders/vertex-shader.wgsl
 // Regenerate with `npm run build:shaders`.
-const source$E = `/**
+const source$F = `/**
  * Vertex shader for WebGL2 - simple fullscreen quad
  */
 #version 300 es
@@ -1269,7 +1269,7 @@ void main() {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: blur/shaders/isotropic/webgl-horizontal-blur.glsl
 // Regenerate with `npm run build:shaders`.
-const source$D = `/**
+const source$E = `/**
  * Fragment shader for horizontal Gaussian blur pass (WebGL2)
  */
 #version 300 es
@@ -1302,7 +1302,7 @@ const source$D = `/**
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: blur/shaders/isotropic/webgl-vertical-blur.glsl
 // Regenerate with `npm run build:shaders`.
-const source$C = `/**
+const source$D = `/**
  * Fragment shader for vertical Gaussian blur pass (WebGL2)
  */
 #version 300 es
@@ -1335,7 +1335,7 @@ const source$C = `/**
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: blur/shaders/isotropic/webgpu-horizontal-blur.wgsl
 // Regenerate with `npm run build:shaders`.
-const source$B = `struct Params {
+const source$C = `struct Params {
   width: u32,
   height: u32,
   kernelSize: u32,
@@ -1379,7 +1379,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: blur/shaders/isotropic/webgpu-vertical-blur.wgsl
 // Regenerate with `npm run build:shaders`.
-const source$A = `struct Params {
+const source$B = `struct Params {
   width: u32,
   height: u32,
   kernelSize: u32,
@@ -1566,8 +1566,8 @@ class WebGLIsotropicBlur extends BaseWebGLStrategy {
         const texCoordBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW);
-        const horizontalBlurProgram = createProgram$4(gl, source$E, source$D);
-        const verticalBlurProgram = createProgram$4(gl, source$E, source$C);
+        const horizontalBlurProgram = createProgram$4(gl, source$F, source$E);
+        const verticalBlurProgram = createProgram$4(gl, source$F, source$D);
         this.resources = {
             gl,
             canvas,
@@ -1735,14 +1735,14 @@ class WebGPUIsotropicBlur extends BaseWebGPUStrategy {
         const horizontalPipeline = device.createComputePipeline({
             layout: pipelineLayout,
             compute: {
-                module: device.createShaderModule({ code: source$B }),
+                module: device.createShaderModule({ code: source$C }),
                 entryPoint: 'main',
             },
         });
         const verticalPipeline = device.createComputePipeline({
             layout: pipelineLayout,
             compute: {
-                module: device.createShaderModule({ code: source$A }),
+                module: device.createShaderModule({ code: source$B }),
                 entryPoint: 'main',
             },
         });
@@ -2253,7 +2253,7 @@ function hsvToRgb$1(h, s, v) {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgpu/common.wgsl
 // Regenerate with `npm run build:shaders`.
-const source$z = `// common.wgsl
+const source$A = `// common.wgsl
 // Pipeline-overridable — real value supplied via
 // GPUComputePipelineDescriptor.compute.constants (see makePipeline() in
 // webgpu.ts). Declared once here since it's shared by every shader module.
@@ -2275,7 +2275,7 @@ fn clampIdx(x: i32, y: i32, w: i32, h: i32) -> u32 {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgpu/gradient.wgsl
 // Regenerate with `npm run build:shaders`.
-const source$y = `@group(0) @binding(0) var<uniform> params: Params;
+const source$z = `@group(0) @binding(0) var<uniform> params: Params;
 @group(0) @binding(1) var<storage, read> inputBuf: array<f32>;
 @group(0) @binding(2) var<storage, read_write> outputBuf: array<vec4<f32>>;
 
@@ -2309,7 +2309,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgpu/structure_tensor_accumulate.wgsl
 // Regenerate with `npm run build:shaders`.
-const source$x = `@group(0) @binding(0) var<uniform> params: Params;
+const source$y = `@group(0) @binding(0) var<uniform> params: Params;
 @group(0) @binding(1) var<storage, read> gradBuf: array<vec4<f32>>;
 @group(0) @binding(2) var<storage, read_write> accumBuf: array<vec4<f32>>;
 
@@ -2337,7 +2337,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgpu/finalize_magnitude.wgsl
 // Regenerate with `npm run build:shaders`.
-const source$w = `@group(0) @binding(0) var<uniform> params: Params;
+const source$x = `@group(0) @binding(0) var<uniform> params: Params;
 @group(0) @binding(1) var<storage, read_write> tensorBuf: array<vec4<f32>>;
 
 @compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
@@ -2357,7 +2357,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgpu/gaussian_blur.wgsl
 // Regenerate with `npm run build:shaders`.
-const source$v = `@group(0) @binding(0) var<uniform> params: Params;
+const source$w = `@group(0) @binding(0) var<uniform> params: Params;
 @group(0) @binding(1) var<storage, read> inputBuf: array<vec4<f32>>;
 @group(0) @binding(2) var<storage, read_write> outputBuf: array<vec4<f32>>;
 @group(0) @binding(3) var<storage, read> kernelBuf: array<f32>;
@@ -2405,7 +2405,7 @@ fn blurV(@builtin(global_invocation_id) gid: vec3<u32>) {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgpu/gaussian_blur_tiled.wgsl
 // Regenerate with `npm run build:shaders`.
-const source$u = `override TILE_RADIUS_CAP: u32 = 32u;
+const source$v = `override TILE_RADIUS_CAP: u32 = 32u;
 override TILE_WIDTH: u32 = WORKGROUP_SIZE + 2u * TILE_RADIUS_CAP;
 override KERNEL_SHARED_SIZE: u32 = 2u * TILE_RADIUS_CAP + 1u;
 
@@ -2515,7 +2515,7 @@ fn blurVTiled(
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgpu/tangent_extract.wgsl
 // Regenerate with `npm run build:shaders`.
-const source$t = `@group(0) @binding(0) var<uniform> params: Params;
+const source$u = `@group(0) @binding(0) var<uniform> params: Params;
 @group(0) @binding(1) var<storage, read> tensorBuf: array<vec4<f32>>;
 @group(0) @binding(2) var<storage, read_write> outputBuf: array<vec4<f32>>;
 
@@ -2561,7 +2561,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgpu/tangent_refine.wgsl
 // Regenerate with `npm run build:shaders`.
-const source$s = `override REFINE_TILE_DIM: u32 = WORKGROUP_SIZE + 4u; // fixed 5x5 (radius-2) footprint
+const source$t = `override REFINE_TILE_DIM: u32 = WORKGROUP_SIZE + 4u; // fixed 5x5 (radius-2) footprint
 
 @group(0) @binding(0) var<uniform> params: Params;
 @group(0) @binding(1) var<storage, read> inputBuf: array<vec4<f32>>;
@@ -2751,7 +2751,7 @@ const DEFAULT_BAND_MEMORY_BUDGET_BYTES = 256 * 1024 * 1024; // 256 MiB
  */
 const MIN_BAND_ROWS = 64;
 // ============== WGSL Shader Sources ==============
-const GRADIENT_SHADER = source$z + source$y;
+const GRADIENT_SHADER = source$A + source$z;
 // Computes one channel's structure tensor and *accumulates* it into
 // accumBuf (Di Zenzo multichannel summation) instead of overwriting it.
 // accumBuf must be zero before the first channel's pass each band — see
@@ -2765,17 +2765,17 @@ const GRADIENT_SHADER = source$z + source$y;
 // the Di Zenzo-consistent combined gradient magnitude, so it's computed
 // once from the final accumulated trace in FINALIZE_MAGNITUDE_SHADER
 // instead.
-const STRUCTURE_TENSOR_ACCUMULATE_SHADER = source$z + source$x;
+const STRUCTURE_TENSOR_ACCUMULATE_SHADER = source$A + source$y;
 // Runs once per band, after every channel's structure tensor has been
 // accumulated. Re-derives magnitude from the combined tensor's trace:
 // sqrt(E + G). For a single channel this equals sqrt(gx^2 + gy^2) ==
 // hypot(gx, gy), so compute() (a single-channel computeMultiChannel()
 // call) sees identical behavior to before this pass existed.
-const FINALIZE_MAGNITUDE_SHADER = source$z + source$w;
+const FINALIZE_MAGNITUDE_SHADER = source$A + source$x;
 // Both blur directions live in the same module — WGSL allows multiple
 // @compute entry points per shader module, so this replaces the WebGL
 // version's two separate H/V programs with one module and two pipelines.
-const GAUSSIAN_BLUR_SHADER = source$z + source$v;
+const GAUSSIAN_BLUR_SHADER = source$A + source$w;
 // Tiled counterpart to GAUSSIAN_BLUR_SHADER, used when radius <=
 // TILE_RADIUS_CAP (see that constant's comment for the sizing rationale).
 // Each workgroup loads its input footprint into workgroup-shared memory
@@ -2783,15 +2783,15 @@ const GAUSSIAN_BLUR_SHADER = source$z + source$v;
 // re-issuing up to `kernelSize` independent global storage-buffer reads —
 // the redundant-read pattern the untiled version has, since neighboring
 // threads' kernel windows overlap almost entirely.
-const GAUSSIAN_BLUR_TILED_SHADER = source$z + source$u;
-const TANGENT_EXTRACT_SHADER = source$z + source$t;
+const GAUSSIAN_BLUR_TILED_SHADER = source$A + source$v;
+const TANGENT_EXTRACT_SHADER = source$A + source$u;
 // Unlike the blur radius, the refine neighborhood is a fixed 5x5 (radius
 // 2) — so the tile size is a compile-time constant with no data-dependent
 // cap/fallback needed, unlike GAUSSIAN_BLUR_TILED_SHADER above. Every
 // invocation in the untiled version re-read the same 5x5=25 neighbors its
 // neighbors were also reading independently from global storage; here
 // each workgroup loads its (WORKGROUP_SIZE+4)^2 footprint once instead.
-const TANGENT_REFINE_SHADER = source$z + source$s;
+const TANGENT_REFINE_SHADER = source$A + source$t;
 /**
  * WebGPU-accelerated ETFComputer. Device/pipeline resources are cached
  * statically (shared across every instance) since acquiring a GPUDevice
@@ -2941,21 +2941,7 @@ class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy {
         })();
         return this.resourcesPromise;
     }
-    /**
-     * Compute ETF from a single scalar channel using WebGPU compute shaders.
-     * Implemented as computeMultiChannel() with a single-element array — the
-     * per-channel accumulate pass degenerates to a plain assignment when
-     * there's only one channel (see STRUCTURE_TENSOR_ACCUMULATE_SHADER).
-     */
-    async compute(input, config = {}, sigmaC) {
-        return this.computeInternal([input], config, sigmaC);
-    }
-    /**
-     * Compute ETF jointly from several co-registered scalar channels (e.g.
-     * R/G/B or L/a/b), using Di Zenzo's multichannel structure tensor. All
-     * channels must share the same width/height.
-     */
-    async computeMultiChannel(inputs, config = {}, sigmaC) {
+    validateChannels(inputs) {
         if (inputs.length === 0) {
             throw new Error('computeMultiChannel requires at least one channel');
         }
@@ -2965,6 +2951,32 @@ class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy {
                 throw new Error('All channels passed to computeMultiChannel must share the same dimensions');
             }
         }
+    }
+    /**
+     * Compute ETF from a single scalar channel using WebGPU compute shaders.
+     * Implemented as computeMultiChannel() with a single-element array — the
+     * per-channel accumulate pass degenerates to a plain assignment when
+     * there's only one channel (see STRUCTURE_TENSOR_ACCUMULATE_SHADER).
+     */
+    async compute(input, config = {}, sigmaC) {
+        const { flowField } = await this.computeInternal([input], config, sigmaC);
+        return flowField;
+    }
+    /**
+     * Compute ETF jointly from several co-registered scalar channels (e.g.
+     * R/G/B or L/a/b), using Di Zenzo's multichannel structure tensor. All
+     * channels must share the same width/height.
+     */
+    async computeMultiChannel(inputs, config = {}, sigmaC) {
+        this.validateChannels(inputs);
+        const { flowField } = await this.computeInternal(inputs, config, sigmaC);
+        return flowField;
+    }
+    async computeDetailed(input, config = {}, sigmaC) {
+        return this.computeInternal([input], config, sigmaC);
+    }
+    async computeMultiChannelDetailed(inputs, config = {}, sigmaC) {
+        this.validateChannels(inputs);
         return this.computeInternal(inputs, config, sigmaC);
     }
     /**
@@ -3042,6 +3054,7 @@ class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy {
             // once up front instead of allocated fresh every band.
             const channelScratch = [0, 1].map(() => inputs.map(() => new Float32Array(width * maxBandBufHeight)));
             const tangents = new Float32Array(width * height * 2);
+            const magnitude = new Float32Array(width * height);
             // Slot's in-flight "read this band's staging buffer back to the
             // CPU" promise, if any. Indexed by slot (0 or 1), not by band.
             const pendingReadback = [null, null];
@@ -3221,9 +3234,10 @@ class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy {
                         await bufs.stagingBuf.mapAsync(GPUMapMode.READ);
                         const mapped = new Float32Array(bufs.stagingBuf.getMappedRange(0, bandPixelCount * 4 * 4).slice(0));
                         bufs.stagingBuf.unmap();
-                        writeBandOutputRows(mapped, width, capturedBandStartY, capturedBandRows, halo, tangents);
+                        writeBandOutputRows(mapped, width, capturedBandStartY, capturedBandRows, halo, tangents, magnitude);
                     })();
                 }
+                await Promise.all(pendingReadback.filter((p) => p !== null));
                 // Drain whichever 1-2 bands are still in flight after the loop.
                 await Promise.all(pendingReadback.filter((p) => p !== null));
             }
@@ -3234,7 +3248,10 @@ class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy {
                     destroyBandBufferSet(bufs);
                 kernelBuf.destroy();
             }
-            return TangentFlowField.fromFloat32Array(tangents, width, height);
+            return {
+                flowField: TangentFlowField.fromFloat32Array(tangents, width, height),
+                magnitude: { data: magnitude, width, height },
+            };
         });
     }
 }
@@ -3369,13 +3386,15 @@ function buildChannelBandData(src, width, height, bandStartY, bandRows, halo, ou
  * readback and write the core (stride-2: x, y) rows into the full-image
  * output buffer at the right offset.
  */
-function writeBandOutputRows(mapped, width, bandStartY, bandRows, halo, tangentsOut) {
+function writeBandOutputRows(mapped, width, bandStartY, bandRows, halo, tangentsOut, magnitudeOut) {
     for (let localY = 0; localY < bandRows; localY++) {
         const srcRowOffset = (halo + localY) * width * 4;
         const dstRowOffset = (bandStartY + localY) * width * 2;
+        const dstScalarOffset = (bandStartY + localY) * width;
         for (let x = 0; x < width; x++) {
             tangentsOut[dstRowOffset + x * 2] = mapped[srcRowOffset + x * 4];
             tangentsOut[dstRowOffset + x * 2 + 1] = mapped[srcRowOffset + x * 4 + 1];
+            magnitudeOut[dstScalarOffset + x] = mapped[srcRowOffset + x * 4 + 2];
         }
     }
 }
@@ -3390,7 +3409,7 @@ function isWebGPUComputeSupported() {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgl/vertex.glsl
 // Regenerate with `npm run build:shaders`.
-const source$r = `#version 300 es
+const source$s = `#version 300 es
 precision highp float;
 in vec2 a_position;
 out vec2 v_texCoord;
@@ -3403,7 +3422,7 @@ void main() {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgl/gradient.glsl
 // Regenerate with `npm run build:shaders`.
-const source$q = `#version 300 es
+const source$r = `#version 300 es
 precision highp float;
 
 uniform sampler2D u_input;
@@ -3436,7 +3455,7 @@ void main() {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgl/structural_tensor.glsl
 // Regenerate with `npm run build:shaders`.
-const source$p = `#version 300 es
+const source$q = `#version 300 es
 precision highp float;
 
 uniform sampler2D u_input;
@@ -3460,16 +3479,20 @@ void main() {
   
   float gx = -p00 + p20 - 2.0 * p01 + 2.0 * p21 - p02 + p22;
   float gy = -p00 - 2.0 * p10 - p20 + p02 + 2.0 * p12 + p22;
-  float mag = length(vec2(gx, gy));
-  
-  // Output: R=gx, G=gy, B=magnitude
-  fragColor = vec4(gx, gy, mag, 1.0);
+
+  // Structure tensor components: E = Ix^2, F = Ix*Iy, G = Iy^2.
+  float e = gx * gx;
+  float f = gx * gy;
+  float g = gy * gy;
+
+  // Magnitude deliberately NOT computed here — see finalize_magnitude.glsl.
+  fragColor = vec4(e, f, g, 1.0);
 }`;
 
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgl/gaussian_blur_h.glsl
 // Regenerate with `npm run build:shaders`.
-const source$o = `#version 300 es
+const source$p = `#version 300 es
 precision highp float;
 
 uniform sampler2D u_input;
@@ -3497,7 +3520,7 @@ void main() {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgl/gaussian_blur_v.glsl
 // Regenerate with `npm run build:shaders`.
-const source$n = `#version 300 es
+const source$o = `#version 300 es
 precision highp float;
 
 uniform sampler2D u_input;
@@ -3525,7 +3548,7 @@ void main() {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgl/tangent_extract.glsl
 // Regenerate with `npm run build:shaders`.
-const source$m = `#version 300 es
+const source$n = `#version 300 es
 precision highp float;
 
 uniform sampler2D u_tensor;
@@ -3539,7 +3562,7 @@ void main() {
   float f = tensor.g;
   float g = tensor.b;
   float mag = tensor.a;
-  
+    
   // Compute eigenvector for smallest eigenvalue
   float diff = e - g;
   float disc = sqrt(diff * diff + 4.0 * f * f);
@@ -3568,7 +3591,7 @@ void main() {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgl/tangent_refine.glsl
 // Regenerate with `npm run build:shaders`.
-const source$l = `#version 300 es
+const source$m = `#version 300 es
 precision highp float;
 
 uniform sampler2D u_tangents;
@@ -3621,6 +3644,23 @@ void main() {
   fragColor = vec4(refined, current.b, 1.0);
 }`;
 
+// AUTO-GENERATED FILE — DO NOT EDIT.
+// Source: etf/shaders/webgl/finalize_magnitude.glsl
+// Regenerate with `npm run build:shaders`.
+const source$l = `#version 300 es
+precision highp float;
+
+uniform sampler2D u_tensor; // accumulated (summed) E, F, G in .rgb
+
+in vec2 v_texCoord;
+layout(location = 0) out vec4 fragColor;
+
+void main() {
+  vec4 tensor = texture(u_tensor, v_texCoord);
+  float mag = sqrt(max(tensor.r + tensor.b, 0.0)); // sqrt(E + G), once, from the combined trace
+  fragColor = vec4(tensor.r, tensor.g, tensor.b, mag);
+}`;
+
 /**
  * WebGL-accelerated Edge Tangent Flow computation
  *
@@ -3658,9 +3698,17 @@ class WebGLEdgeTangentFlowComputer extends BaseWebGLStrategy {
         return 'WebGL2 with float texture support (EXT_color_buffer_float) is not available in this environment';
     }
     async compute(input, config = {}, sigmaC) {
-        return this.computeMultiChannel([input], config, sigmaC);
+        const { flowField } = await this.computeDetailed(input, config, sigmaC);
+        return flowField;
+    }
+    async computeDetailed(input, config = {}, sigmaC) {
+        return this.computeMultiChannelDetailed([input], config, sigmaC);
     }
     async computeMultiChannel(inputs, config = {}, sigmaC) {
+        const { flowField } = await this.computeMultiChannelDetailed(inputs, config, sigmaC);
+        return flowField;
+    }
+    async computeMultiChannelDetailed(inputs, config = {}, sigmaC) {
         if (inputs.length === 0) {
             throw new Error('computeMultiChannel requires at least one channel');
         }
@@ -3683,6 +3731,7 @@ class WebGLEdgeTangentFlowComputer extends BaseWebGLStrategy {
             const blurOutputFB = createFramebuffer$1(gl, width, height, gl.RGBA32F);
             const tangentFB1 = createFramebuffer$1(gl, width, height, gl.RGBA32F);
             const tangentFB2 = createFramebuffer$1(gl, width, height, gl.RGBA32F);
+            const tensorFinalizedFB = createFramebuffer$1(gl, width, height, gl.RGBA32F);
             const channelTextures = [];
             try {
                 // Step 1 & 2 (Di Zenzo summation): for each channel, compute its
@@ -3724,23 +3773,31 @@ class WebGLEdgeTangentFlowComputer extends BaseWebGLStrategy {
                     gl.deleteTexture(tex);
                 }
             }
-            // Step 3: Gaussian blur the (possibly channel-summed) structure tensor
+            // Step 3: finalize magnitude from the combined trace, once, now
+            // that every channel has been additively blended into tensorAccumFB.
+            gl.bindFramebuffer(gl.FRAMEBUFFER, tensorFinalizedFB.fb);
+            gl.useProgram(res.finalizeMagnitudeProgram);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, tensorAccumFB.tex);
+            gl.uniform1i(gl.getUniformLocation(res.finalizeMagnitudeProgram, 'u_tensor'), 0);
+            drawQuad(gl, res.quadVAO);
+            // Step 4: Gaussian blur the finalized (E, F, G, mag) tensor —
+            // blurring all four components together keeps magnitude aligned
+            // with the smoothed tensor that tangent_extract will read.
             const smoothSigma = sigmaC ?? (cfg.kernelSize / 2.45);
-            const radius = Math.min(16, Math.ceil(smoothSigma * 2.45)); // Cap at 16 for shader array limit
+            const radius = Math.min(16, Math.ceil(smoothSigma * 2.45));
             const kernelSize = radius * 2 + 1;
             const kernel = generateGaussianKernel$1(smoothSigma, kernelSize);
-            // Horizontal blur
             gl.bindFramebuffer(gl.FRAMEBUFFER, blurTempFB.fb);
             gl.useProgram(res.gaussianBlurHProgram);
             gl.activeTexture(gl.TEXTURE0);
-            gl.bindTexture(gl.TEXTURE_2D, tensorAccumFB.tex);
+            gl.bindTexture(gl.TEXTURE_2D, tensorFinalizedFB.tex); // was tensorAccumFB.tex
             gl.uniform1i(gl.getUniformLocation(res.gaussianBlurHProgram, 'u_input'), 0);
             gl.uniform2f(gl.getUniformLocation(res.gaussianBlurHProgram, 'u_resolution'), width, height);
             gl.uniform1fv(gl.getUniformLocation(res.gaussianBlurHProgram, 'u_kernel'), kernel);
             gl.uniform1i(gl.getUniformLocation(res.gaussianBlurHProgram, 'u_kernelSize'), kernelSize);
             gl.uniform1i(gl.getUniformLocation(res.gaussianBlurHProgram, 'u_radius'), radius);
             drawQuad(gl, res.quadVAO);
-            // Vertical blur
             gl.bindFramebuffer(gl.FRAMEBUFFER, blurOutputFB.fb);
             gl.useProgram(res.gaussianBlurVProgram);
             gl.activeTexture(gl.TEXTURE0);
@@ -3751,14 +3808,13 @@ class WebGLEdgeTangentFlowComputer extends BaseWebGLStrategy {
             gl.uniform1i(gl.getUniformLocation(res.gaussianBlurVProgram, 'u_kernelSize'), kernelSize);
             gl.uniform1i(gl.getUniformLocation(res.gaussianBlurVProgram, 'u_radius'), radius);
             drawQuad(gl, res.quadVAO);
-            // Step 4: Extract initial tangent field
+            // Step 5: Extract initial tangent field
             gl.bindFramebuffer(gl.FRAMEBUFFER, tangentFB1.fb);
             gl.useProgram(res.tangentExtractProgram);
             gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_2D, blurOutputFB.tex);
             gl.uniform1i(gl.getUniformLocation(res.tangentExtractProgram, 'u_tensor'), 0);
             drawQuad(gl, res.quadVAO);
-            // Step 5: Refine tangent field iteratively (ping-pong between framebuffers)
             let readFB = tangentFB1;
             let writeFB = tangentFB2;
             for (let i = 0; i < cfg.iterations; i++) {
@@ -3776,22 +3832,24 @@ class WebGLEdgeTangentFlowComputer extends BaseWebGLStrategy {
             gl.bindFramebuffer(gl.FRAMEBUFFER, readFB.fb);
             const pixels = new Float32Array(width * height * 4);
             gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, pixels);
-            // Convert to Vec2 array
             const tangents = new Array(width * height);
+            const magnitude = new Float32Array(width * height);
             for (let i = 0; i < width * height; i++) {
-                tangents[i] = {
-                    x: pixels[i * 4],
-                    y: pixels[i * 4 + 1],
-                };
+                tangents[i] = { x: pixels[i * 4], y: pixels[i * 4 + 1] };
+                magnitude[i] = pixels[i * 4 + 2];
             }
             // Cleanup temporary resources (channel textures already freed above)
             deleteFramebuffer(gl, gradientFB);
             deleteFramebuffer(gl, tensorAccumFB);
+            deleteFramebuffer(gl, tensorFinalizedFB);
             deleteFramebuffer(gl, blurTempFB);
             deleteFramebuffer(gl, blurOutputFB);
             deleteFramebuffer(gl, tangentFB1);
             deleteFramebuffer(gl, tangentFB2);
-            return TangentFlowField.fromVec2Array(tangents, width, height);
+            return {
+                flowField: TangentFlowField.fromVec2Array(tangents, width, height),
+                magnitude: { data: magnitude, width, height },
+            };
         });
     }
     /**
@@ -3845,12 +3903,13 @@ class WebGLEdgeTangentFlowComputer extends BaseWebGLStrategy {
         gl.getExtension('EXT_color_buffer_float');
         gl.getExtension('OES_texture_float_linear');
         // Create shader programs
-        const gradientProgram = createProgram$3(gl, source$r, source$q);
-        const structureTensorProgram = createProgram$3(gl, source$r, source$p);
-        const gaussianBlurHProgram = createProgram$3(gl, source$r, source$o);
-        const gaussianBlurVProgram = createProgram$3(gl, source$r, source$n);
-        const tangentExtractProgram = createProgram$3(gl, source$r, source$m);
-        const tangentRefineProgram = createProgram$3(gl, source$r, source$l);
+        const gradientProgram = createProgram$3(gl, source$s, source$r);
+        const structureTensorProgram = createProgram$3(gl, source$s, source$q);
+        const gaussianBlurHProgram = createProgram$3(gl, source$s, source$p);
+        const gaussianBlurVProgram = createProgram$3(gl, source$s, source$o);
+        const tangentExtractProgram = createProgram$3(gl, source$s, source$n);
+        const tangentRefineProgram = createProgram$3(gl, source$s, source$m);
+        const finalizeMagnitudeProgram = createProgram$3(gl, source$s, source$l);
         // Create fullscreen quad
         const quadVAO = gl.createVertexArray();
         const quadVBO = gl.createBuffer();
@@ -3872,6 +3931,7 @@ class WebGLEdgeTangentFlowComputer extends BaseWebGLStrategy {
             gaussianBlurVProgram,
             tangentExtractProgram,
             tangentRefineProgram,
+            finalizeMagnitudeProgram,
             quadVAO,
             quadVBO,
         };
@@ -3966,10 +4026,25 @@ function drawQuad(gl, vao) {
  */
 class CpuEdgeTangentFlowComputer extends BaseCPUStrategy {
     async compute(input, config = {}, sigmaC) {
+        const { flowField } = await this.computeDetailed(input, config, sigmaC);
+        return flowField;
+    }
+    async computeMultiChannel(inputs, config = {}, sigmaC) {
+        const { flowField } = await this.computeMultiChannelDetailed(inputs, config, sigmaC);
+        return flowField;
+    }
+    async computeDetailed(input, config = {}, sigmaC) {
         const channelTensor = computeChannelTensor(input);
         return buildFlowField(channelTensor, input.width, input.height, config, sigmaC);
     }
-    async computeMultiChannel(inputs, config = {}, sigmaC) {
+    async computeMultiChannelDetailed(inputs, config = {}, sigmaC) {
+        this.validateChannels(inputs);
+        const { width, height } = inputs[0];
+        const channelTensors = inputs.map(computeChannelTensor);
+        const combined = sumChannelTensors(channelTensors, width, height);
+        return buildFlowField(combined, width, height, config, sigmaC);
+    }
+    validateChannels(inputs) {
         if (inputs.length === 0) {
             throw new Error('computeMultiChannel requires at least one channel');
         }
@@ -3979,9 +4054,6 @@ class CpuEdgeTangentFlowComputer extends BaseCPUStrategy {
                 throw new Error('All channels passed to computeMultiChannel must share the same dimensions');
             }
         }
-        const channelTensors = inputs.map(computeChannelTensor);
-        const combined = sumChannelTensors(channelTensors, width, height);
-        return buildFlowField(combined, width, height, config, sigmaC);
     }
 }
 /**
@@ -3992,17 +4064,16 @@ class CpuEdgeTangentFlowComputer extends BaseCPUStrategy {
  */
 function buildFlowField(channelTensor, width, height, config, sigmaC) {
     const cfg = { ...DEFAULT_ETF_CONFIG, ...config };
-    // Smooth the structure tensor with Gaussian (not box filter!)
-    // Paper specifies sampling within 2.45 * σc for structure tensor blur
     const smoothSigma = sigmaC ?? (cfg.kernelSize / 2.45);
     const smoothedTensor = smoothStructureTensorGaussian(channelTensor.tensor, width, height, smoothSigma);
-    // Extract initial tangent field from smoothed tensor
     let tangents = extractTangentField(smoothedTensor, width, height);
-    // Refine tangent field iteratively
     for (let i = 0; i < cfg.iterations; i++) {
         tangents = refineTangentField(tangents, channelTensor.magnitude, width, height);
     }
-    return TangentFlowField.fromVec2Array(tangents, width, height);
+    return {
+        flowField: TangentFlowField.fromVec2Array(tangents, width, height),
+        magnitude: { data: channelTensor.magnitude, width, height },
+    };
 }
 /**
  * Compute a channel's structure tensor and its trace-derived magnitude
@@ -4027,15 +4098,14 @@ function sumChannelTensors(channelTensors, width, height) {
     const e = new Float32Array(size);
     const f = new Float32Array(size);
     const g = new Float32Array(size);
-    const magnitude = new Float32Array(size);
-    for (const { tensor, magnitude: mag } of channelTensors) {
+    for (const { tensor } of channelTensors) {
         for (let i = 0; i < size; i++) {
             e[i] += tensor.e[i];
             f[i] += tensor.f[i];
             g[i] += tensor.g[i];
-            magnitude[i] += mag[i];
         }
     }
+    const magnitude = tensorMagnitude({ e, g }, size);
     return { tensor: { e, f, g }, magnitude };
 }
 /**
@@ -4281,8 +4351,14 @@ class EdgeTangentFlowComputer {
     async compute(input, config = {}, sigmaC) {
         return this.callWithFallback(computer => computer.compute(input, config, sigmaC));
     }
+    async computeDetailed(input, config = {}, sigmaC) {
+        return this.callWithFallback(computer => computer.computeDetailed(input, config, sigmaC));
+    }
     async computeMultiChannel(inputs, config = {}, sigmaC) {
         return this.callWithFallback(computer => computer.computeMultiChannel(inputs, config, sigmaC));
+    }
+    async computeMultiChannelDetailed(inputs, config = {}, sigmaC) {
+        return this.callWithFallback(computer => computer.computeMultiChannelDetailed(inputs, config, sigmaC));
     }
     async callWithFallback(op) {
         let current = this.instance;
@@ -6394,6 +6470,34 @@ class ADoG {
         this.blurStrategy.then(strategy => strategy.dispose());
     }
     /**
+     * Estimate a good `epsilon` for a given input + config by running the
+     * ADoG pipeline once and taking the mean of the (pre-threshold) sharpened
+     * response. Since ADoG's response straddles the true edge/noise "zero"
+     * around the local mean rather than a fixed absolute constant (see Eq. 4/5),
+     * a fixed epsilon default doesn't transfer across images, tau/s/noiseScaleC
+     * choices, or resolutions -- this recomputes it per-input instead.
+     *
+     * @param biasOffset Shifts the estimate away from the raw mean to bias
+     *   density (positive -> denser/more black). Default 0 (balanced 50/50).
+     */
+    static async estimateEpsilon(input, config = {}, biasOffset = 0) {
+        const processor = new ADoG(config);
+        try {
+            const { sharpened } = await processor.processDetailed(input);
+            let sum = 0;
+            for (let i = 0; i < sharpened.data.length; i++)
+                sum += sharpened.data[i];
+            return sum / sharpened.data.length - biasOffset;
+        }
+        finally {
+            processor.dispose();
+        }
+    }
+    static estimateSigma(input, { referenceDimension = 700, baseSigma = 1.0 } = {}) {
+        const scale = Math.min(input.width, input.height) / referenceDimension;
+        return baseSigma * Math.max(1, scale);
+    }
+    /**
      * Process a grayscale image through the ADoG pipeline.
      */
     async process(input, overrides = {}) {
@@ -6419,19 +6523,6 @@ class ADoG {
         const rhoMap = this.computeRhoMap(input, params.tau, params.s);
         // Step 4 (Eq. 4): ADoG(x) = G_sigmaC(x) - rho(x) * G_sigmaS(x)
         const sharpened = this.computeWeightedDoG(blurC, blurS, rhoMap);
-        const { min, mean, max } = (() => {
-            let min = Infinity, max = -Infinity, sum = 0;
-            for (let i = 0; i < sharpened.data.length; i++) {
-                const v = sharpened.data[i];
-                if (v < min)
-                    min = v;
-                if (v > max)
-                    max = v;
-                sum += v;
-            }
-            return { min, mean: sum / sharpened.data.length, max };
-        })();
-        console.log(`sharpened: min=${min.toFixed(5)} mean=${mean.toFixed(5)} max=${max.toFixed(5)}`);
         // Unweighted response (rho == 1 everywhere), i.e. standard DoG --
         // exposed for comparison purposes (Fig. 7(b) in the paper).
         const rawDoG = this.computeUnweightedDoG(blurC, blurS);
