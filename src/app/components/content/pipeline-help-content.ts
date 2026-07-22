@@ -234,7 +234,7 @@ export const PIPELINE_STEP_HINTS: Record<PipelineStepType, PipelineStepInfo> = {
     summary: 'A ready-made combination of steps tuned for a common scenario.',
   },
   bilateral: {
-    summary: 'Smooths flat areas (skin, sky, walls) while keeping edges sharp. The safest general "clean up before tracing" filter — start here if unsure.',
+    summary: 'Smooths flat areas (skin, sky, walls) while keeping edges sharp. The safest general "clean up before tracing" filter.',
     params: {
       sigmaSpatial: {
         label: 'Spatial \u03c3',
