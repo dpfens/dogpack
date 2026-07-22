@@ -2,6 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 
 import { WorkbenchComponent } from './components/ui/workbench/workbench';
 import { SourceImageService } from './services/source-image/source-image-service';
+import { ApplicationAnalyticsService } from './services/analytics/application-analytics.service';
 
 @Component({
   selector: 'app-root',
@@ -11,6 +12,7 @@ import { SourceImageService } from './services/source-image/source-image-service
 })
 export class AppComponent {
   private readonly sourceImageService = inject(SourceImageService);
+  private readonly analytics = inject(ApplicationAnalyticsService);
 
   /** null = show the landing/ornamentation; set = show the workbench. */
   readonly sourceImage = this.sourceImageService.image;
@@ -33,13 +35,19 @@ export class AppComponent {
     event.preventDefault();
     this.isDragging.set(false);
     const file = event.dataTransfer?.files?.[0];
-    if (file) this.sourceImageService.loadFile(file);
+    if (file) {
+      this.sourceImageService.loadFile(file);
+      this.analytics.trackImageUploaded(file.size, 'drop');
+    }
   }
 
   onFileSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
-    if (file) this.sourceImageService.loadFile(file);
+    if (file) {
+      this.sourceImageService.loadFile(file);
+      this.analytics.trackImageUploaded(file.size, 'browse');
+    }
     // Allow re-selecting the same file later.
     input.value = '';
   }

@@ -47,6 +47,7 @@ export type WireHDoGConfig = WithWireOverrides<
 >;
 
 export type DogComponentType = "xdog" | "fdog" | "adog" | "hdog";
+export type DogNodeKind = DogComponentType | 'layer' | 'preprocessing';
 
 export interface DogConfig<T> {
   readonly kind: 'config';

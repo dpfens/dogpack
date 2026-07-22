@@ -15,6 +15,7 @@ import { ParamSliderComponent } from '../../ui/param-slider-component/param-slid
 import { DogModelProvider, HDogConfig, HDogPresetConfig, WireHDoGConfig } from '../../../models/dog';
 import { DoGService } from '../../../services/dog/dog-service';
 import { HDOG_EXTRA_PARAM_HINTS, withRange } from '../../content/pipeline-help-content';
+import { ApplicationAnalyticsService } from '../../../services/analytics/application-analytics.service';
 
 @Component({
   selector: 'hdog',
@@ -33,6 +34,7 @@ export class HDogComponent implements DogModelProvider<HDogConfig> {
   readonly channelImage = output<ChannelImage>();
   readonly previewPending = signal(false);
   private readonly dogService = inject(DoGService);
+  private readonly analytics = inject(ApplicationAnalyticsService);
 
   private fdogCmp = viewChild.required(FDogComponent);
   private adogCmp = viewChild.required(ADogComponent);
@@ -96,16 +98,19 @@ export class HDogComponent implements DogModelProvider<HDogConfig> {
 
   async runPreview(): Promise<void> {
     this.previewPending.set(true);
+    const start = performance.now();
     try {
       const image = await this.dogService.run(this.toModel());
       if (image) this.channelImage.emit(image);
     } finally {
       this.previewPending.set(false);
+      this.analytics.trackDogPreviewRun('hdog', performance.now() - start);
     }
   }
 
   selectPreset(name: string): void {
     this.selectedPreset.set(HDOG_STYLE_PRESETS[name] ?? null);
+    if (name) this.analytics.trackDogPresetSelected('hdog', name);
   }
 
   toModel(): HDogConfig {

@@ -1,12 +1,12 @@
 import { Injectable, OnDestroy, inject, signal } from '@angular/core';
 import { TypedWorkerClient } from '../worker/worker-client';
-import { DogLayer, DogNode, DogRunRequest, isLayer } from '../../models/dog';
+import { DogLayer, DogNode, DogNodeKind, DogRunRequest, isLayer } from '../../models/dog';
 import { WorkerService } from '../worker/worker-service';
 import { ChannelImage } from 'dogpack';
 
 /** Identifies which node currently "owns" the shared canvas, for a label/header. */
 export interface DogFocusLabel {
-  kind: 'preprocessing' | 'xdog' | 'fdog' | 'adog' | 'hdog' | 'layer';
+  kind: DogNodeKind;
   /** e.g. a layer's `name` signal value. Purely cosmetic. */
   name?: string;
 }

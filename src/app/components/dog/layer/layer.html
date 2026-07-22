@@ -18,7 +18,7 @@
         <select
           class="form-select form-select-sm"
           [value]="blend() ?? ''"
-          (change)="blend.set($any($event.target).value || undefined)"
+          (change)="setBlendMode($any($event.target).value || undefined)"
         >
           <option value="" disabled>Blend mode</option>
           @for (mode of blendModes; track mode) {

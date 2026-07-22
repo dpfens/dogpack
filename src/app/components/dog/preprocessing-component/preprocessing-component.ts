@@ -1,6 +1,7 @@
 import { Component, DestroyRef, effect, inject, input, output, signal } from '@angular/core';
 
 import { PreprocessingService } from '../../../services/preprocessing/preprocessing';
+import { ApplicationAnalyticsService } from '../../../services/analytics/application-analytics.service';
 import {
   PIPELINE_STEP_LABELS,
   type ChannelMode,
@@ -36,6 +37,7 @@ export class PreprocessingComponent {
   private readonly preprocessing = inject(PreprocessingService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly dogService = inject(DoGService);
+  private readonly analytics = inject(ApplicationAnalyticsService);
 
   readonly image = input.required<ImageData>();
   readonly channelImage = output<ImageData>();
@@ -78,6 +80,7 @@ export class PreprocessingComponent {
 
   setChannelMode(mode: ChannelMode): void {
     this.channelMode.set(mode);
+    this.analytics.trackPreprocessingChannelModeChanged(mode);
   }
 
   onAddIndexChange(index: number): void {
@@ -88,24 +91,31 @@ export class PreprocessingComponent {
     const template = this.addableSteps[this.selectedAddIndex()];
     // Clone so pushing the same template twice doesn't share config objects.
     this.steps.update((current) => [...current, structuredClone(template)]);
+    this.analytics.trackPreprocessingStepAdded(template.type);
   }
 
   removeStep(index: number): void {
+    const removed = this.steps()[index];
     this.steps.update((current) => current.filter((_, i) => i !== index));
+    if (removed) this.analytics.trackPreprocessingStepRemoved(removed.type);
   }
 
   moveStepUp(index: number): void {
     if (index === 0) return;
     this.reorderStep(index, index - 1);
+    const moved = this.steps()[index - 1];
+    if (moved) this.analytics.trackPreprocessingStepReordered(moved.type, 'up');
   }
 
   moveStepDown(index: number): void {
+    const type = this.steps()[index]?.type;
     this.steps.update((current) => {
       if (index >= current.length - 1) return current;
       const next = [...current];
       [next[index], next[index + 1]] = [next[index + 1], next[index]];
       return next;
     });
+    if (type) this.analytics.trackPreprocessingStepReordered(type, 'down');
   }
 
   private reorderStep(from: number, to: number): void {
@@ -159,5 +169,6 @@ export class PreprocessingComponent {
     this.steps.update((current) =>
       current.map((step, i) => (i === index && step.type === 'preset' ? { ...step, name } : step))
     );
+    this.analytics.trackPreprocessingPresetSelected(name);
   }
 }

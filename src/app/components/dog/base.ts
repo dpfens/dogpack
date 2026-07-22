@@ -3,6 +3,7 @@ import { ChannelImage } from 'dogpack';
 import { luminanceToImageData } from 'dogpack/utils';
 import { DogModelProvider, DogNode } from '../../models/dog';
 import { DoGService, type DogFocusLabel } from '../../services/dog/dog-service';
+import { ApplicationAnalyticsService } from '../../services/analytics/application-analytics.service';
 
 /**
  * Shared "run my model through the worker and report the result" behavior
@@ -24,6 +25,7 @@ import { DoGService, type DogFocusLabel } from '../../services/dog/dog-service';
 @Directive()
 export abstract class DogPreviewableComponent<T extends DogNode> implements DogModelProvider<T> {
   protected readonly dogService = inject(DoGService);
+  protected readonly analytics = inject(ApplicationAnalyticsService);
 
   /** Same contract every leaf/layer previously declared individually. */
   readonly channelImage = output<ChannelImage>();
@@ -40,6 +42,7 @@ export abstract class DogPreviewableComponent<T extends DogNode> implements DogM
   async runPreview(): Promise<void> {
     this.previewPending.set(true);
     this.dogService.setPending(this.focusLabel());
+    const start = performance.now();
     try {
       const image = await this.dogService.run(this.toModel());
       if (image) {
@@ -48,6 +51,7 @@ export abstract class DogPreviewableComponent<T extends DogNode> implements DogM
       }
     } finally {
       this.previewPending.set(false);
+      this.analytics.trackDogPreviewRun(this.focusLabel().kind, performance.now() - start);
     }
   }
 }

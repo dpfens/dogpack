@@ -104,6 +104,11 @@ export class DogLayerComponent extends DogPreviewableComponent<DogLayer> {
    */
   readonly blendModes: BuiltinBlendMode[] = Object.keys(extensions.multiScale.BlendFunctions) as BuiltinBlendMode[];
 
+  setBlendMode(mode: BuiltinBlendMode | undefined): void {
+    this.blend.set(mode);
+    if (mode) this.analytics.trackBlendModeChanged(mode);
+  }
+
   /** Description for a node kind, including 'layer' itself for nested groups. */
   nodeHint(kind: DogNodeKind): string {
     return NODE_TYPE_INFO[kind]?.hint ?? '';
@@ -127,6 +132,7 @@ export class DogLayerComponent extends DogPreviewableComponent<DogLayer> {
 
   /** Adds a node of the given kind. Used by the "Add node" dropdown. */
   addNode(kind: DogNodeKind): DogRef {
+    this.analytics.trackNodeAdded(kind);
     if (kind === 'layer') {
       return this.addLayer();
     }
@@ -148,6 +154,7 @@ export class DogLayerComponent extends DogPreviewableComponent<DogLayer> {
     }
 
     this.instances.set(list.filter(e => e !== entry));
+    this.analytics.trackNodeRemoved(entry.kind);
     return true;
   }
 

@@ -101,6 +101,7 @@ export class ADogComponent extends DogPreviewableComponent<ADogConfig> {
 
   selectPreset(name: string): void {
     this.selectedPreset.set(ADOG_STYLE_PRESETS[name] ?? null);
+    if (name) this.analytics.trackDogPresetSelected('adog', name);
   }
 
   onConfig(config: WireDoGConfig) {

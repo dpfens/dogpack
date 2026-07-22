@@ -2,6 +2,7 @@ import {
   Component, ElementRef, viewChild, input, effect, afterNextRender,
   signal, DestroyRef, inject, computed,
 } from '@angular/core';
+import { ApplicationAnalyticsService } from '../../../services/analytics/application-analytics.service';
 
 export type ImageStatus = 'idle' | 'loading' | 'ready' | 'error';
 
@@ -24,6 +25,12 @@ export class ImageCanvasComponent {
   private canvasRef = viewChild.required<ElementRef<HTMLCanvasElement>>('canvas');
   private ctx?: CanvasRenderingContext2D;
   private destroyRef = inject(DestroyRef);
+  private analytics = inject(ApplicationAnalyticsService);
+
+  /** Guards against firing a zoom event on every wheel tick - only the first
+   *  zoom interaction per loaded image is tracked. Reset implicitly whenever
+   *  imageData() points at a different ImageData instance. */
+  private zoomTrackedForImage: ImageData | null = null;
 
   private containerSize = signal({ width: 0, height: 0 });
   private scale = signal(1);
@@ -139,6 +146,12 @@ export class ImageCanvasComponent {
     event.preventDefault();
     const delta = -event.deltaY * 0.001;
     this.scale.update(s => Math.min(5, Math.max(1, s + s * delta)));
+
+    const current = this.imageData();
+    if (current && this.zoomTrackedForImage !== current) {
+      this.zoomTrackedForImage = current;
+      this.analytics.trackCanvasZoomUsed();
+    }
   }
 
   private windowMoveListener = (event: PointerEvent) => this.onPanMove(event);
@@ -222,6 +235,7 @@ export class ImageCanvasComponent {
         document.body.appendChild(a);
         a.click();
         a.remove();
+        this.analytics.trackImageDownloaded();
       } finally {
         URL.revokeObjectURL(url);
       }

@@ -1,4 +1,4 @@
-import { Component, computed, effect, input, model, signal, untracked } from '@angular/core';
+import { Component, computed, effect, inject, input, model, signal, untracked } from '@angular/core';
 import { FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
 import {
   DogConfigParamType,
@@ -22,6 +22,7 @@ import { FDOG_EXTRA_PARAM_HINTS, withRange } from '../../content/pipeline-help-c
   providers: [],
 })
 export class FDogComponent extends DogPreviewableComponent<FDogConfig> {
+
   readonly paramRanges: Record<DogConfigParamType | FDogConfigParamType, ParamRange> =
     FDOG_PARAM_RANGES;
 
@@ -86,6 +87,7 @@ export class FDogComponent extends DogPreviewableComponent<FDogConfig> {
 
   selectPreset(name: string): void {
     this.selectedPreset.set(FDOG_STYLE_PRESETS[name] ?? null);
+    if (name) this.analytics.trackDogPresetSelected('fdog', name);
   }
 
   onConfig(config: WireDoGConfig) {

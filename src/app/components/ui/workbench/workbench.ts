@@ -38,12 +38,4 @@ export class WorkbenchComponent {
     if (label.kind === 'layer') return `Layer${label.name ? ` "${label.name}"` : ''}`;
     return label.kind.toUpperCase();
   });
-
-  // NOTE: I don't have visibility into how DoGService.run() actually gets the
-  // source pixels to the worker - DogLayer carries no image data itself, and
-  // DoGService.run(layer) takes no image argument either. Something needs to
-  // push the current working image (probably the preprocessed result, not
-  // raw sourceImage) into whatever the worker reads from before any dog-layer
-  // or xdog/fdog/adog/hdog runPreview() call will produce a meaningful
-  // result. That plumbing isn't represented here - flag if it needs adding.
 }

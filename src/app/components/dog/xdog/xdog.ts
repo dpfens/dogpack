@@ -91,6 +91,7 @@ export class XDogComponent extends DogPreviewableComponent<XDogConfig> {
 
   selectPreset(name: string): void {
     this.selectedPreset.set(STYLE_PRESETS[name] ?? null);
+    if (name) this.analytics.trackDogPresetSelected('xdog', name);
   }
 
   toModel(): XDogConfig {
