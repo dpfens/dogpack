@@ -67,10 +67,10 @@
           "builder": "@angular/build:dev-server",
           "configurations": {
             "production": {
-              "buildTarget": "dogpack-gh-pages:build:production"
+              "buildTarget": "dogpack:build:production"
             },
             "development": {
-              "buildTarget": "dogpack-gh-pages:build:development"
+              "buildTarget": "dogpack:build:development"
             }
           },
           "defaultConfiguration": "development"

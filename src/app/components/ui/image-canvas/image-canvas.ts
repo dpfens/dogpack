@@ -43,6 +43,15 @@ export class ImageCanvasComponent {
   private panStart = { x: 0, y: 0 };
   private offsetStart = { x: 0, y: 0 };
 
+  /** Pointers currently down on the host, keyed by pointerId. Used to detect
+   *  and drive two-finger pinch-to-zoom on touch devices. */
+  private activePointers = new Map<number, PointerEvent>();
+  private pinching = false;
+  private pinchStartDist = 0;
+  private pinchStartScale = 1;
+  private pinchStartOffset = { x: 0, y: 0 };
+  private pinchStartMidpoint = { x: 0, y: 0 };
+
   private afterCache: { data: ImageData; canvas: OffscreenCanvas } | null = null;
   private beforeCache: { data: ImageData; canvas: OffscreenCanvas } | null = null;
 
@@ -146,12 +155,7 @@ export class ImageCanvasComponent {
     event.preventDefault();
     const delta = -event.deltaY * 0.001;
     this.scale.update(s => Math.min(5, Math.max(1, s + s * delta)));
-
-    const current = this.imageData();
-    if (current && this.zoomTrackedForImage !== current) {
-      this.zoomTrackedForImage = current;
-      this.analytics.trackCanvasZoomUsed();
-    }
+    this.trackZoomUsedOnce();
   }
 
   private windowMoveListener = (event: PointerEvent) => this.onPanMove(event);
@@ -171,15 +175,50 @@ export class ImageCanvasComponent {
     window.removeEventListener('pointermove', this.windowMoveListener);
     window.removeEventListener('pointerup', this.windowEndListener);
     window.removeEventListener('pointercancel', this.windowEndListener);
+    this.activePointers.clear();
+    this.pinching = false;
+  }
+
+  private getPointerDistance(p1: PointerEvent, p2: PointerEvent): number {
+    return Math.hypot(p2.clientX - p1.clientX, p2.clientY - p1.clientY);
+  }
+
+  private getPointerMidpoint(p1: PointerEvent, p2: PointerEvent): { x: number; y: number } {
+    return { x: (p1.clientX + p2.clientX) / 2, y: (p1.clientY + p2.clientY) / 2 };
+  }
+
+  private trackZoomUsedOnce() {
+    const current = this.imageData();
+    if (current && this.zoomTrackedForImage !== current) {
+      this.zoomTrackedForImage = current;
+      this.analytics.trackCanvasZoomUsed();
+    }
   }
 
   onPanStart(event: PointerEvent) {
     if (this.draggingDivider) return;
     event.preventDefault();
-    this.panning = true;
-    this.panStart = { x: event.clientX, y: event.clientY };
-    this.offsetStart = this.offset();
-    this.beginWindowDragTracking();
+    this.activePointers.set(event.pointerId, event);
+
+    // Second finger down: switch from panning (or idle) into pinch-to-zoom.
+    if (this.activePointers.size === 2 && this.zoomEnabled()) {
+      this.panning = false;
+      this.pinching = true;
+      const [p1, p2] = Array.from(this.activePointers.values());
+      this.pinchStartDist = this.getPointerDistance(p1, p2);
+      this.pinchStartScale = this.scale();
+      this.pinchStartOffset = this.offset();
+      this.pinchStartMidpoint = this.getPointerMidpoint(p1, p2);
+      this.beginWindowDragTracking();
+      return;
+    }
+
+    if (this.activePointers.size === 1 && !this.pinching) {
+      this.panning = true;
+      this.panStart = { x: event.clientX, y: event.clientY };
+      this.offsetStart = this.offset();
+      this.beginWindowDragTracking();
+    }
   }
 
   onPanMove(event: PointerEvent) {
@@ -189,6 +228,27 @@ export class ImageCanvasComponent {
       this.comparePos.set(Math.min(100, Math.max(0, pct)));
       return;
     }
+
+    if (this.activePointers.has(event.pointerId)) {
+      this.activePointers.set(event.pointerId, event);
+    }
+
+    if (this.pinching && this.activePointers.size >= 2) {
+      const [p1, p2] = Array.from(this.activePointers.values());
+      const dist = this.getPointerDistance(p1, p2);
+      const mid = this.getPointerMidpoint(p1, p2);
+
+      const newScale = Math.min(5, Math.max(1, this.pinchStartScale * (dist / this.pinchStartDist)));
+      this.scale.set(newScale);
+      this.offset.set({
+        x: this.pinchStartOffset.x + (mid.x - this.pinchStartMidpoint.x),
+        y: this.pinchStartOffset.y + (mid.y - this.pinchStartMidpoint.y),
+      });
+
+      this.trackZoomUsedOnce();
+      return;
+    }
+
     if (!this.panning) return;
     const dx = event.clientX - this.panStart.x;
     const dy = event.clientY - this.panStart.y;
@@ -196,9 +256,27 @@ export class ImageCanvasComponent {
   }
 
   onPanEnd(event: PointerEvent) {
-    this.panning = false;
-    this.draggingDivider = false;
-    this.endWindowDragTracking();
+    this.activePointers.delete(event.pointerId);
+
+    if (this.pinching) {
+      if (this.activePointers.size < 2) {
+        this.pinching = false;
+      }
+      if (this.activePointers.size === 1) {
+        // One finger still down after a pinch: resume single-finger panning
+        // smoothly from its current position instead of jumping.
+        const [remaining] = Array.from(this.activePointers.values());
+        this.panning = true;
+        this.panStart = { x: remaining.clientX, y: remaining.clientY };
+        this.offsetStart = this.offset();
+      }
+    }
+
+    if (this.activePointers.size === 0) {
+      this.panning = false;
+      this.draggingDivider = false;
+      this.endWindowDragTracking();
+    }
   }
 
   onDividerStart(event: PointerEvent) {
