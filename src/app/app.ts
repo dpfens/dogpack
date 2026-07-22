@@ -5,9 +5,11 @@ import { Meta, Title } from '@angular/platform-browser';
 import { WorkbenchComponent } from './components/ui/workbench/workbench';
 import { SourceImageService } from './services/source-image/source-image-service';
 import { ApplicationAnalyticsService } from './services/analytics/application-analytics.service';
+import { GoogleAnalyticsService } from './services/analytics/google-analytics.service';
 
 /** Canonical URL of the app - update if the domain/path ever changes. */
-const APP_URL = 'https://dougfenstermacher.com/dogpack/';
+const APP_PATH = '/dogpack/';
+const APP_URL = `https://dougfenstermacher.com${APP_PATH}`;
 const APP_TITLE = 'DoG Studio - Free Browser-Based Line Art & Screentone Tool';
 const APP_DESCRIPTION =
   'Free browser-based tool for turning photos into line art, ink illustration, and screentone using XDoG, FDoG, ADoG, and HDoG. Nothing uploaded, no account.';
@@ -28,6 +30,7 @@ const APP_OG_IMAGE: string | null = null;
 export class AppComponent implements OnInit {
   private readonly sourceImageService = inject(SourceImageService);
   private readonly analytics = inject(ApplicationAnalyticsService);
+  private readonly googleAnalytics = inject(GoogleAnalyticsService);
   private readonly titleService = inject(Title);
   private readonly meta = inject(Meta);
   private readonly document = inject(DOCUMENT);
@@ -42,6 +45,7 @@ export class AppComponent implements OnInit {
   ngOnInit(): void {
     this.setSeoTags();
     this.injectStructuredData();
+    this.googleAnalytics.trackPageView(APP_PATH, APP_TITLE);
   }
 
   /** Static title/meta/OG/Twitter tags. Safe to set once - this app has no per-route content. */
