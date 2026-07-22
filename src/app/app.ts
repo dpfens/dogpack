@@ -1,8 +1,23 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, OnInit, signal } from '@angular/core';
+import { DOCUMENT } from '@angular/common';
+import { Meta, Title } from '@angular/platform-browser';
 
 import { WorkbenchComponent } from './components/ui/workbench/workbench';
 import { SourceImageService } from './services/source-image/source-image-service';
 import { ApplicationAnalyticsService } from './services/analytics/application-analytics.service';
+
+/** Canonical URL of the app - update if the domain/path ever changes. */
+const APP_URL = 'https://dougfenstermacher.com/dogpack/';
+const APP_TITLE = 'DoG Studio - Free Browser-Based Line Art & Screentone Tool';
+const APP_DESCRIPTION =
+  'Free browser-based tool for turning photos into line art, ink illustration, and screentone using XDoG, FDoG, ADoG, and HDoG. Nothing uploaded, no account.';
+/**
+ * Social preview image. Unset for now - a broken og:image is worse than none, since it can
+ * make link previews show nothing at all instead of falling back gracefully. Once you have
+ * a real image (ideally a before/after sample, 1200x630), set this and re-add the og:image /
+ * twitter:image tags in setSeoTags() below, and switch twitter:card back to 'summary_large_image'.
+ */
+const APP_OG_IMAGE: string | null = null;
 
 @Component({
   selector: 'app-root',
@@ -10,9 +25,12 @@ import { ApplicationAnalyticsService } from './services/analytics/application-an
   templateUrl: './app.html',
   styleUrl: './app.scss',
 })
-export class AppComponent {
+export class AppComponent implements OnInit {
   private readonly sourceImageService = inject(SourceImageService);
   private readonly analytics = inject(ApplicationAnalyticsService);
+  private readonly titleService = inject(Title);
+  private readonly meta = inject(Meta);
+  private readonly document = inject(DOCUMENT);
 
   /** null = show the landing/ornamentation; set = show the workbench. */
   readonly sourceImage = this.sourceImageService.image;
@@ -20,6 +38,104 @@ export class AppComponent {
 
   /** Purely local UI state for the dropzone hover style - doesn't belong in the service. */
   readonly isDragging = signal(false);
+
+  ngOnInit(): void {
+    this.setSeoTags();
+    this.injectStructuredData();
+  }
+
+  /** Static title/meta/OG/Twitter tags. Safe to set once - this app has no per-route content. */
+  private setSeoTags(): void {
+    this.titleService.setTitle(APP_TITLE);
+
+    this.meta.updateTag({ name: 'description', content: APP_DESCRIPTION });
+    this.meta.updateTag({
+      name: 'keywords',
+      content:
+        'photo to line art, photo to sketch converter, coloring page generator, ControlNet lineart preprocessor, Canny alternative, manga screentone generator, XDoG, FDoG, ADoG, HDoG, laser engraving image converter',
+    });
+
+    this.meta.updateTag({ property: 'og:title', content: APP_TITLE });
+    this.meta.updateTag({ property: 'og:description', content: APP_DESCRIPTION });
+    this.meta.updateTag({ property: 'og:type', content: 'website' });
+    this.meta.updateTag({ property: 'og:url', content: APP_URL });
+
+    // 'summary' works with no image; switch to 'summary_large_image' once APP_OG_IMAGE is set.
+    this.meta.updateTag({ name: 'twitter:card', content: 'summary' });
+    this.meta.updateTag({ name: 'twitter:title', content: APP_TITLE });
+    this.meta.updateTag({ name: 'twitter:description', content: APP_DESCRIPTION });
+
+    if (APP_OG_IMAGE) {
+      this.meta.updateTag({ property: 'og:image', content: APP_OG_IMAGE });
+      this.meta.updateTag({ name: 'twitter:image', content: APP_OG_IMAGE });
+      this.meta.updateTag({ name: 'twitter:card', content: 'summary_large_image' });
+    }
+
+    this.setCanonicalLink();
+  }
+
+  /** Angular's Meta service doesn't manage <link> tags, so this is done by hand. */
+  private setCanonicalLink(): void {
+    let link = this.document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+    if (!link) {
+      link = this.document.createElement('link');
+      link.setAttribute('rel', 'canonical');
+      this.document.head.appendChild(link);
+    }
+    link.setAttribute('href', APP_URL);
+  }
+
+  /**
+   * JSON-LD structured data: a WebApplication entry describing the tool, plus a FAQPage
+   * entry built from the existing FAQ accordion content so it's eligible for FAQ rich
+   * results without duplicating the copy.
+   */
+  private injectStructuredData(): void {
+    const webApplication = {
+      '@context': 'https://schema.org',
+      '@type': 'WebApplication',
+      name: 'DoG Studio',
+      url: APP_URL,
+      description: APP_DESCRIPTION,
+      applicationCategory: 'DesignApplication',
+      operatingSystem: 'Any (runs in browser)',
+      offers: {
+        '@type': 'Offer',
+        price: '0',
+        priceCurrency: 'USD',
+      },
+    };
+
+    const faqPage = {
+      '@context': 'https://schema.org',
+      '@type': 'FAQPage',
+      mainEntity: this.faqs.flatMap((section) =>
+        section.items.map((item) => ({
+          '@type': 'Question',
+          name: item.question,
+          acceptedAnswer: {
+            '@type': 'Answer',
+            text: this.stripHtml(item.answer),
+          },
+        })),
+      ),
+    };
+
+    this.appendJsonLd(webApplication);
+    this.appendJsonLd(faqPage);
+  }
+
+  private appendJsonLd(data: unknown): void {
+    const script = this.document.createElement('script');
+    script.type = 'application/ld+json';
+    script.text = JSON.stringify(data);
+    this.document.head.appendChild(script);
+  }
+
+  /** FAQ answers are rendered via innerHTML in the template, so strip any markup before use in JSON-LD. */
+  private stripHtml(value: string): string {
+    return value.replace(/<[^>]*>/g, '');
+  }
 
   onDragOver(event: DragEvent): void {
     event.preventDefault();
