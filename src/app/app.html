@@ -35,20 +35,20 @@
     }
   </div>
 
-  <div class="container">
+  <div class="container mb-5">
     <div class="row">
       <div class="col-12">
         <div class="section-block mt-5">
           <div class="section-label h3">What it does</div>
           <p>
-            DoG Studio implements XDoG, FDoG, ADoG, and HDoG &mdash; a family of Difference-of-Gaussians
-            image binarization techniques from computer graphics research &mdash; as a free,
+            DoG Studio implements XDoG, FDoG, ADoG, and HDoG, which are a family of Difference-of-Gaussians
+            image binarization techniques from computer graphics research, as a free,
             GPU-accelerated tool that runs entirely in your browser.
           </p>
 
           <div class="row row-cols-1 row-cols-md-2 row-cols-lg-4 g-3 mb-3">
             <div class="col">
-              <div class="card h-100">
+              <div class="card drop-shadow h-100">
                 <div class="card-body">
                   <h3 class="h6 card-title">XDoG</h3>
                   <p class="card-text small text-body-secondary mb-0">
@@ -58,7 +58,7 @@
               </div>
             </div>
             <div class="col">
-              <div class="card h-100">
+              <div class="card drop-shadow h-100">
                 <div class="card-body">
                   <h3 class="h6 card-title">FDoG</h3>
                   <p class="card-text small text-body-secondary mb-0">
@@ -69,7 +69,7 @@
               </div>
             </div>
             <div class="col">
-              <div class="card h-100">
+              <div class="card drop-shadow h-100">
                 <div class="card-body">
                   <h3 class="h6 card-title">ADoG</h3>
                   <p class="card-text small text-body-secondary mb-0">
@@ -80,7 +80,7 @@
               </div>
             </div>
             <div class="col">
-              <div class="card h-100">
+              <div class="card drop-shadow h-100">
                 <div class="card-body">
                   <h3 class="h6 card-title">HDoG</h3>
                   <p class="card-text small text-body-secondary mb-0">
@@ -96,7 +96,6 @@
           <p class="text-body-secondary small mb-0">
             I originally built this to help myself learn to draw, and kept extending it as I found more
             uses for it.
-            <a href="https://dougfenstermacher.com/project/dog-studio" target="_blank" rel="noopener">Full story on my site &rarr;</a>
           </p>
         </div>
 
@@ -104,13 +103,13 @@
           <div class="section-label h3">Why it's different from a "sketch filter"</div>
           <p>
             Most "photo to sketch" tools give you one fixed look. DoG Studio exposes the actual
-            parameters researchers use to control the effect &mdash; Gaussian scale, contrast sensitivity,
-            edge coherence, tone density &mdash; so you can dial in exactly the style you want instead of
+            parameters researchers use to control the effect (e.g. Gaussian scale, contrast sensitivity,
+            edge coherence, tone density) so you can dial in exactly the style you want instead of
             accepting a single preset.
           </p>
           <p>
             You can also <strong>stack layers with blend modes</strong>. HDoG itself is really just an
-            FDoG layer and an ADoG layer combined &mdash; DoG Studio generalizes that idea so you can nest
+            FDoG layer and an ADoG layer combined. DoG Studio generalizes that idea so you can nest
             as many layers as you want: an FDoG pass for structure, an ADoG pass for midtones, a second
             ADoG pass at a larger scale just to fill in the darkest shadows, all blended together and
             tuned independently.
@@ -125,11 +124,11 @@
           <div class="section-label">What you can do with it</div>
           <div class="row row-cols-1 row-cols-md-2 g-3">
             <div class="col">
-              <div class="card h-100">
+              <div class="card drop-shadow h-100">
                 <div class="card-body">
                   <h3 class="h6 card-title">Printable / cuttable / engravable line art</h3>
                   <p class="card-text small text-body-secondary mb-0">
-                    FDoG and HDoG output is clean, binary black-and-white &mdash; exactly what a laser
+                    FDoG and HDoG output is clean, binary black-and-white, which is exactly what a laser
                     engraver, vinyl cutter, or CNC router wants. Tune the Gaussian scale to match your
                     tool's line width, and you're ready to cut.
                   </p>
@@ -137,18 +136,18 @@
               </div>
             </div>
             <div class="col">
-              <div class="card h-100">
+              <div class="card drop-shadow h-100">
                 <div class="card-body">
                   <h3 class="h6 card-title">Coloring book pages</h3>
                   <p class="card-text small text-body-secondary mb-0">
                     Run FDoG alone (lines, no shading) to turn any photo into a clean outline ready to
-                    color in &mdash; kids' books, adult coloring pages, or line-art templates for tracing.
+                    color in (ex. kids' books, adult coloring pages, or line-art templates for tracing).
                   </p>
                 </div>
               </div>
             </div>
             <div class="col">
-              <div class="card h-100">
+              <div class="card drop-shadow h-100">
                 <div class="card-body">
                   <h3 class="h6 card-title">Manga and comic screentone</h3>
                   <p class="card-text small text-body-secondary mb-0">
@@ -160,11 +159,11 @@
               </div>
             </div>
             <div class="col">
-              <div class="card h-100">
+              <div class="card drop-shadow h-100">
                 <div class="card-body">
                   <h3 class="h6 card-title">Stipple and pointillism-style art</h3>
                   <p class="card-text small text-body-secondary mb-0">
-                    ADoG's tone-adaptive dot placement mimics stippling &mdash; rotationally symmetric
+                    ADoG's tone-adaptive dot placement mimics stippling.  Rotationally symmetric
                     Gaussian kernels keep dot spacing regular even in busy, noisy image regions, so the
                     result reads as intentional rather than random noise.
                   </p>
@@ -172,7 +171,7 @@
               </div>
             </div>
             <div class="col">
-              <div class="card h-100">
+              <div class="card drop-shadow h-100">
                 <div class="card-body">
                   <h3 class="h6 card-title">Tattoo stencils and reference art</h3>
                   <p class="card-text small text-body-secondary mb-0">
@@ -183,11 +182,11 @@
               </div>
             </div>
             <div class="col">
-              <div class="card h-100">
+              <div class="card drop-shadow h-100">
                 <div class="card-body">
                   <h3 class="h6 card-title">Portraits and pen-and-ink illustration</h3>
                   <p class="card-text small text-body-secondary mb-0">
-                    HDoG is designed to mimic professional pen-and-ink illustration &mdash; combining
+                    HDoG is designed to mimic professional pen-and-ink illustration.  It combines
                     coherent contour lines with adaptive shading in one pass.
                   </p>
                 </div>
@@ -201,24 +200,23 @@
           <p>Several of the outputs are more useful as a starting layer for drawing/illustrating than as a finished image:</p>
           <ul class="mb-0">
             <li class="mb-2">
-              <strong>Sketch/underpainting guide</strong> &mdash; run FDoG on a reference photo for a
+              <strong>Sketch/underpainting guide</strong>.  Run FDoG on a reference photo for a
               clean, coherent contour map (not the fragmented noise you get from raw edge detection on
               textured photos), then paint or trace over it as a loose armature instead of eyeballing
               proportions.
             </li>
             <li class="mb-2">
-              <strong>Value/shadow mapping</strong> &mdash; ADoG's tone-adaptive dot density works as a
+              <strong>Value/shadow mapping</strong> ADoG's tone-adaptive dot density works as a
               free posterized shadow map, showing where dark masses fall before you start rendering.
             </li>
             <li class="mb-2">
-              <strong>Layered underlays</strong> &mdash; export an FDoG line layer and an ADoG tone layer
+              <strong>Layered underlays</strong> Export an FDoG line layer and an ADoG tone layer
               separately, and bring each into Procreate, Photoshop, or Clip Studio as its own reference
               layer.
             </li>
             <li>
-              <strong>Procedural, reproducible passes</strong> &mdash; because the effect is parametric
-              rather than a diffusion or neural filter, you get consistent results across a whole batch
-              &mdash; useful for game asset pipelines, animation frames, or any workflow that needs the
+              <strong>Procedural, reproducible passes</strong> The effect is parametric
+              rather than a diffusion or neural filter, you get consistent results across a whole batch.  This is useful for game asset pipelines, animation frames, or any workflow that needs the
               same style applied repeatedly and predictably.
             </li>
           </ul>
@@ -227,17 +225,15 @@
         <div class="section-block mt-5">
           <div class="section-label">Use it as a ControlNet / img2img preprocessor</div>
           <p>
-            If you work with Stable Diffusion, ComfyUI, or Automatic1111, DoG Studio's line and tone maps
-            work as conditioning input the same way Canny, HED, or Lineart preprocessors do &mdash; but
-            with edge-tangent-flow smoothing that keeps lines coherent instead of the fragmented, noisy
-            edges you get from raw Canny on a textured photo.
+            If you work with <a href="https://github.com/compvis/stable-diffusion">Stable Diffusion</a>, <a href="https://github.com/comfy-org/comfyui">ComfyUI</a>, or <a href="https://github.com/automatic1111">Automatic1111</a>, DoG Studio's line and tone maps
+            work as conditioning input the same way Canny, HED, or Lineart preprocessors do, but with edge-tangent-flow smoothing that keeps lines coherent instead of the fragmented, noisy edges you get from raw Canny on a textured photo.
           </p>
           <ul class="mb-0">
             <li>Export an <strong>FDoG</strong> pass as a Lineart/Scribble-style ControlNet input for structure-preserving img2img</li>
             <li>Export <strong>ADoG</strong> separately as a soft tone/shading conditioning map</li>
             <li>Feed both into a multi-ControlNet stack for tighter control than a single preprocessor gives you</li>
-            <li>Tune parameters (&sigma;, &rho;, &phi;) and lock them for consistent conditioning across a whole batch &mdash; useful for character sheets or frame-by-frame consistency</li>
-            <li>No local Python, ComfyUI install, or GPU setup required &mdash; generate the conditioning map in your browser and drop it straight into whatever pipeline you're already running, local or hosted</li>
+            <li>Tune parameters (&sigma;, &rho;, &phi;) and lock them for consistent conditioning across a whole batch.  This is useful for character sheets or frame-by-frame consistency</li>
+            <li>No local Python, ComfyUI install, or GPU setup required.  you can generate the conditioning map in your browser and drop it straight into whatever pipeline you're already running, local or hosted</li>
           </ul>
         </div>
 
