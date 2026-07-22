@@ -6,7 +6,7 @@
   },
   "newProjectRoot": "projects",
   "projects": {
-    "dogpack-gh-pages": {
+    "dogpack": {
       "projectType": "application",
       "schematics": {
         "@schematics/angular:component": {
