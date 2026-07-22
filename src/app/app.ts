@@ -255,7 +255,7 @@ export class AppComponent implements OnInit {
         },
         {
           "question": "Is this fast enough to preview in real time?",
-          "answer": "The underlying algorithm is linear-time and GPU-parallelizable. Published benchmarks report 1000+ fps at HD resolution on a several-years-old mid-range GPU.  I am still learning GPU-optimization though, so it likely still needs improvements for that"
+          "answer": "The underlying algorithm is linear-time and GPU-parallelizable. Published benchmarks report 1000+ fps at HD resolution on a several-years-old mid-range GPU.  I am still learning WebGPU-optimization though, so it likely still needs improvements for that"
         }
       ]
     }
