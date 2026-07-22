@@ -135,7 +135,7 @@ export class AppComponent {
       "items": [
         {
           "question": "Why is FDoG/HDoG so much slower than XDoG?",
-          "answer": "FDoG needs an extra flow-field computation (the edge tangent flow) before it can even start filtering, which is the main added cost over XDoG. HDoG is the most expensive of the four because it runs a full FDoG pass and two ADoG passes (the second one just for shadow detail) and then combines them — three filtering passes instead of one, even though each individual pass stays fast."
+          "answer": "FDoG needs an extra flow-field computation (the edge tangent flow) before it can even start filtering, which is the main added cost over XDoG. HDoG is the most expensive of the four because it runs a full FDoG pass and two ADoG passes (the second one just for shadow detail) and then combines them."
         },
         {
           "question": "Is this fast enough to preview in real time?",
