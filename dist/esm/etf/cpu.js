@@ -75,10 +75,37 @@ function buildFlowField(channelTensor, width, height, config, sigmaC) {
     for (let i = 0; i < cfg.iterations; i++) {
         tangents = refineTangentField(tangents, channelTensor.magnitude, width, height);
     }
+    // Derived from the same (blurred) tensor extractTangentField() used for
+    // its eigenvectors, so it lines up with the flow field refine() starts
+    // from — not recomputed post-refine, since refine only perturbs
+    // direction, not the tensor anisotropy reflects.
+    const anisotropy = tensorAnisotropy(smoothedTensor, width * height);
     return {
         flowField: TangentFlowField.fromVec2Array(tangents, width, height),
         magnitude: { data: channelTensor.magnitude, width, height },
+        anisotropy: { data: anisotropy, width, height },
     };
+}
+/**
+ * (lambda1-lambda2)/(lambda1+lambda2) in [0,1]. 1 = coherent line
+ * direction, 0 = isotropic (flat region, corner, or texture noise where
+ * local gradients disagree). Mirrors tensorMagnitude() in composing
+ * correctly whether `tensor` came from one channel or a Di
+ * Zenzo-summed multi-channel combination.
+ */
+function tensorAnisotropy(tensor, size) {
+    const anisotropy = new Float32Array(size);
+    for (let i = 0; i < size; i++) {
+        const e = tensor.e[i];
+        const f = tensor.f[i];
+        const g = tensor.g[i];
+        const trace = e + g;
+        if (trace > 1e-8) {
+            const diff = e - g;
+            anisotropy[i] = Math.sqrt(diff * diff + 4 * f * f) / trace;
+        }
+    }
+    return anisotropy;
 }
 /**
  * Compute a channel's structure tensor and its trace-derived magnitude

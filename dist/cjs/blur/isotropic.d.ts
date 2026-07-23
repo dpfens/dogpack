@@ -95,13 +95,6 @@ export interface WebGPUBlurConfig {
 export declare class WebGPUIsotropicBlur extends BaseWebGPUStrategy implements BlurStrategy {
     private config;
     private resources;
-    private paramsBuffer;
-    private kernelBuffer;
-    private inputBuffer;
-    private tempBuffer;
-    private outputBuffer;
-    private currentBufferSize;
-    private currentKernelSize;
     constructor(config?: Partial<WebGPUBlurConfig>);
     /**
      * Confirms an adapter is actually obtainable, not just that
@@ -113,19 +106,20 @@ export declare class WebGPUIsotropicBlur extends BaseWebGPUStrategy implements B
      */
     private initResources;
     /**
-     * Ensure buffers are sized correctly
-     */
-    private ensureBuffers;
-    /**
-     * Blur implementation - supports concurrent/parallel calls
+     * Fix for WebGPUIsotropicBlur: allocate buffers per call instead of
+     * reusing instance-level ones, so concurrent blur() calls (as issued by
+     * DoGProcessor.process()'s Promise.all([blur(sigma), blur(sigma*k)]))
+     * never share mutable GPU state. Mirrors the pattern already used by
+     * WebGPUFlowGuidedBlur and WebGPUGradientAlignedBlur.
      *
-     * CCreates a new staging buffer for each operation instead of
-     * reusing a single one, preventing "Buffer already has an outstanding
-     * map pending" errors when blur() is called in parallel.
+     * Delete the old paramsBuffer/kernelBuffer/inputBuffer/tempBuffer/
+     * outputBuffer/currentBufferSize/currentKernelSize instance fields and
+     * ensureBuffers() method; they're no longer needed.
      */
     blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
     /**
-     * Clean up GPU resources
+     * dispose() no longer needs to clean up shared buffers -- only the
+     * cached pipeline/layout resources from initResources() remain.
      */
     dispose(): void;
 }

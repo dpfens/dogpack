@@ -554,6 +554,7 @@ export class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy implements
 
       const tangents = new Float32Array(width * height * 2);
       const magnitude = new Float32Array(width * height);
+      const anisotropy = new Float32Array(width * height);
       // Slot's in-flight "read this band's staging buffer back to the
       // CPU" promise, if any. Indexed by slot (0 or 1), not by band.
       const pendingReadback: (Promise<void> | null)[] = [null, null];
@@ -750,7 +751,7 @@ export class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy implements
             await bufs.stagingBuf.mapAsync(GPUMapMode.READ);
             const mapped = new Float32Array(bufs.stagingBuf.getMappedRange(0, bandPixelCount * 4 * 4).slice(0));
             bufs.stagingBuf.unmap();
-            writeBandOutputRows(mapped, width, capturedBandStartY, capturedBandRows, halo, tangents, magnitude);
+            writeBandOutputRows(mapped, width, capturedBandStartY, capturedBandRows, halo, tangents, magnitude, anisotropy);
           })();
         }
         await Promise.all(pendingReadback.filter((p): p is Promise<void> => p !== null));
@@ -767,6 +768,7 @@ export class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy implements
       return {
         flowField: TangentFlowField.fromFloat32Array(tangents, width, height),
         magnitude: { data: magnitude, width, height },
+        anisotropy: { data: anisotropy, width, height },
       };
     });
   }
@@ -950,9 +952,9 @@ function buildChannelBandData(
 }
 
 /**
- * Crop the halo off a band's mapped (stride-4: x, y, magnitude, 1)
- * readback and write the core (stride-2: x, y) rows into the full-image
- * output buffer at the right offset.
+ * Crop the halo off a band's mapped (stride-4: x, y, magnitude,
+ * anisotropy) readback and write the core (stride-2: x, y) rows into the
+ * full-image output buffers at the right offset.
  */
 function writeBandOutputRows(
   mapped: Float32Array,
@@ -961,7 +963,8 @@ function writeBandOutputRows(
   bandRows: number,
   halo: number,
   tangentsOut: Float32Array,
-  magnitudeOut: Float32Array
+  magnitudeOut: Float32Array,
+  anisotropyOut: Float32Array
 ): void {
   for (let localY = 0; localY < bandRows; localY++) {
     const srcRowOffset = (halo + localY) * width * 4;
@@ -971,6 +974,7 @@ function writeBandOutputRows(
       tangentsOut[dstRowOffset + x * 2] = mapped[srcRowOffset + x * 4];
       tangentsOut[dstRowOffset + x * 2 + 1] = mapped[srcRowOffset + x * 4 + 1];
       magnitudeOut[dstScalarOffset + x] = mapped[srcRowOffset + x * 4 + 2];
+      anisotropyOut[dstScalarOffset + x] = mapped[srcRowOffset + x * 4 + 3];
     }
   }
 }

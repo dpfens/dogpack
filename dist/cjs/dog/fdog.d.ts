@@ -77,6 +77,12 @@ export declare class FDoG implements DoGImplementation {
      */
     setConfig(config: Partial<FDoGConfig>): void;
 }
+/** weight=1 trusts `a`, weight=0 trusts `b`. */
+export declare function blendByConfidence(a: ChannelImage, b: ChannelImage, confidence: ChannelImage): ChannelImage;
+/** Scale a base scalar by normalized magnitude. */
+export declare function scaleByMagnitude(magnitude: ChannelImage, base: number): ChannelImage;
+/** Raise a base epsilon where anisotropy/magnitude confidence is low. */
+export declare function computeEpsilonMap(anisotropy: ChannelImage, magnitude: ChannelImage, base: number, margin?: number): ChannelImage;
 /**
  * Convenience function for one-shot FDoG processing
  */

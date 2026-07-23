@@ -1,0 +1,1 @@
+{"version":3,"file":"structure-tensor.d.ts","sourceRoot":"","sources":["../../../src/map/structure-tensor.ts"],"names":[],"mappings":"AAAA;;;;;;GAMG;AAEH,OAAO,KAAK,EAAE,YAAY,EAAE,MAAM,uBAAuB,CAAC;AAE1D,MAAM,WAAW,mBAAmB;IAClC,SAAS,EAAE,YAAY,CAAC;IACxB,sFAAsF;IACtF,UAAU,EAAE,YAAY,CAAC;CAC1B;AAgDD,wBAAgB,0BAA0B,CAAC,KAAK,EAAE,YAAY,EAAE,eAAe,SAAI,GAAG,mBAAmB,CAuBxG"}

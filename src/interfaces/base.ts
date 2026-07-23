@@ -269,6 +269,7 @@ export interface ChannelTensor {
 export interface ETFDetailedResult {
   flowField: FlowField;
   magnitude: ChannelImage;
+  anisotropy: ChannelImage;
 }
 
 /**

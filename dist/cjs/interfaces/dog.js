@@ -75,7 +75,8 @@ exports.DEFAULT_FDOG_CONFIG = {
     ...exports.DEFAULT_DOG_CONFIG,
     sigmaC: exports.FDOG_PARAM_RANGES.sigmaC.default, // Structure tensor smoothing
     sigmaM: exports.FDOG_PARAM_RANGES.sigmaM.default, // Flow-aligned smoothing
-    sigmaA: exports.FDOG_PARAM_RANGES.sigmaA.default, // Anti-aliasing
+    sigmaA: exports.FDOG_PARAM_RANGES.sigmaA.default, // Anti-aliasing,
+    thresholdStrategy: new threshold_js_1.HardThresholdStrategy()
 };
 /**
  * Default ADoG configuration values

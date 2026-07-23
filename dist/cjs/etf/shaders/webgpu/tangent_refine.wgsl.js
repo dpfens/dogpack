@@ -78,7 +78,11 @@ fn main(
     }
   }
 
-  outputBuf[idx] = vec4<f32>(refined, current.z, 1.0);
+  // .z (magnitude) and .w (anisotropy) are both static per-pixel scalars
+  // derived from the blurred tensor before refinement started — refine
+  // only ever touches the tangent direction, so both are carried through
+  // unchanged across iterations.
+  outputBuf[idx] = vec4<f32>(refined, current.z, current.w);
 }`;
 exports.default = source;
 //# sourceMappingURL=tangent_refine.wgsl.js.map

@@ -181,14 +181,22 @@ interface ETFConfig {
 declare const DEFAULT_ETF_CONFIG: ETFConfig;
 /**
  * Result of a *Detailed ETF computation: the flow field plus its
- * underlying magnitude field (the structure tensor's trace), exposed as
- * an ordinary ChannelImage so it composes with the rest of the library's
+ * underlying magnitude and anisotropy fields, exposed as ordinary
+ * ChannelImages so they compose with the rest of the library's
  * scalar-field tooling — e.g. as a stroke-opacity or seed-density map via
  * the same adaptiveMap() pattern used for spatially-varying p/epsilon.
  */
 interface ETFDetailedResult {
     flowField: FlowField;
+    /** sqrt(E + G) — the structure tensor's trace. Edge confidence. */
     magnitude: ChannelImage;
+    /**
+     * (lambda1-lambda2)/(lambda1+lambda2) in [0,1], derived from the same
+     * (blurred) structure tensor as the flow field's eigenvectors. 1 =
+     * coherent line, 0 = isotropic/ambiguous (flat region, corner, or
+     * texture noise where local gradients disagree).
+     */
+    anisotropy: ChannelImage;
 }
 /**
  * Common interface implemented by every Edge Tangent Flow backend
@@ -421,6 +429,28 @@ interface FDoGConfig extends DoGConfig {
      * the final stylized lines regardless of how sigmaM/sigmaA are tuned.
      */
     etfIterations?: number;
+    /**
+     * If true and `p` is a plain number, scale it per-pixel by normalized
+     * ETF magnitude (weak-gradient pixels get less sharpening). Ignored if
+     * `p` is already a ChannelImage — an explicit map is never overridden.
+     * Only applies to process()/processDetailed() (the ETF is computed
+     * internally there). Default: false — preserves flat-`p` behavior.
+     */
+    pByMagnitude?: boolean;
+    /**
+     * If true and `epsilon` is a plain number, raise it per-pixel where
+     * anisotropy * magnitude confidence is low, suppressing spurious edges
+     * in flat/noisy regions. Ignored if `epsilon` is already a ChannelImage.
+     * Default: false.
+     */
+    epsilonByConfidence?: boolean;
+    /**
+     * If true, blend the sigmaM/sigmaA flow-aligned passes back toward
+     * their pre-blur input, weighted by anisotropy, instead of applying
+     * them uniformly. Only meaningful when the ETF's anisotropy field is
+     * available (i.e. via computeDetailed()). Default: false.
+     */
+    weightFlowPassesByAnisotropy?: boolean;
 }
 /**
  * Configuration for Adaptive Difference of Gaussians (ADoG)
@@ -1040,7 +1070,7 @@ declare class DoGProcessor {
      * @param epsilon Threshold value (typically around 0.5-0.8 for normalized images)
      * @param phi Threshold sharpness (0.01 = soft, 100 = near step function)
      */
-    private applyThreshold;
+    applyThreshold(sharpened: ChannelImage, epsilon: number | ChannelImage, phi: number | ChannelImage): ChannelImage;
 }
 /**
  * Alternative thresholding modes that can be used for different effects
@@ -1238,13 +1268,6 @@ interface WebGPUBlurConfig {
 declare class WebGPUIsotropicBlur extends BaseWebGPUStrategy implements BlurStrategy {
     private config;
     private resources;
-    private paramsBuffer;
-    private kernelBuffer;
-    private inputBuffer;
-    private tempBuffer;
-    private outputBuffer;
-    private currentBufferSize;
-    private currentKernelSize;
     constructor(config?: Partial<WebGPUBlurConfig>);
     /**
      * Confirms an adapter is actually obtainable, not just that
@@ -1256,19 +1279,20 @@ declare class WebGPUIsotropicBlur extends BaseWebGPUStrategy implements BlurStra
      */
     private initResources;
     /**
-     * Ensure buffers are sized correctly
-     */
-    private ensureBuffers;
-    /**
-     * Blur implementation - supports concurrent/parallel calls
+     * Fix for WebGPUIsotropicBlur: allocate buffers per call instead of
+     * reusing instance-level ones, so concurrent blur() calls (as issued by
+     * DoGProcessor.process()'s Promise.all([blur(sigma), blur(sigma*k)]))
+     * never share mutable GPU state. Mirrors the pattern already used by
+     * WebGPUFlowGuidedBlur and WebGPUGradientAlignedBlur.
      *
-     * CCreates a new staging buffer for each operation instead of
-     * reusing a single one, preventing "Buffer already has an outstanding
-     * map pending" errors when blur() is called in parallel.
+     * Delete the old paramsBuffer/kernelBuffer/inputBuffer/tempBuffer/
+     * outputBuffer/currentBufferSize/currentKernelSize instance fields and
+     * ensureBuffers() method; they're no longer needed.
      */
     blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
     /**
-     * Clean up GPU resources
+     * dispose() no longer needs to clean up shared buffers -- only the
+     * cached pipeline/layout resources from initResources() remain.
      */
     dispose(): void;
 }

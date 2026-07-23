@@ -627,7 +627,8 @@
         ...DEFAULT_DOG_CONFIG,
         sigmaC: FDOG_PARAM_RANGES.sigmaC.default, // Structure tensor smoothing
         sigmaM: FDOG_PARAM_RANGES.sigmaM.default, // Flow-aligned smoothing
-        sigmaA: FDOG_PARAM_RANGES.sigmaA.default, // Anti-aliasing
+        sigmaA: FDOG_PARAM_RANGES.sigmaA.default, // Anti-aliasing,
+        thresholdStrategy: new HardThresholdStrategy()
     };
     /**
      * Default ADoG configuration values
@@ -1696,14 +1697,6 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     class WebGPUIsotropicBlur extends BaseWebGPUStrategy {
         config;
         resources = null;
-        // Reusable buffers for compute operations
-        paramsBuffer = null;
-        kernelBuffer = null;
-        inputBuffer = null;
-        tempBuffer = null;
-        outputBuffer = null;
-        currentBufferSize = 0;
-        currentKernelSize = 0;
         constructor(config = {}) {
             super();
             this.config = { ...DEFAULT_WEBGPU_CONFIG$1, ...config };
@@ -1752,59 +1745,23 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                     entryPoint: 'main',
                 },
             });
-            this.resources = {
+            return {
                 device,
                 horizontalPipeline,
                 verticalPipeline,
                 bindGroupLayout,
             };
-            return this.resources;
         }
         /**
-         * Ensure buffers are sized correctly
-         */
-        ensureBuffers(device, pixelCount, kernelSize) {
-            const bufferSize = pixelCount * 4; // Float32
-            if (this.currentBufferSize < bufferSize) {
-                // Clean up old buffers
-                this.inputBuffer?.destroy();
-                this.tempBuffer?.destroy();
-                this.outputBuffer?.destroy();
-                this.inputBuffer = device.createBuffer({
-                    size: bufferSize,
-                    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-                });
-                this.tempBuffer = device.createBuffer({
-                    size: bufferSize,
-                    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-                });
-                this.outputBuffer = device.createBuffer({
-                    size: bufferSize,
-                    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-                });
-                this.currentBufferSize = bufferSize;
-            }
-            if (this.currentKernelSize < kernelSize) {
-                this.kernelBuffer?.destroy();
-                this.kernelBuffer = device.createBuffer({
-                    size: kernelSize * 4,
-                    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-                });
-                this.currentKernelSize = kernelSize;
-            }
-            if (!this.paramsBuffer) {
-                this.paramsBuffer = device.createBuffer({
-                    size: 16, // 4 x u32
-                    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-                });
-            }
-        }
-        /**
-         * Blur implementation - supports concurrent/parallel calls
+         * Fix for WebGPUIsotropicBlur: allocate buffers per call instead of
+         * reusing instance-level ones, so concurrent blur() calls (as issued by
+         * DoGProcessor.process()'s Promise.all([blur(sigma), blur(sigma*k)]))
+         * never share mutable GPU state. Mirrors the pattern already used by
+         * WebGPUFlowGuidedBlur and WebGPUGradientAlignedBlur.
          *
-         * CCreates a new staging buffer for each operation instead of
-         * reusing a single one, preventing "Buffer already has an outstanding
-         * map pending" errors when blur() is called in parallel.
+         * Delete the old paramsBuffer/kernelBuffer/inputBuffer/tempBuffer/
+         * outputBuffer/currentBufferSize/currentKernelSize instance fields and
+         * ensureBuffers() method; they're no longer needed.
          */
         async blur(input, sigma) {
             if (sigma < 0.1) {
@@ -1817,88 +1774,93 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             const { device, horizontalPipeline, verticalPipeline, bindGroupLayout } = await this.initResources();
             const { width, height } = input;
             const pixelCount = width * height;
-            // Compute kernel
+            const bufferSize = pixelCount * 4;
             const kernelSize = Math.min(this.config.maxKernelSize, Math.max(3, Math.floor(sigma * this.config.kernelSizeMultiplier) | 1));
             const kernel = generateGaussianKernel$1(sigma, kernelSize);
-            // Ensure buffers
-            this.ensureBuffers(device, pixelCount, kernelSize);
-            // Upload data
-            device.queue.writeBuffer(this.paramsBuffer, 0, new Uint32Array([width, height, kernelSize, 0]));
-            device.queue.writeBuffer(this.kernelBuffer, 0, new Float32Array(kernel));
-            device.queue.writeBuffer(this.inputBuffer, 0, new Float32Array(input.data));
-            // Create bind groups
-            const horizontalBindGroup = device.createBindGroup({
-                layout: bindGroupLayout,
-                entries: [
-                    { binding: 0, resource: { buffer: this.paramsBuffer } },
-                    { binding: 1, resource: { buffer: this.kernelBuffer } },
-                    { binding: 2, resource: { buffer: this.inputBuffer } },
-                    { binding: 3, resource: { buffer: this.tempBuffer } },
-                ],
+            // Per-call resources -- never shared with a concurrent blur() call on
+            // this same instance.
+            const paramsBuffer = device.createBuffer({
+                size: 16,
+                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
-            const verticalBindGroup = device.createBindGroup({
-                layout: bindGroupLayout,
-                entries: [
-                    { binding: 0, resource: { buffer: this.paramsBuffer } },
-                    { binding: 1, resource: { buffer: this.kernelBuffer } },
-                    { binding: 2, resource: { buffer: this.tempBuffer } },
-                    { binding: 3, resource: { buffer: this.outputBuffer } },
-                ],
+            const kernelBuffer = device.createBuffer({
+                size: kernelSize * 4,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
             });
-            // Dispatch compute
-            const workgroupsX = Math.ceil(width / 16);
-            const workgroupsY = Math.ceil(height / 16);
-            const commandEncoder = device.createCommandEncoder();
-            const horizontalPass = commandEncoder.beginComputePass();
-            horizontalPass.setPipeline(horizontalPipeline);
-            horizontalPass.setBindGroup(0, horizontalBindGroup);
-            horizontalPass.dispatchWorkgroups(workgroupsX, workgroupsY);
-            horizontalPass.end();
-            const verticalPass = commandEncoder.beginComputePass();
-            verticalPass.setPipeline(verticalPipeline);
-            verticalPass.setBindGroup(0, verticalBindGroup);
-            verticalPass.dispatchWorkgroups(workgroupsX, workgroupsY);
-            verticalPass.end();
-            // FIX: Create a NEW staging buffer for this operation instead of reusing one.
-            // This prevents concurrent map() calls from conflicting.
+            const inputBuffer = device.createBuffer({
+                size: bufferSize,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+            });
+            const tempBuffer = device.createBuffer({
+                size: bufferSize,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+            });
+            const outputBuffer = device.createBuffer({
+                size: bufferSize,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+            });
             const stagingBuffer = device.createBuffer({
-                size: pixelCount * 4,
+                size: bufferSize,
                 usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
             });
-            // Copy result to the new staging buffer
-            commandEncoder.copyBufferToBuffer(this.outputBuffer, 0, stagingBuffer, 0, pixelCount * 4);
-            device.queue.submit([commandEncoder.finish()]);
-            // Read back result - safe because this stagingBuffer is unique to this call
-            await stagingBuffer.mapAsync(GPUMapMode.READ);
-            const resultData = new Float32Array(stagingBuffer.getMappedRange().slice(0));
-            stagingBuffer.unmap();
-            // Clean up the staging buffer (it was created just for this operation)
-            stagingBuffer.destroy();
-            return {
-                data: resultData,
-                width,
-                height,
-            };
+            try {
+                device.queue.writeBuffer(paramsBuffer, 0, new Uint32Array([width, height, kernelSize, 0]));
+                device.queue.writeBuffer(kernelBuffer, 0, new Float32Array(kernel));
+                device.queue.writeBuffer(inputBuffer, 0, new Float32Array(input.data));
+                const horizontalBindGroup = device.createBindGroup({
+                    layout: bindGroupLayout,
+                    entries: [
+                        { binding: 0, resource: { buffer: paramsBuffer } },
+                        { binding: 1, resource: { buffer: kernelBuffer } },
+                        { binding: 2, resource: { buffer: inputBuffer } },
+                        { binding: 3, resource: { buffer: tempBuffer } },
+                    ],
+                });
+                const verticalBindGroup = device.createBindGroup({
+                    layout: bindGroupLayout,
+                    entries: [
+                        { binding: 0, resource: { buffer: paramsBuffer } },
+                        { binding: 1, resource: { buffer: kernelBuffer } },
+                        { binding: 2, resource: { buffer: tempBuffer } },
+                        { binding: 3, resource: { buffer: outputBuffer } },
+                    ],
+                });
+                const workgroupsX = Math.ceil(width / 16);
+                const workgroupsY = Math.ceil(height / 16);
+                const commandEncoder = device.createCommandEncoder();
+                const horizontalPass = commandEncoder.beginComputePass();
+                horizontalPass.setPipeline(horizontalPipeline);
+                horizontalPass.setBindGroup(0, horizontalBindGroup);
+                horizontalPass.dispatchWorkgroups(workgroupsX, workgroupsY);
+                horizontalPass.end();
+                const verticalPass = commandEncoder.beginComputePass();
+                verticalPass.setPipeline(verticalPipeline);
+                verticalPass.setBindGroup(0, verticalBindGroup);
+                verticalPass.dispatchWorkgroups(workgroupsX, workgroupsY);
+                verticalPass.end();
+                commandEncoder.copyBufferToBuffer(outputBuffer, 0, stagingBuffer, 0, bufferSize);
+                device.queue.submit([commandEncoder.finish()]);
+                await stagingBuffer.mapAsync(GPUMapMode.READ);
+                const resultData = new Float32Array(stagingBuffer.getMappedRange().slice(0));
+                stagingBuffer.unmap();
+                return { data: resultData, width, height };
+            }
+            finally {
+                // Always release per-call resources, even if a pass or readback
+                // throws, so concurrent/repeated calls don't leak GPU memory.
+                paramsBuffer.destroy();
+                kernelBuffer.destroy();
+                inputBuffer.destroy();
+                tempBuffer.destroy();
+                outputBuffer.destroy();
+                stagingBuffer.destroy();
+            }
         }
         /**
-         * Clean up GPU resources
+         * dispose() no longer needs to clean up shared buffers -- only the
+         * cached pipeline/layout resources from initResources() remain.
          */
-        dispose() {
-            this.paramsBuffer?.destroy();
-            this.kernelBuffer?.destroy();
-            this.inputBuffer?.destroy();
-            this.tempBuffer?.destroy();
-            this.outputBuffer?.destroy();
-            this.paramsBuffer = null;
-            this.kernelBuffer = null;
-            this.inputBuffer = null;
-            this.tempBuffer = null;
-            this.outputBuffer = null;
-            this.currentBufferSize = 0;
-            this.currentKernelSize = 0;
-            // Note: We don't destroy the device as it's shared
-            this.resources = null;
-        }
+        dispose() { }
     }
     /**
      * Backend-agnostic isotropic blur. Picks the best backend this device
@@ -2560,8 +2522,14 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     tangent = tangent / len;
   }
 
-  // R=tx, G=ty, B=magnitude (for refinement weighting)
-  outputBuf[idx] = vec4<f32>(tangent, mag, 1.0);
+  // Anisotropy: (lambda1-lambda2)/(lambda1+lambda2) = disc/trace. \`disc\`
+  // is already computed above for the eigenvector; trace = e+g.
+  let trace = e + g;
+  let anisotropy = select(0.0, disc / trace, trace > 1e-8);
+
+  // R=tx, G=ty, B=magnitude (for refinement weighting), A=anisotropy
+  // (carried through tangent_refine unchanged, same as magnitude).
+  outputBuf[idx] = vec4<f32>(tangent, mag, anisotropy);
 }`;
 
     // AUTO-GENERATED FILE — DO NOT EDIT.
@@ -2642,7 +2610,11 @@ fn main(
     }
   }
 
-  outputBuf[idx] = vec4<f32>(refined, current.z, 1.0);
+  // .z (magnitude) and .w (anisotropy) are both static per-pixel scalars
+  // derived from the blurred tensor before refinement started — refine
+  // only ever touches the tangent direction, so both are carried through
+  // unchanged across iterations.
+  outputBuf[idx] = vec4<f32>(refined, current.z, current.w);
 }`;
 
     /**
@@ -3061,6 +3033,7 @@ fn main(
                 const channelScratch = [0, 1].map(() => inputs.map(() => new Float32Array(width * maxBandBufHeight)));
                 const tangents = new Float32Array(width * height * 2);
                 const magnitude = new Float32Array(width * height);
+                const anisotropy = new Float32Array(width * height);
                 // Slot's in-flight "read this band's staging buffer back to the
                 // CPU" promise, if any. Indexed by slot (0 or 1), not by band.
                 const pendingReadback = [null, null];
@@ -3240,7 +3213,7 @@ fn main(
                             await bufs.stagingBuf.mapAsync(GPUMapMode.READ);
                             const mapped = new Float32Array(bufs.stagingBuf.getMappedRange(0, bandPixelCount * 4 * 4).slice(0));
                             bufs.stagingBuf.unmap();
-                            writeBandOutputRows(mapped, width, capturedBandStartY, capturedBandRows, halo, tangents, magnitude);
+                            writeBandOutputRows(mapped, width, capturedBandStartY, capturedBandRows, halo, tangents, magnitude, anisotropy);
                         })();
                     }
                     await Promise.all(pendingReadback.filter((p) => p !== null));
@@ -3257,6 +3230,7 @@ fn main(
                 return {
                     flowField: TangentFlowField.fromFloat32Array(tangents, width, height),
                     magnitude: { data: magnitude, width, height },
+                    anisotropy: { data: anisotropy, width, height },
                 };
             });
         }
@@ -3388,11 +3362,11 @@ fn main(
         }
     }
     /**
-     * Crop the halo off a band's mapped (stride-4: x, y, magnitude, 1)
-     * readback and write the core (stride-2: x, y) rows into the full-image
-     * output buffer at the right offset.
+     * Crop the halo off a band's mapped (stride-4: x, y, magnitude,
+     * anisotropy) readback and write the core (stride-2: x, y) rows into the
+     * full-image output buffers at the right offset.
      */
-    function writeBandOutputRows(mapped, width, bandStartY, bandRows, halo, tangentsOut, magnitudeOut) {
+    function writeBandOutputRows(mapped, width, bandStartY, bandRows, halo, tangentsOut, magnitudeOut, anisotropyOut) {
         for (let localY = 0; localY < bandRows; localY++) {
             const srcRowOffset = (halo + localY) * width * 4;
             const dstRowOffset = (bandStartY + localY) * width * 2;
@@ -3401,6 +3375,7 @@ fn main(
                 tangentsOut[dstRowOffset + x * 2] = mapped[srcRowOffset + x * 4];
                 tangentsOut[dstRowOffset + x * 2 + 1] = mapped[srcRowOffset + x * 4 + 1];
                 magnitudeOut[dstScalarOffset + x] = mapped[srcRowOffset + x * 4 + 2];
+                anisotropyOut[dstScalarOffset + x] = mapped[srcRowOffset + x * 4 + 3];
             }
         }
     }
@@ -3589,9 +3564,15 @@ void main() {
   if (len > 1e-10) {
     tangent /= len;
   }
-  
-  // Output: R=tx, G=ty, B=magnitude (for refinement weighting)
-  fragColor = vec4(tangent, mag, 1.0);
+
+  // Anisotropy: (lambda1-lambda2)/(lambda1+lambda2) = disc/trace. \`disc\`
+  // is already computed above for the eigenvector; trace = e+g.
+  float trace = e + g;
+  float anisotropy = trace > 1e-8 ? disc / trace : 0.0;
+
+  // Output: R=tx, G=ty, B=magnitude (for refinement weighting),
+  // A=anisotropy (carried through tangent_refine unchanged, same as magnitude).
+  fragColor = vec4(tangent, mag, anisotropy);
 }`;
 
     // AUTO-GENERATED FILE — DO NOT EDIT.
@@ -3647,7 +3628,11 @@ void main() {
     }
   }
   
-  fragColor = vec4(refined, current.b, 1.0);
+  // .b (magnitude) and .a (anisotropy) are both static per-pixel scalars
+  // derived from the blurred tensor before refinement started — refine
+  // only ever touches the tangent direction, so both are carried through
+  // unchanged across iterations.
+  fragColor = vec4(refined, current.b, current.a);
 }`;
 
     // AUTO-GENERATED FILE — DO NOT EDIT.
@@ -3840,9 +3825,11 @@ void main() {
                 gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, pixels);
                 const tangents = new Array(width * height);
                 const magnitude = new Float32Array(width * height);
+                const anisotropy = new Float32Array(width * height);
                 for (let i = 0; i < width * height; i++) {
                     tangents[i] = { x: pixels[i * 4], y: pixels[i * 4 + 1] };
                     magnitude[i] = pixels[i * 4 + 2];
+                    anisotropy[i] = pixels[i * 4 + 3];
                 }
                 // Cleanup temporary resources (channel textures already freed above)
                 deleteFramebuffer(gl, gradientFB);
@@ -3855,6 +3842,7 @@ void main() {
                 return {
                     flowField: TangentFlowField.fromVec2Array(tangents, width, height),
                     magnitude: { data: magnitude, width, height },
+                    anisotropy: { data: anisotropy, width, height },
                 };
             });
         }
@@ -4076,10 +4064,37 @@ void main() {
         for (let i = 0; i < cfg.iterations; i++) {
             tangents = refineTangentField(tangents, channelTensor.magnitude, width, height);
         }
+        // Derived from the same (blurred) tensor extractTangentField() used for
+        // its eigenvectors, so it lines up with the flow field refine() starts
+        // from — not recomputed post-refine, since refine only perturbs
+        // direction, not the tensor anisotropy reflects.
+        const anisotropy = tensorAnisotropy(smoothedTensor, width * height);
         return {
             flowField: TangentFlowField.fromVec2Array(tangents, width, height),
             magnitude: { data: channelTensor.magnitude, width, height },
+            anisotropy: { data: anisotropy, width, height },
         };
+    }
+    /**
+     * (lambda1-lambda2)/(lambda1+lambda2) in [0,1]. 1 = coherent line
+     * direction, 0 = isotropic (flat region, corner, or texture noise where
+     * local gradients disagree). Mirrors tensorMagnitude() in composing
+     * correctly whether `tensor` came from one channel or a Di
+     * Zenzo-summed multi-channel combination.
+     */
+    function tensorAnisotropy(tensor, size) {
+        const anisotropy = new Float32Array(size);
+        for (let i = 0; i < size; i++) {
+            const e = tensor.e[i];
+            const f = tensor.f[i];
+            const g = tensor.g[i];
+            const trace = e + g;
+            if (trace > 1e-8) {
+                const diff = e - g;
+                anisotropy[i] = Math.sqrt(diff * diff + 4 * f * f) / trace;
+            }
+        }
+        return anisotropy;
     }
     /**
      * Compute a channel's structure tensor and its trace-derived magnitude
@@ -6328,25 +6343,36 @@ struct Params {
          */
         async process(input, overrides = {}) {
             const params = { ...this.config, ...overrides };
-            // Step 1: Compute Edge Tangent Flow
             const etfComputer = await EdgeTangentFlowComputer.create();
-            const etf = await etfComputer.compute(input, {
+            const { flowField, magnitude, anisotropy } = await etfComputer.computeDetailed(input, {
                 iterations: params.etfIterations ?? DEFAULT_ETF_CONFIG.iterations,
                 kernelSize: Math.ceil(params.sigmaC * 2.45) * 2 + 1,
             }, params.sigmaC);
-            const gradientBlur = await GradientAlignedBlur.create(etf);
-            const processor = new DoGProcessor(gradientBlur, params);
-            // Step 4: Process image (DoG + threshold)
-            let result = await processor.process(input);
-            processor.dispose();
-            const flowBlur = await FlowGuidedBlur.create(etf);
-            // Step 5: Flow-aligned smoothing
+            const gradientBlur = await GradientAlignedBlur.create(flowField);
+            // Only derive an adaptive p map if the developer opted in AND didn't
+            // already hand us their own ChannelImage.
+            const p = params.pByMagnitude && typeof params.p === 'number'
+                ? scaleByMagnitude(magnitude, params.p)
+                : params.p;
+            const processor = new DoGProcessor(gradientBlur, { ...params, p });
+            let sharpened = await processor.processNoThreshold(input);
+            const flowBlur = await FlowGuidedBlur.create(flowField);
             if (params.sigmaM > 0) {
-                result = await flowBlur.blur(result, params.sigmaM);
+                const flowSmoothed = await flowBlur.blur(sharpened, params.sigmaM);
+                sharpened = params.weightFlowPassesByAnisotropy
+                    ? blendByConfidence(flowSmoothed, sharpened, anisotropy)
+                    : flowSmoothed;
             }
-            // Step 6: Anti-aliasing
+            const epsilon = params.epsilonByConfidence && typeof params.epsilon === 'number'
+                ? computeEpsilonMap(anisotropy, magnitude, params.epsilon)
+                : params.epsilon;
+            let result = processor.applyThreshold(sharpened, epsilon, params.phi);
+            processor.dispose();
             if (params.sigmaA > 0) {
-                result = await flowBlur.blur(result, params.sigmaA);
+                const aa = await flowBlur.blur(result, params.sigmaA);
+                result = params.weightFlowPassesByAnisotropy
+                    ? blendByConfidence(aa, result, anisotropy)
+                    : aa;
             }
             flowBlur.dispose();
             etfComputer.dispose();
@@ -6366,27 +6392,29 @@ struct Params {
             // Create blur strategies
             const gradientBlur = await GradientAlignedBlur.create(etf);
             const processor = new DoGProcessor(gradientBlur, params);
-            // Get intermediate results
-            const [sharpened, thresholded] = await Promise.all([
-                processor.processNoThreshold(input),
-                processor.process(input)
-            ]);
+            // Continuous (pre-threshold, pre-accumulation) DoG response.
+            const rawSharpened = await processor.processNoThreshold(input);
+            const flowBlur = await FlowGuidedBlur.create(etf);
+            // Sec. 2.6: sigma_m flow-aligned accumulation is part of the FDoG
+            // operator itself and must happen on the continuous response, before
+            // thresholding.
+            const sharpened = params.sigmaM > 0
+                ? await flowBlur.blur(rawSharpened, params.sigmaM)
+                : rawSharpened;
+            // Threshold once -- this is the paper's "two tone result" (Fig. 6/7b),
+            // computed from the sigma_m-accumulated continuous signal.
+            const thresholded = processor.applyThreshold(sharpened, params.epsilon, params.phi);
             processor.dispose();
-            // Flow-aligned smoothing
-            let smoothed = thresholded;
-            if (params.sigmaM > 0) {
-                const flowBlur = await FlowGuidedBlur.create(etf);
-                smoothed = await flowBlur.blur(thresholded, params.sigmaM);
-                flowBlur.dispose();
-            }
-            // Anti-aliasing
-            let result = smoothed;
-            if (params.sigmaA > 0) {
-                const aaBlur = await FlowGuidedBlur.create(etf);
-                result = await aaBlur.blur(smoothed, params.sigmaA);
-                aaBlur.dispose();
-            }
+            // Sec. 4.3: sigma_a anti-aliasing is a separate POST-threshold pass --
+            // a small LIC along the ETF applied to the binary/two-tone image to
+            // soften its step-function edges. Not another round of pre-threshold
+            // smoothing.
+            const smoothed = params.sigmaA > 0
+                ? await flowBlur.blur(thresholded, params.sigmaA)
+                : thresholded;
+            flowBlur.dispose();
             etfComputer.dispose();
+            const result = smoothed;
             return { result, etf, sharpened, thresholded, smoothed };
         }
         /**
@@ -6407,13 +6435,17 @@ struct Params {
             const params = { ...this.config, ...overrides };
             const gradientBlur = await GradientAlignedBlur.create(etf);
             const processor = new DoGProcessor(gradientBlur, params);
-            let result = await processor.process(input);
-            processor.dispose();
+            // Continuous response -- do not threshold yet.
+            let sharpened = await processor.processNoThreshold(input);
+            // Sec. 2.6: pre-threshold flow accumulation.
             if (params.sigmaM > 0) {
                 const flowBlur = await FlowGuidedBlur.create(etf);
-                result = await flowBlur.blur(result, params.sigmaM);
+                sharpened = await flowBlur.blur(sharpened, params.sigmaM);
                 flowBlur.dispose();
             }
+            let result = processor.applyThreshold(sharpened, params.epsilon, params.phi);
+            processor.dispose();
+            // Sec. 4.3: post-threshold anti-aliasing pass.
             if (params.sigmaA > 0) {
                 const aaBlur = await FlowGuidedBlur.create(etf);
                 result = await aaBlur.blur(result, params.sigmaA);
@@ -6446,6 +6478,40 @@ struct Params {
         setConfig(config) {
             this.config = { ...this.config, ...config };
         }
+    }
+    /** weight=1 trusts `a`, weight=0 trusts `b`. */
+    function blendByConfidence(a, b, confidence) {
+        const out = createChannelImage(a.width, a.height);
+        const size = a.width * a.height;
+        for (let i = 0; i < size; i++) {
+            const w = confidence.data[i];
+            out.data[i] = w * a.data[i] + (1 - w) * b.data[i];
+        }
+        return out;
+    }
+    /** Scale a base scalar by normalized magnitude. */
+    function scaleByMagnitude(magnitude, base) {
+        const out = createChannelImage(magnitude.width, magnitude.height);
+        const size = magnitude.width * magnitude.height;
+        let maxMag = 1e-6;
+        for (let i = 0; i < size; i++)
+            maxMag = Math.max(maxMag, magnitude.data[i]);
+        for (let i = 0; i < size; i++)
+            out.data[i] = base * (magnitude.data[i] / maxMag);
+        return out;
+    }
+    /** Raise a base epsilon where anisotropy/magnitude confidence is low. */
+    function computeEpsilonMap(anisotropy, magnitude, base, margin = 0.15) {
+        const out = createChannelImage(anisotropy.width, anisotropy.height);
+        const size = anisotropy.width * anisotropy.height;
+        let maxMag = 1e-6;
+        for (let i = 0; i < size; i++)
+            maxMag = Math.max(maxMag, magnitude.data[i]);
+        for (let i = 0; i < size; i++) {
+            const confidence = anisotropy.data[i] * (magnitude.data[i] / maxMag);
+            out.data[i] = base + (1 - confidence) * margin;
+        }
+        return out;
     }
     /**
      * Convenience function for one-shot FDoG processing

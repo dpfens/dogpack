@@ -228,9 +228,11 @@ export class WebGLEdgeTangentFlowComputer extends BaseWebGLStrategy implements E
 
       const tangents: Vec2[] = new Array(width * height);
       const magnitude = new Float32Array(width * height);
+      const anisotropy = new Float32Array(width * height);
       for (let i = 0; i < width * height; i++) {
         tangents[i] = { x: pixels[i * 4], y: pixels[i * 4 + 1] };
         magnitude[i] = pixels[i * 4 + 2];
+        anisotropy[i] = pixels[i * 4 + 3];
       }
 
       // Cleanup temporary resources (channel textures already freed above)
@@ -246,6 +248,7 @@ export class WebGLEdgeTangentFlowComputer extends BaseWebGLStrategy implements E
       return {
         flowField: TangentFlowField.fromVec2Array(tangents, width, height),
         magnitude: { data: magnitude, width, height },
+        anisotropy: { data: anisotropy, width, height },
       };
     });
   }

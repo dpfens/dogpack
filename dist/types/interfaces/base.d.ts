@@ -218,14 +218,22 @@ export interface ChannelTensor {
 }
 /**
  * Result of a *Detailed ETF computation: the flow field plus its
- * underlying magnitude field (the structure tensor's trace), exposed as
- * an ordinary ChannelImage so it composes with the rest of the library's
+ * underlying magnitude and anisotropy fields, exposed as ordinary
+ * ChannelImages so they compose with the rest of the library's
  * scalar-field tooling — e.g. as a stroke-opacity or seed-density map via
  * the same adaptiveMap() pattern used for spatially-varying p/epsilon.
  */
 export interface ETFDetailedResult {
     flowField: FlowField;
+    /** sqrt(E + G) — the structure tensor's trace. Edge confidence. */
     magnitude: ChannelImage;
+    /**
+     * (lambda1-lambda2)/(lambda1+lambda2) in [0,1], derived from the same
+     * (blurred) structure tensor as the flow field's eigenvectors. 1 =
+     * coherent line, 0 = isotropic/ambiguous (flat region, corner, or
+     * texture noise where local gradients disagree).
+     */
+    anisotropy: ChannelImage;
 }
 /**
  * Common interface implemented by every Edge Tangent Flow backend

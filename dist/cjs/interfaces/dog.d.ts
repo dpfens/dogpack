@@ -125,6 +125,28 @@ export interface FDoGConfig extends DoGConfig {
      * the final stylized lines regardless of how sigmaM/sigmaA are tuned.
      */
     etfIterations?: number;
+    /**
+     * If true and `p` is a plain number, scale it per-pixel by normalized
+     * ETF magnitude (weak-gradient pixels get less sharpening). Ignored if
+     * `p` is already a ChannelImage — an explicit map is never overridden.
+     * Only applies to process()/processDetailed() (the ETF is computed
+     * internally there). Default: false — preserves flat-`p` behavior.
+     */
+    pByMagnitude?: boolean;
+    /**
+     * If true and `epsilon` is a plain number, raise it per-pixel where
+     * anisotropy * magnitude confidence is low, suppressing spurious edges
+     * in flat/noisy regions. Ignored if `epsilon` is already a ChannelImage.
+     * Default: false.
+     */
+    epsilonByConfidence?: boolean;
+    /**
+     * If true, blend the sigmaM/sigmaA flow-aligned passes back toward
+     * their pre-blur input, weighted by anisotropy, instead of applying
+     * them uniformly. Only meaningful when the ETF's anisotropy field is
+     * available (i.e. via computeDetailed()). Default: false.
+     */
+    weightFlowPassesByAnisotropy?: boolean;
 }
 /**
  * Configuration for Adaptive Difference of Gaussians (ADoG)

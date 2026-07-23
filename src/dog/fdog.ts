@@ -15,7 +15,7 @@ import {
 } from '../interfaces/base.js';
 import { DoGProcessor } from '../processor.js';
 import { EdgeTangentFlowComputer } from '../etf/index.js';
-import { imageDataToLuminance, luminanceToImageData } from '../utils/index.js';
+import { createChannelImage, imageDataToLuminance, luminanceToImageData } from '../utils/index.js';
 import { GradientAlignedBlur } from '../blur/gradient-aligned/index.js';
 import { FlowGuidedBlur } from '../blur/flow-guided.js';
 import { DEFAULT_FDOG_CONFIG, FDOG_STYLE_PRESETS, type DoGImplementation, type FDoGConfig } from '../interfaces/dog.js';
@@ -68,46 +68,48 @@ export class FDoG implements DoGImplementation {
   async process(input: ChannelImage, overrides: Partial<FDoGConfig> = {}): Promise<ChannelImage> {
     const params = { ...this.config, ...overrides };
 
-    // Step 1: Compute Edge Tangent Flow
     const etfComputer = await EdgeTangentFlowComputer.create();
-    const etf = await etfComputer.compute(input, {
+    const { flowField, magnitude, anisotropy } = await etfComputer.computeDetailed(input, {
       iterations: params.etfIterations ?? DEFAULT_ETF_CONFIG.iterations,
       kernelSize: Math.ceil(params.sigmaC * 2.45) * 2 + 1,
     }, params.sigmaC);
 
-    const gradientBlur = await GradientAlignedBlur.create(etf);
-    const processor = new DoGProcessor(gradientBlur, params);
+    const gradientBlur = await GradientAlignedBlur.create(flowField);
 
-    // Step 4: Get the continuous (pre-threshold) DoG response.
+    // Only derive an adaptive p map if the developer opted in AND didn't
+    // already hand us their own ChannelImage.
+    const p = params.pByMagnitude && typeof params.p === 'number'
+      ? scaleByMagnitude(magnitude, params.p)
+      : params.p;
+
+    const processor = new DoGProcessor(gradientBlur, { ...params, p });
     let sharpened = await processor.processNoThreshold(input);
 
-    const flowBlur = await FlowGuidedBlur.create(etf);
+    const flowBlur = await FlowGuidedBlur.create(flowField);
 
-    // Step 5: Flow-aligned smoothing (Sec. 2.6's sigma_m -- part of the
-    // FDoG operator itself, replacing plain isotropic sigma). This MUST
-    // stay pre-threshold: it's accumulating the continuous oriented-DoG
-    // response along the tangent axis, not smoothing a binary result.
     if (params.sigmaM > 0) {
-      sharpened = await flowBlur.blur(sharpened, params.sigmaM);
+      const flowSmoothed = await flowBlur.blur(sharpened, params.sigmaM);
+      sharpened = params.weightFlowPassesByAnisotropy
+        ? blendByConfidence(flowSmoothed, sharpened, anisotropy)
+        : flowSmoothed;
     }
 
-    // Step 6: Threshold exactly once here -- this produces the two-tone
-    // result (Fig. 6/7b in the XDoG paper).
-    let result = processor.applyThreshold(sharpened, params.epsilon, params.phi);
+    const epsilon = params.epsilonByConfidence && typeof params.epsilon === 'number'
+      ? computeEpsilonMap(anisotropy, magnitude, params.epsilon)
+      : params.epsilon;
+
+    let result = processor.applyThreshold(sharpened, epsilon, params.phi);
     processor.dispose();
 
-    // Step 7: Anti-aliasing (Sec. 4.3) is a SEPARATE, POST-threshold pass:
-    // a small LIC along the ETF applied to the already-thresholded/binary
-    // image, to soften its step-function edges. Per the paper, sigma_a is
-    // typically tiny (0.5-2px) -- this is not a second round of pre-threshold
-    // smoothing, and must not be merged with the sigma_m step above.
     if (params.sigmaA > 0) {
-      result = await flowBlur.blur(result, params.sigmaA);
+      const aa = await flowBlur.blur(result, params.sigmaA);
+      result = params.weightFlowPassesByAnisotropy
+        ? blendByConfidence(aa, result, anisotropy)
+        : aa;
     }
 
     flowBlur.dispose();
     etfComputer.dispose();
-
     return result;
   }
   
@@ -249,6 +251,46 @@ export class FDoG implements DoGImplementation {
   setConfig(config: Partial<FDoGConfig>): void {
     this.config = { ...this.config, ...config };
   }
+}
+
+
+/** weight=1 trusts `a`, weight=0 trusts `b`. */
+export function blendByConfidence(a: ChannelImage, b: ChannelImage, confidence: ChannelImage): ChannelImage {
+  const out = createChannelImage(a.width, a.height);
+  const size = a.width * a.height;
+  for (let i = 0; i < size; i++) {
+    const w = confidence.data[i];
+    out.data[i] = w * a.data[i] + (1 - w) * b.data[i];
+  }
+  return out;
+}
+
+/** Scale a base scalar by normalized magnitude. */
+export function scaleByMagnitude(magnitude: ChannelImage, base: number): ChannelImage {
+  const out = createChannelImage(magnitude.width, magnitude.height);
+  const size = magnitude.width * magnitude.height;
+  let maxMag = 1e-6;
+  for (let i = 0; i < size; i++) maxMag = Math.max(maxMag, magnitude.data[i]);
+  for (let i = 0; i < size; i++) out.data[i] = base * (magnitude.data[i] / maxMag);
+  return out;
+}
+
+/** Raise a base epsilon where anisotropy/magnitude confidence is low. */
+export function computeEpsilonMap(
+  anisotropy: ChannelImage,
+  magnitude: ChannelImage,
+  base: number,
+  margin = 0.15
+): ChannelImage {
+  const out = createChannelImage(anisotropy.width, anisotropy.height);
+  const size = anisotropy.width * anisotropy.height;
+  let maxMag = 1e-6;
+  for (let i = 0; i < size; i++) maxMag = Math.max(maxMag, magnitude.data[i]);
+  for (let i = 0; i < size; i++) {
+    const confidence = anisotropy.data[i] * (magnitude.data[i] / maxMag);
+    out.data[i] = base + (1 - confidence) * margin;
+  }
+  return out;
 }
 
 

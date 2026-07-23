@@ -51,7 +51,11 @@ void main() {
     }
   }
   
-  fragColor = vec4(refined, current.b, 1.0);
+  // .b (magnitude) and .a (anisotropy) are both static per-pixel scalars
+  // derived from the blurred tensor before refinement started — refine
+  // only ever touches the tangent direction, so both are carried through
+  // unchanged across iterations.
+  fragColor = vec4(refined, current.b, current.a);
 }`;
 export default source;
 //# sourceMappingURL=tangent_refine.glsl.js.map

@@ -40,8 +40,14 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     tangent = tangent / len;
   }
 
-  // R=tx, G=ty, B=magnitude (for refinement weighting)
-  outputBuf[idx] = vec4<f32>(tangent, mag, 1.0);
+  // Anisotropy: (lambda1-lambda2)/(lambda1+lambda2) = disc/trace. \`disc\`
+  // is already computed above for the eigenvector; trace = e+g.
+  let trace = e + g;
+  let anisotropy = select(0.0, disc / trace, trace > 1e-8);
+
+  // R=tx, G=ty, B=magnitude (for refinement weighting), A=anisotropy
+  // (carried through tangent_refine unchanged, same as magnitude).
+  outputBuf[idx] = vec4<f32>(tangent, mag, anisotropy);
 }`;
 export default source;
 //# sourceMappingURL=tangent_extract.wgsl.js.map

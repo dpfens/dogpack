@@ -33,7 +33,13 @@ void main() {
   if (len > 1e-10) {
     tangent /= len;
   }
-  
-  // Output: R=tx, G=ty, B=magnitude (for refinement weighting)
-  fragColor = vec4(tangent, mag, 1.0);
+
+  // Anisotropy: (lambda1-lambda2)/(lambda1+lambda2) = disc/trace. `disc`
+  // is already computed above for the eigenvector; trace = e+g.
+  float trace = e + g;
+  float anisotropy = trace > 1e-8 ? disc / trace : 0.0;
+
+  // Output: R=tx, G=ty, B=magnitude (for refinement weighting),
+  // A=anisotropy (carried through tangent_refine unchanged, same as magnitude).
+  fragColor = vec4(tangent, mag, anisotropy);
 }
