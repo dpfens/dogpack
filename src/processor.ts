@@ -212,7 +212,7 @@ export class DoGProcessor {
    * @param epsilon Threshold value (typically around 0.5-0.8 for normalized images)
    * @param phi Threshold sharpness (0.01 = soft, 100 = near step function)
    */
-  private applyThreshold(
+  applyThreshold(
     sharpened: ChannelImage,
     epsilon: number | ChannelImage,
     phi: number | ChannelImage
