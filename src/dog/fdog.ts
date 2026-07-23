@@ -78,18 +78,29 @@ export class FDoG implements DoGImplementation {
     const gradientBlur = await GradientAlignedBlur.create(etf);
     const processor = new DoGProcessor(gradientBlur, params);
 
-    // Step 4: Process image (DoG + threshold)
-    let result = await processor.process(input);
-    processor.dispose();
+    // Step 4: Get the continuous (pre-threshold) DoG response.
+    let sharpened = await processor.processNoThreshold(input);
 
     const flowBlur = await FlowGuidedBlur.create(etf);
 
-    // Step 5: Flow-aligned smoothing
+    // Step 5: Flow-aligned smoothing (Sec. 2.6's sigma_m -- part of the
+    // FDoG operator itself, replacing plain isotropic sigma). This MUST
+    // stay pre-threshold: it's accumulating the continuous oriented-DoG
+    // response along the tangent axis, not smoothing a binary result.
     if (params.sigmaM > 0) {
-      result = await flowBlur.blur(result, params.sigmaM);
+      sharpened = await flowBlur.blur(sharpened, params.sigmaM);
     }
 
-    // Step 6: Anti-aliasing
+    // Step 6: Threshold exactly once here -- this produces the two-tone
+    // result (Fig. 6/7b in the XDoG paper).
+    let result = processor.applyThreshold(sharpened, params.epsilon, params.phi);
+    processor.dispose();
+
+    // Step 7: Anti-aliasing (Sec. 4.3) is a SEPARATE, POST-threshold pass:
+    // a small LIC along the ETF applied to the already-thresholded/binary
+    // image, to soften its step-function edges. Per the paper, sigma_a is
+    // typically tiny (0.5-2px) -- this is not a second round of pre-threshold
+    // smoothing, and must not be merged with the sigma_m step above.
     if (params.sigmaA > 0) {
       result = await flowBlur.blur(result, params.sigmaA);
     }
@@ -126,29 +137,35 @@ export class FDoG implements DoGImplementation {
     const gradientBlur = await GradientAlignedBlur.create(etf);
     const processor = new DoGProcessor(gradientBlur, params);
     
-    // Get intermediate results
-    const [sharpened, thresholded] = await Promise.all([
-      processor.processNoThreshold(input),
-      processor.process(input)
-    ]);
+    // Continuous (pre-threshold, pre-accumulation) DoG response.
+    const rawSharpened = await processor.processNoThreshold(input);
+
+    const flowBlur = await FlowGuidedBlur.create(etf);
+
+    // Sec. 2.6: sigma_m flow-aligned accumulation is part of the FDoG
+    // operator itself and must happen on the continuous response, before
+    // thresholding.
+    const sharpened = params.sigmaM > 0
+      ? await flowBlur.blur(rawSharpened, params.sigmaM)
+      : rawSharpened;
+
+    // Threshold once -- this is the paper's "two tone result" (Fig. 6/7b),
+    // computed from the sigma_m-accumulated continuous signal.
+    const thresholded = processor.applyThreshold(sharpened, params.epsilon, params.phi);
     processor.dispose();
-    
-    // Flow-aligned smoothing
-    let smoothed = thresholded;
-    if (params.sigmaM > 0) {
-      const flowBlur = await FlowGuidedBlur.create(etf);
-      smoothed = await flowBlur.blur(thresholded, params.sigmaM);
-      flowBlur.dispose()
-    }
-    
-    // Anti-aliasing
-    let result = smoothed;
-    if (params.sigmaA > 0) {
-      const aaBlur = await FlowGuidedBlur.create(etf);
-      result = await aaBlur.blur(smoothed, params.sigmaA);
-      aaBlur.dispose();
-    }
+
+    // Sec. 4.3: sigma_a anti-aliasing is a separate POST-threshold pass --
+    // a small LIC along the ETF applied to the binary/two-tone image to
+    // soften its step-function edges. Not another round of pre-threshold
+    // smoothing.
+    const smoothed = params.sigmaA > 0
+      ? await flowBlur.blur(thresholded, params.sigmaA)
+      : thresholded;
+
+    flowBlur.dispose();
     etfComputer.dispose();
+
+    const result = smoothed;
     return { result, etf, sharpened, thresholded, smoothed };
   }
   
@@ -177,21 +194,26 @@ export class FDoG implements DoGImplementation {
     const gradientBlur = await GradientAlignedBlur.create(etf);
     const processor = new DoGProcessor(gradientBlur, params);
     
-    let result = await processor.process(input);
-    processor.dispose();
+    // Continuous response -- do not threshold yet.
+    let sharpened = await processor.processNoThreshold(input);
 
+    // Sec. 2.6: pre-threshold flow accumulation.
     if (params.sigmaM > 0) {
       const flowBlur = await FlowGuidedBlur.create(etf);
-      result = await flowBlur.blur(result, params.sigmaM);
+      sharpened = await flowBlur.blur(sharpened, params.sigmaM);
       flowBlur.dispose();
     }
-    
+
+    let result = processor.applyThreshold(sharpened, params.epsilon, params.phi);
+    processor.dispose();
+
+    // Sec. 4.3: post-threshold anti-aliasing pass.
     if (params.sigmaA > 0) {
       const aaBlur = await FlowGuidedBlur.create(etf);
       result = await aaBlur.blur(result, params.sigmaA);
       aaBlur.dispose();
     }
-    
+
     return result;
   }
   
@@ -242,4 +264,3 @@ export async function fdog(
   processor.dispose();
   return result;
 }
- 

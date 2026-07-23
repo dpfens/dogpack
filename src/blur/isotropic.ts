@@ -434,15 +434,6 @@ export class WebGPUIsotropicBlur extends BaseWebGPUStrategy implements BlurStrat
   private config: WebGPUBlurConfig;
   private resources: WebGPUResources | null = null;
   
-  // Reusable buffers for compute operations
-  private paramsBuffer: GPUBuffer | null = null;
-  private kernelBuffer: GPUBuffer | null = null;
-  private inputBuffer: GPUBuffer | null = null;
-  private tempBuffer: GPUBuffer | null = null;
-  private outputBuffer: GPUBuffer | null = null;
-  private currentBufferSize = 0;
-  private currentKernelSize = 0;
-  
   constructor(config: Partial<WebGPUBlurConfig> = {}) {
     super();
     this.config = { ...DEFAULT_WEBGPU_CONFIG, ...config };
@@ -498,71 +489,24 @@ export class WebGPUIsotropicBlur extends BaseWebGPUStrategy implements BlurStrat
       },
     });
     
-    this.resources = {
+    return {
       device,
       horizontalPipeline,
       verticalPipeline,
       bindGroupLayout,
     };
-    
-    return this.resources;
   }
   
   /**
-   * Ensure buffers are sized correctly
-   */
-  private ensureBuffers(device: GPUDevice, pixelCount: number, kernelSize: number): void {
-    const bufferSize = pixelCount * 4; // Float32
-    
-    if (this.currentBufferSize < bufferSize) {
-      // Clean up old buffers
-      this.inputBuffer?.destroy();
-      this.tempBuffer?.destroy();
-      this.outputBuffer?.destroy();
-      
-      this.inputBuffer = device.createBuffer({
-        size: bufferSize,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-      });
-      
-      this.tempBuffer = device.createBuffer({
-        size: bufferSize,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-      });
-      
-      this.outputBuffer = device.createBuffer({
-        size: bufferSize,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-      });
-      
-      this.currentBufferSize = bufferSize;
-    }
-    
-    if (this.currentKernelSize < kernelSize) {
-      this.kernelBuffer?.destroy();
-      
-      this.kernelBuffer = device.createBuffer({
-        size: kernelSize * 4,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-      });
-      
-      this.currentKernelSize = kernelSize;
-    }
-    
-    if (!this.paramsBuffer) {
-      this.paramsBuffer = device.createBuffer({
-        size: 16, // 4 x u32
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-      });
-    }
-  }
-  
-  /**
-   * Blur implementation - supports concurrent/parallel calls
-   * 
-   * CCreates a new staging buffer for each operation instead of
-   * reusing a single one, preventing "Buffer already has an outstanding
-   * map pending" errors when blur() is called in parallel.
+   * Fix for WebGPUIsotropicBlur: allocate buffers per call instead of
+   * reusing instance-level ones, so concurrent blur() calls (as issued by
+   * DoGProcessor.process()'s Promise.all([blur(sigma), blur(sigma*k)]))
+   * never share mutable GPU state. Mirrors the pattern already used by
+   * WebGPUFlowGuidedBlur and WebGPUGradientAlignedBlur.
+   *
+   * Delete the old paramsBuffer/kernelBuffer/inputBuffer/tempBuffer/
+   * outputBuffer/currentBufferSize/currentKernelSize instance fields and
+   * ensureBuffers() method; they're no longer needed.
    */
   async blur(input: ChannelImage, sigma: number): Promise<ChannelImage> {
     if (sigma < 0.1) {
@@ -572,119 +516,112 @@ export class WebGPUIsotropicBlur extends BaseWebGPUStrategy implements BlurStrat
         height: input.height,
       };
     }
-    
+
     const { device, horizontalPipeline, verticalPipeline, bindGroupLayout } = await this.initResources();
     const { width, height } = input;
     const pixelCount = width * height;
-    
-    // Compute kernel
+    const bufferSize = pixelCount * 4;
+
     const kernelSize = Math.min(
       this.config.maxKernelSize,
       Math.max(3, Math.floor(sigma * this.config.kernelSizeMultiplier) | 1)
     );
     const kernel = generateGaussianKernel(sigma, kernelSize);
-    
-    // Ensure buffers
-    this.ensureBuffers(device, pixelCount, kernelSize);
-    
-    // Upload data
-    device.queue.writeBuffer(this.paramsBuffer!, 0, new Uint32Array([width, height, kernelSize, 0]));
-    device.queue.writeBuffer(this.kernelBuffer!, 0, new Float32Array(kernel));
-    device.queue.writeBuffer(this.inputBuffer!, 0, new Float32Array(input.data));
-    
-    // Create bind groups
-    const horizontalBindGroup = device.createBindGroup({
-      layout: bindGroupLayout,
-      entries: [
-        { binding: 0, resource: { buffer: this.paramsBuffer! } },
-        { binding: 1, resource: { buffer: this.kernelBuffer! } },
-        { binding: 2, resource: { buffer: this.inputBuffer! } },
-        { binding: 3, resource: { buffer: this.tempBuffer! } },
-      ],
+
+    // Per-call resources -- never shared with a concurrent blur() call on
+    // this same instance.
+    const paramsBuffer = device.createBuffer({
+      size: 16,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
-    
-    const verticalBindGroup = device.createBindGroup({
-      layout: bindGroupLayout,
-      entries: [
-        { binding: 0, resource: { buffer: this.paramsBuffer! } },
-        { binding: 1, resource: { buffer: this.kernelBuffer! } },
-        { binding: 2, resource: { buffer: this.tempBuffer! } },
-        { binding: 3, resource: { buffer: this.outputBuffer! } },
-      ],
+    const kernelBuffer = device.createBuffer({
+      size: kernelSize * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
     });
-    
-    // Dispatch compute
-    const workgroupsX = Math.ceil(width / 16);
-    const workgroupsY = Math.ceil(height / 16);
-    
-    const commandEncoder = device.createCommandEncoder();
-    
-    const horizontalPass = commandEncoder.beginComputePass();
-    horizontalPass.setPipeline(horizontalPipeline);
-    horizontalPass.setBindGroup(0, horizontalBindGroup);
-    horizontalPass.dispatchWorkgroups(workgroupsX, workgroupsY);
-    horizontalPass.end();
-    
-    const verticalPass = commandEncoder.beginComputePass();
-    verticalPass.setPipeline(verticalPipeline);
-    verticalPass.setBindGroup(0, verticalBindGroup);
-    verticalPass.dispatchWorkgroups(workgroupsX, workgroupsY);
-    verticalPass.end();
-    
-    // FIX: Create a NEW staging buffer for this operation instead of reusing one.
-    // This prevents concurrent map() calls from conflicting.
+    const inputBuffer = device.createBuffer({
+      size: bufferSize,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    const tempBuffer = device.createBuffer({
+      size: bufferSize,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+    const outputBuffer = device.createBuffer({
+      size: bufferSize,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
     const stagingBuffer = device.createBuffer({
-      size: pixelCount * 4,
+      size: bufferSize,
       usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
     });
-    
-    // Copy result to the new staging buffer
-    commandEncoder.copyBufferToBuffer(
-      this.outputBuffer!,
-      0,
-      stagingBuffer,
-      0,
-      pixelCount * 4
-    );
-    
-    device.queue.submit([commandEncoder.finish()]);
-    
-    // Read back result - safe because this stagingBuffer is unique to this call
-    await stagingBuffer.mapAsync(GPUMapMode.READ);
-    const resultData = new Float32Array(stagingBuffer.getMappedRange().slice(0));
-    stagingBuffer.unmap();
-    
-    // Clean up the staging buffer (it was created just for this operation)
-    stagingBuffer.destroy();
-    
-    return {
-      data: resultData,
-      width,
-      height,
-    };
+
+    try {
+      device.queue.writeBuffer(paramsBuffer, 0, new Uint32Array([width, height, kernelSize, 0]));
+      device.queue.writeBuffer(kernelBuffer, 0, new Float32Array(kernel));
+      device.queue.writeBuffer(inputBuffer, 0, new Float32Array(input.data));
+
+      const horizontalBindGroup = device.createBindGroup({
+        layout: bindGroupLayout,
+        entries: [
+          { binding: 0, resource: { buffer: paramsBuffer } },
+          { binding: 1, resource: { buffer: kernelBuffer } },
+          { binding: 2, resource: { buffer: inputBuffer } },
+          { binding: 3, resource: { buffer: tempBuffer } },
+        ],
+      });
+
+      const verticalBindGroup = device.createBindGroup({
+        layout: bindGroupLayout,
+        entries: [
+          { binding: 0, resource: { buffer: paramsBuffer } },
+          { binding: 1, resource: { buffer: kernelBuffer } },
+          { binding: 2, resource: { buffer: tempBuffer } },
+          { binding: 3, resource: { buffer: outputBuffer } },
+        ],
+      });
+
+      const workgroupsX = Math.ceil(width / 16);
+      const workgroupsY = Math.ceil(height / 16);
+
+      const commandEncoder = device.createCommandEncoder();
+
+      const horizontalPass = commandEncoder.beginComputePass();
+      horizontalPass.setPipeline(horizontalPipeline);
+      horizontalPass.setBindGroup(0, horizontalBindGroup);
+      horizontalPass.dispatchWorkgroups(workgroupsX, workgroupsY);
+      horizontalPass.end();
+
+      const verticalPass = commandEncoder.beginComputePass();
+      verticalPass.setPipeline(verticalPipeline);
+      verticalPass.setBindGroup(0, verticalBindGroup);
+      verticalPass.dispatchWorkgroups(workgroupsX, workgroupsY);
+      verticalPass.end();
+
+      commandEncoder.copyBufferToBuffer(outputBuffer, 0, stagingBuffer, 0, bufferSize);
+      device.queue.submit([commandEncoder.finish()]);
+
+      await stagingBuffer.mapAsync(GPUMapMode.READ);
+      const resultData = new Float32Array(stagingBuffer.getMappedRange().slice(0));
+      stagingBuffer.unmap();
+
+      return { data: resultData, width, height };
+    } finally {
+      // Always release per-call resources, even if a pass or readback
+      // throws, so concurrent/repeated calls don't leak GPU memory.
+      paramsBuffer.destroy();
+      kernelBuffer.destroy();
+      inputBuffer.destroy();
+      tempBuffer.destroy();
+      outputBuffer.destroy();
+      stagingBuffer.destroy();
+    }
   }
-  
+
   /**
-   * Clean up GPU resources
+   * dispose() no longer needs to clean up shared buffers -- only the
+   * cached pipeline/layout resources from initResources() remain.
    */
-  dispose(): void {
-    this.paramsBuffer?.destroy();
-    this.kernelBuffer?.destroy();
-    this.inputBuffer?.destroy();
-    this.tempBuffer?.destroy();
-    this.outputBuffer?.destroy();
-    
-    this.paramsBuffer = null;
-    this.kernelBuffer = null;
-    this.inputBuffer = null;
-    this.tempBuffer = null;
-    this.outputBuffer = null;
-    this.currentBufferSize = 0;
-    this.currentKernelSize = 0;
-    
-    // Note: We don't destroy the device as it's shared
-    this.resources = null;
-  }
+  dispose(): void {}
 }
 
 

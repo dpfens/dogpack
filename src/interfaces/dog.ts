@@ -398,7 +398,8 @@ export const DEFAULT_FDOG_CONFIG: FDoGConfig = {
   ...DEFAULT_DOG_CONFIG,
   sigmaC: FDOG_PARAM_RANGES.sigmaC.default,   // Structure tensor smoothing
   sigmaM: FDOG_PARAM_RANGES.sigmaM.default,   // Flow-aligned smoothing
-  sigmaA: FDOG_PARAM_RANGES.sigmaA.default,   // Anti-aliasing
+  sigmaA: FDOG_PARAM_RANGES.sigmaA.default,   // Anti-aliasing,
+  thresholdStrategy: new HardThresholdStrategy()
 };
 
 /**
