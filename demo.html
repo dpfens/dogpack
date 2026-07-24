@@ -1132,7 +1132,6 @@
 
         // Instantiate the right processor class for the current mode
         function makeProcessor(params) {
-            console.log(params);
             switch (currentMode) {
                 case 'fdog': return new dog.FDoG(params);
                 case 'adog': return new dog.ADoG(params);
