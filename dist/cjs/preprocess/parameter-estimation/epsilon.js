@@ -1,9 +1,6 @@
 "use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.toneAdaptiveEstimate = toneAdaptiveEstimate;
-exports.localBaselineEstimate = localBaselineEstimate;
 /**
- * Tone-adaptive epsilon estimation
+ * Epsilon parameter estimation
  *
  * XDoG/FDoG/ADoG all threshold their (continuous) sharpened response against a
  * single scalar `epsilon`. That's fine when the image's tone is roughly uniform,
@@ -25,17 +22,21 @@ exports.localBaselineEstimate = localBaselineEstimate;
  *
  * This mirrors the paper's own fix for an analogous problem in ADoG -- Eq. (5)
  * makes the contrast-sensitivity parameter rho(x) a tanh-shaped function of local
- * tone I(x) instead of a constant. Here we apply the same shape to epsilon: rather
- * than reading raw per-pixel intensity (noisy), we blur the input first to get a
- * smooth "local area brightness" reading, then interpolate between a dark-region
- * epsilon and a light-region epsilon using that same tanh curve.
+ * tone I(x) instead of a constant. `toneAdaptiveEstimate` applies that same shape
+ * to epsilon: blur the input first to get a smooth "local area brightness" reading
+ * (rather than a noisy per-pixel one), then interpolate between a dark-region
+ * epsilon and a light-region epsilon using that curve.
  *
- * The result is a ChannelImage the same size as the input, suitable for wrapping
- * with `ScalarField.fromChannelImage()` and passing as the `epsilon` override to
- * any of the DoG implementations (see usage examples at the bottom).
+ * Each function returns a ChannelImage the same size as the input, suitable for
+ * wrapping with `ScalarField.fromChannelImage()` and passing as the `epsilon`
+ * override to any of the DoG implementations (see usage examples at the bottom).
  */
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.toneAdaptiveEstimate = toneAdaptiveEstimate;
+exports.toneAdaptiveEstimateAuto = toneAdaptiveEstimateAuto;
+exports.localBaselineEstimate = localBaselineEstimate;
+const index_js_1 = require("../../utils/index.js");
 const isotropic_js_1 = require("../../blur/isotropic.js");
-const image_js_1 = require("../../utils/image.js");
 /**
  * Estimate a spatially-varying epsilon ChannelImage from local image tone.
  *
@@ -52,7 +53,7 @@ async function toneAdaptiveEstimate(input, options) {
     const ownsBlurStrategy = !options.blurStrategy;
     try {
         const localTone = await blurStrategy.blur(input, localitySigma);
-        const epsilon = (0, image_js_1.createChannelImage)(input.width, input.height);
+        const epsilon = (0, index_js_1.createChannelImage)(input.width, input.height);
         for (let i = 0; i < epsilon.data.length; i++) {
             const w = Math.tanh(s * localTone.data[i]); // 0 (dark) -> ~1 (light)
             epsilon.data[i] = epsilonDark + (epsilonLight - epsilonDark) * w;
@@ -65,15 +66,25 @@ async function toneAdaptiveEstimate(input, options) {
     }
 }
 /**
+ * Convenience wrapper: derive epsilonDark/epsilonLight from a single center
+ * value + spread instead of picking both endpoints by hand.
+ */
+async function toneAdaptiveEstimateAuto(input, options) {
+    const { center, spread, denserInDark = true, ...rest } = options;
+    const epsilonDark = denserInDark ? center - spread : center + spread;
+    const epsilonLight = denserInDark ? center + spread : center - spread;
+    return toneAdaptiveEstimate(input, { ...rest, epsilonDark, epsilonLight });
+}
+/**
  * Estimate epsilon directly as the local baseline of the sharpened response,
  * instead of interpolating between two hand-picked epsilonDark/epsilonLight
  * constants. Since S(x) ≈ local tone in flat regions (Eq. 7, see module
  * comment), blurring the input at the DoG's own `sigma` is a direct estimate
- * of that baseline -- this is `estimateToneAdaptiveEpsilon` with the tanh
- * shaping and two free endpoints removed, in favor of just tracking the
- * quantity epsilon is actually being compared against. Prefer this one
- * unless you specifically want the tanh curve's asymmetric dark/light
- * control (e.g. for a stylized look rather than a technically-motivated one).
+ * of that baseline -- this is `toneAdaptiveEstimate` with the tanh shaping
+ * and two free endpoints removed, in favor of just tracking the quantity
+ * epsilon is actually being compared against. Prefer this one unless you
+ * specifically want the tanh curve's asymmetric dark/light control (e.g. for
+ * a stylized look rather than a technically-motivated one).
  */
 async function localBaselineEstimate(input, options) {
     const { sigma, offset = 0 } = options;
@@ -81,7 +92,7 @@ async function localBaselineEstimate(input, options) {
     const ownsBlurStrategy = !options.blurStrategy;
     try {
         const baseline = await blurStrategy.blur(input, sigma);
-        const epsilon = (0, image_js_1.createChannelImage)(input.width, input.height);
+        const epsilon = (0, index_js_1.createChannelImage)(input.width, input.height);
         for (let i = 0; i < epsilon.data.length; i++) {
             epsilon.data[i] = baseline.data[i] + offset;
         }
@@ -95,12 +106,12 @@ async function localBaselineEstimate(input, options) {
 /**
  * Usage (recommended default -- tracks the DoG's own blur directly):
  *
- *   import { XDoG } from '../implementations/xdog.js';
- *   import { ScalarField } from './scalar-field.js';
- *   import { estimateLocalBaselineEpsilon } from './adaptive-epsilon.js';
+ *   import { XDoG } from '../../implementations/xdog.js';
+ *   import { ScalarField } from '../../utils/scalar-field.js';
+ *   import { localBaselineEstimate } from './epsilon.js';
  *
  *   const sigma = 1.4;
- *   const epsilonMap = await estimateLocalBaselineEpsilon(input, { sigma });
+ *   const epsilonMap = await localBaselineEstimate(input, { sigma });
  *
  *   const xdog = new XDoG({ sigma, k: 1.6, phi: 10 });
  *   const result = await xdog.process(input, {
@@ -109,18 +120,18 @@ async function localBaselineEstimate(input, options) {
  *
  * Usage (tanh-shaped, for hand-tuned dark/light control instead):
  *
- *   import { ADoG } from '../implementations/adog.js';
- *   import { estimateToneAdaptiveEpsilonAuto } from './adaptive-epsilon.js';
+ *   import { ADoG } from '../../implementations/adog.js';
+ *   import { toneAdaptiveEstimateAuto } from './epsilon.js';
  *
  *   const center = await ADoG.estimateEpsilon(input); // reuse existing global estimator
- *   const epsilonMap = await estimateToneAdaptiveEpsilonAuto(input, {
+ *   const epsilonMap = await toneAdaptiveEstimateAuto(input, {
  *     center,
  *     spread: center * 0.15,
  *     localitySigma: 12,
  *   });
  *
  * Works the same way for FDoG/ADoG: `DoGConfig`'s p/epsilon/phi are
- * ScalarFields internally (see utils/scalar-field.ts), so any of them
+ * ScalarFields internally (see ../../utils/scalar-field.ts), so any of them
  * accept a wrapped ChannelImage like this one as a config override.
- */
+ */ 
 //# sourceMappingURL=epsilon.js.map

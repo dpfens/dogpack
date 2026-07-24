@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.parameterEstimation = void 0;
 const tslib_1 = require("tslib");
-tslib_1.__exportStar(require("./parameter-estimation/index.js"), exports);
+exports.parameterEstimation = require("./parameter-estimation/index.js");
 tslib_1.__exportStar(require("./preprocessors/index.js"), exports);
 //# sourceMappingURL=index.js.map

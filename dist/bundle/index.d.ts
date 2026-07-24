@@ -1026,51 +1026,51 @@ declare class HDoG implements DoGImplementation {
  */
 declare function hdog(input: ChannelImage, config?: Partial<HDoGConfig>): Promise<ChannelImage>;
 
-declare const index$4_ADOG_PARAM_RANGES: typeof ADOG_PARAM_RANGES;
-declare const index$4_ADOG_STYLE_PRESETS: typeof ADOG_STYLE_PRESETS;
-type index$4_ADoG = ADoG;
-declare const index$4_ADoG: typeof ADoG;
-type index$4_ADoGConfig = ADoGConfig;
-type index$4_ADoGProcessingResult = ADoGProcessingResult;
-type index$4_ADogConfigParamType = ADogConfigParamType;
-declare const index$4_DEFAULT_ADOG_CONFIG: typeof DEFAULT_ADOG_CONFIG;
-declare const index$4_DEFAULT_DOG_CONFIG: typeof DEFAULT_DOG_CONFIG;
-declare const index$4_DEFAULT_FDOG_CONFIG: typeof DEFAULT_FDOG_CONFIG;
-declare const index$4_DEFAULT_HDOG_CONFIG: typeof DEFAULT_HDOG_CONFIG;
-declare const index$4_DOG_PARAM_RANGES: typeof DOG_PARAM_RANGES;
-type index$4_DoGConfig = DoGConfig;
-type index$4_DoGImplementation = DoGImplementation;
-type index$4_DogConfigParamType = DogConfigParamType;
-declare const index$4_FDOG_CONFIDENCE_WEIGHT_PARAM_RANGES: typeof FDOG_CONFIDENCE_WEIGHT_PARAM_RANGES;
-declare const index$4_FDOG_PARAM_RANGES: typeof FDOG_PARAM_RANGES;
-declare const index$4_FDOG_STYLE_PRESETS: typeof FDOG_STYLE_PRESETS;
-type index$4_FDoG = FDoG;
-declare const index$4_FDoG: typeof FDoG;
-type index$4_FDoGConfidenceWeightingConfig = FDoGConfidenceWeightingConfig;
-type index$4_FDoGConfig = FDoGConfig;
-type index$4_FDogConfidenceWeightConfigParamType = FDogConfidenceWeightConfigParamType;
-type index$4_FDogConfigParamType = FDogConfigParamType;
-declare const index$4_HDOG_PARAM_RANGES: typeof HDOG_PARAM_RANGES;
-declare const index$4_HDOG_STYLE_PRESETS: typeof HDOG_STYLE_PRESETS;
-type index$4_HDoG = HDoG;
-declare const index$4_HDoG: typeof HDoG;
-type index$4_HDoGConfig = HDoGConfig;
-type index$4_HDoGProcessingResult = HDoGProcessingResult;
-type index$4_HDogConfigParamType = HDogConfigParamType;
-type index$4_ParamRange = ParamRange;
-declare const index$4_STYLE_PRESETS: typeof STYLE_PRESETS;
-declare const index$4_XDOG_PARAM_RANGES: typeof XDOG_PARAM_RANGES;
-type index$4_XDoG = XDoG;
-declare const index$4_XDoG: typeof XDoG;
-type index$4_XDoGConfig = XDoGConfig;
-type index$4_XDogConfigParamType = XDogConfigParamType;
-declare const index$4_adog: typeof adog;
-declare const index$4_fdog: typeof fdog;
-declare const index$4_hdog: typeof hdog;
-declare const index$4_xdog: typeof xdog;
-declare namespace index$4 {
-  export { index$4_ADOG_PARAM_RANGES as ADOG_PARAM_RANGES, index$4_ADOG_STYLE_PRESETS as ADOG_STYLE_PRESETS, index$4_ADoG as ADoG, index$4_DEFAULT_ADOG_CONFIG as DEFAULT_ADOG_CONFIG, index$4_DEFAULT_DOG_CONFIG as DEFAULT_DOG_CONFIG, index$4_DEFAULT_FDOG_CONFIG as DEFAULT_FDOG_CONFIG, index$4_DEFAULT_HDOG_CONFIG as DEFAULT_HDOG_CONFIG, index$4_DOG_PARAM_RANGES as DOG_PARAM_RANGES, index$4_FDOG_CONFIDENCE_WEIGHT_PARAM_RANGES as FDOG_CONFIDENCE_WEIGHT_PARAM_RANGES, index$4_FDOG_PARAM_RANGES as FDOG_PARAM_RANGES, index$4_FDOG_STYLE_PRESETS as FDOG_STYLE_PRESETS, index$4_FDoG as FDoG, index$4_HDOG_PARAM_RANGES as HDOG_PARAM_RANGES, index$4_HDOG_STYLE_PRESETS as HDOG_STYLE_PRESETS, index$4_HDoG as HDoG, index$4_STYLE_PRESETS as STYLE_PRESETS, index$4_XDOG_PARAM_RANGES as XDOG_PARAM_RANGES, index$4_XDoG as XDoG, index$4_adog as adog, index$4_fdog as fdog, index$4_hdog as hdog, index$4_xdog as xdog };
-  export type { index$4_ADoGConfig as ADoGConfig, index$4_ADoGProcessingResult as ADoGProcessingResult, index$4_ADogConfigParamType as ADogConfigParamType, index$4_DoGConfig as DoGConfig, index$4_DoGImplementation as DoGImplementation, index$4_DogConfigParamType as DogConfigParamType, index$4_FDoGConfidenceWeightingConfig as FDoGConfidenceWeightingConfig, index$4_FDoGConfig as FDoGConfig, index$4_FDogConfidenceWeightConfigParamType as FDogConfidenceWeightConfigParamType, index$4_FDogConfigParamType as FDogConfigParamType, index$4_HDoGConfig as HDoGConfig, index$4_HDoGProcessingResult as HDoGProcessingResult, index$4_HDogConfigParamType as HDogConfigParamType, index$4_ParamRange as ParamRange, index$4_XDoGConfig as XDoGConfig, index$4_XDogConfigParamType as XDogConfigParamType };
+declare const index$5_ADOG_PARAM_RANGES: typeof ADOG_PARAM_RANGES;
+declare const index$5_ADOG_STYLE_PRESETS: typeof ADOG_STYLE_PRESETS;
+type index$5_ADoG = ADoG;
+declare const index$5_ADoG: typeof ADoG;
+type index$5_ADoGConfig = ADoGConfig;
+type index$5_ADoGProcessingResult = ADoGProcessingResult;
+type index$5_ADogConfigParamType = ADogConfigParamType;
+declare const index$5_DEFAULT_ADOG_CONFIG: typeof DEFAULT_ADOG_CONFIG;
+declare const index$5_DEFAULT_DOG_CONFIG: typeof DEFAULT_DOG_CONFIG;
+declare const index$5_DEFAULT_FDOG_CONFIG: typeof DEFAULT_FDOG_CONFIG;
+declare const index$5_DEFAULT_HDOG_CONFIG: typeof DEFAULT_HDOG_CONFIG;
+declare const index$5_DOG_PARAM_RANGES: typeof DOG_PARAM_RANGES;
+type index$5_DoGConfig = DoGConfig;
+type index$5_DoGImplementation = DoGImplementation;
+type index$5_DogConfigParamType = DogConfigParamType;
+declare const index$5_FDOG_CONFIDENCE_WEIGHT_PARAM_RANGES: typeof FDOG_CONFIDENCE_WEIGHT_PARAM_RANGES;
+declare const index$5_FDOG_PARAM_RANGES: typeof FDOG_PARAM_RANGES;
+declare const index$5_FDOG_STYLE_PRESETS: typeof FDOG_STYLE_PRESETS;
+type index$5_FDoG = FDoG;
+declare const index$5_FDoG: typeof FDoG;
+type index$5_FDoGConfidenceWeightingConfig = FDoGConfidenceWeightingConfig;
+type index$5_FDoGConfig = FDoGConfig;
+type index$5_FDogConfidenceWeightConfigParamType = FDogConfidenceWeightConfigParamType;
+type index$5_FDogConfigParamType = FDogConfigParamType;
+declare const index$5_HDOG_PARAM_RANGES: typeof HDOG_PARAM_RANGES;
+declare const index$5_HDOG_STYLE_PRESETS: typeof HDOG_STYLE_PRESETS;
+type index$5_HDoG = HDoG;
+declare const index$5_HDoG: typeof HDoG;
+type index$5_HDoGConfig = HDoGConfig;
+type index$5_HDoGProcessingResult = HDoGProcessingResult;
+type index$5_HDogConfigParamType = HDogConfigParamType;
+type index$5_ParamRange = ParamRange;
+declare const index$5_STYLE_PRESETS: typeof STYLE_PRESETS;
+declare const index$5_XDOG_PARAM_RANGES: typeof XDOG_PARAM_RANGES;
+type index$5_XDoG = XDoG;
+declare const index$5_XDoG: typeof XDoG;
+type index$5_XDoGConfig = XDoGConfig;
+type index$5_XDogConfigParamType = XDogConfigParamType;
+declare const index$5_adog: typeof adog;
+declare const index$5_fdog: typeof fdog;
+declare const index$5_hdog: typeof hdog;
+declare const index$5_xdog: typeof xdog;
+declare namespace index$5 {
+  export { index$5_ADOG_PARAM_RANGES as ADOG_PARAM_RANGES, index$5_ADOG_STYLE_PRESETS as ADOG_STYLE_PRESETS, index$5_ADoG as ADoG, index$5_DEFAULT_ADOG_CONFIG as DEFAULT_ADOG_CONFIG, index$5_DEFAULT_DOG_CONFIG as DEFAULT_DOG_CONFIG, index$5_DEFAULT_FDOG_CONFIG as DEFAULT_FDOG_CONFIG, index$5_DEFAULT_HDOG_CONFIG as DEFAULT_HDOG_CONFIG, index$5_DOG_PARAM_RANGES as DOG_PARAM_RANGES, index$5_FDOG_CONFIDENCE_WEIGHT_PARAM_RANGES as FDOG_CONFIDENCE_WEIGHT_PARAM_RANGES, index$5_FDOG_PARAM_RANGES as FDOG_PARAM_RANGES, index$5_FDOG_STYLE_PRESETS as FDOG_STYLE_PRESETS, index$5_FDoG as FDoG, index$5_HDOG_PARAM_RANGES as HDOG_PARAM_RANGES, index$5_HDOG_STYLE_PRESETS as HDOG_STYLE_PRESETS, index$5_HDoG as HDoG, index$5_STYLE_PRESETS as STYLE_PRESETS, index$5_XDOG_PARAM_RANGES as XDOG_PARAM_RANGES, index$5_XDoG as XDoG, index$5_adog as adog, index$5_fdog as fdog, index$5_hdog as hdog, index$5_xdog as xdog };
+  export type { index$5_ADoGConfig as ADoGConfig, index$5_ADoGProcessingResult as ADoGProcessingResult, index$5_ADogConfigParamType as ADogConfigParamType, index$5_DoGConfig as DoGConfig, index$5_DoGImplementation as DoGImplementation, index$5_DogConfigParamType as DogConfigParamType, index$5_FDoGConfidenceWeightingConfig as FDoGConfidenceWeightingConfig, index$5_FDoGConfig as FDoGConfig, index$5_FDogConfidenceWeightConfigParamType as FDogConfidenceWeightConfigParamType, index$5_FDogConfigParamType as FDogConfigParamType, index$5_HDoGConfig as HDoGConfig, index$5_HDoGProcessingResult as HDoGProcessingResult, index$5_HDogConfigParamType as HDogConfigParamType, index$5_ParamRange as ParamRange, index$5_XDoGConfig as XDoGConfig, index$5_XDogConfigParamType as XDogConfigParamType };
 }
 
 /**
@@ -1650,29 +1650,29 @@ declare class GradientAlignedBlur implements BlurStrategy {
     private demoteAndFindNext;
 }
 
-type index$3_CPUFlowGuidedBlur = CPUFlowGuidedBlur;
-declare const index$3_CPUFlowGuidedBlur: typeof CPUFlowGuidedBlur;
-type index$3_CPUIsotropicBlur = CPUIsotropicBlur;
-declare const index$3_CPUIsotropicBlur: typeof CPUIsotropicBlur;
-type index$3_FlowGuidedBlur = FlowGuidedBlur;
-declare const index$3_FlowGuidedBlur: typeof FlowGuidedBlur;
-type index$3_FlowGuidedBlurConfig = FlowGuidedBlurConfig;
-type index$3_GradientAlignedBlur = GradientAlignedBlur;
-declare const index$3_GradientAlignedBlur: typeof GradientAlignedBlur;
-type index$3_IsotropicBlur = IsotropicBlur;
-declare const index$3_IsotropicBlur: typeof IsotropicBlur;
-type index$3_IsotropicBlurConfig = IsotropicBlurConfig;
-type index$3_WebGLFlowGuidedBlur = WebGLFlowGuidedBlur;
-declare const index$3_WebGLFlowGuidedBlur: typeof WebGLFlowGuidedBlur;
-type index$3_WebGLIsotropicBlur = WebGLIsotropicBlur;
-declare const index$3_WebGLIsotropicBlur: typeof WebGLIsotropicBlur;
-type index$3_WebGPUFlowGuidedBlur = WebGPUFlowGuidedBlur;
-declare const index$3_WebGPUFlowGuidedBlur: typeof WebGPUFlowGuidedBlur;
-type index$3_WebGPUIsotropicBlur = WebGPUIsotropicBlur;
-declare const index$3_WebGPUIsotropicBlur: typeof WebGPUIsotropicBlur;
-declare namespace index$3 {
-  export { index$3_CPUFlowGuidedBlur as CPUFlowGuidedBlur, index$3_CPUIsotropicBlur as CPUIsotropicBlur, index$3_FlowGuidedBlur as FlowGuidedBlur, index$3_GradientAlignedBlur as GradientAlignedBlur, index$3_IsotropicBlur as IsotropicBlur, index$3_WebGLFlowGuidedBlur as WebGLFlowGuidedBlur, index$3_WebGLIsotropicBlur as WebGLIsotropicBlur, index$3_WebGPUFlowGuidedBlur as WebGPUFlowGuidedBlur, index$3_WebGPUIsotropicBlur as WebGPUIsotropicBlur };
-  export type { index$3_FlowGuidedBlurConfig as FlowGuidedBlurConfig, index$3_IsotropicBlurConfig as IsotropicBlurConfig };
+type index$4_CPUFlowGuidedBlur = CPUFlowGuidedBlur;
+declare const index$4_CPUFlowGuidedBlur: typeof CPUFlowGuidedBlur;
+type index$4_CPUIsotropicBlur = CPUIsotropicBlur;
+declare const index$4_CPUIsotropicBlur: typeof CPUIsotropicBlur;
+type index$4_FlowGuidedBlur = FlowGuidedBlur;
+declare const index$4_FlowGuidedBlur: typeof FlowGuidedBlur;
+type index$4_FlowGuidedBlurConfig = FlowGuidedBlurConfig;
+type index$4_GradientAlignedBlur = GradientAlignedBlur;
+declare const index$4_GradientAlignedBlur: typeof GradientAlignedBlur;
+type index$4_IsotropicBlur = IsotropicBlur;
+declare const index$4_IsotropicBlur: typeof IsotropicBlur;
+type index$4_IsotropicBlurConfig = IsotropicBlurConfig;
+type index$4_WebGLFlowGuidedBlur = WebGLFlowGuidedBlur;
+declare const index$4_WebGLFlowGuidedBlur: typeof WebGLFlowGuidedBlur;
+type index$4_WebGLIsotropicBlur = WebGLIsotropicBlur;
+declare const index$4_WebGLIsotropicBlur: typeof WebGLIsotropicBlur;
+type index$4_WebGPUFlowGuidedBlur = WebGPUFlowGuidedBlur;
+declare const index$4_WebGPUFlowGuidedBlur: typeof WebGPUFlowGuidedBlur;
+type index$4_WebGPUIsotropicBlur = WebGPUIsotropicBlur;
+declare const index$4_WebGPUIsotropicBlur: typeof WebGPUIsotropicBlur;
+declare namespace index$4 {
+  export { index$4_CPUFlowGuidedBlur as CPUFlowGuidedBlur, index$4_CPUIsotropicBlur as CPUIsotropicBlur, index$4_FlowGuidedBlur as FlowGuidedBlur, index$4_GradientAlignedBlur as GradientAlignedBlur, index$4_IsotropicBlur as IsotropicBlur, index$4_WebGLFlowGuidedBlur as WebGLFlowGuidedBlur, index$4_WebGLIsotropicBlur as WebGLIsotropicBlur, index$4_WebGPUFlowGuidedBlur as WebGPUFlowGuidedBlur, index$4_WebGPUIsotropicBlur as WebGPUIsotropicBlur };
+  export type { index$4_FlowGuidedBlurConfig as FlowGuidedBlurConfig, index$4_IsotropicBlurConfig as IsotropicBlurConfig };
 }
 
 /**
@@ -1706,6 +1706,39 @@ declare class EdgeTangentFlowComputer implements ETFComputer {
 }
 
 /**
+ * Epsilon parameter estimation
+ *
+ * XDoG/FDoG/ADoG all threshold their (continuous) sharpened response against a
+ * single scalar `epsilon`. That's fine when the image's tone is roughly uniform,
+ * but a fixed epsilon under-serves one extreme or the other on high-dynamic-range
+ * input: an epsilon tuned to hold onto shadow detail tends to flood highlights
+ * with noise, and vice versa.
+ *
+ * Why epsilon needs to track local tone at all (confirmed against processor.ts):
+ * `computeSharpening()` implements Eq. 7, S(x) = (1+p)*blur1(x) - p*blur2(x). In
+ * any roughly flat neighborhood blur1(x) ≈ blur2(x) ≈ that neighborhood's local
+ * brightness, so S(x) itself sits near the local tone there -- it's not centered
+ * on some fixed midpoint. `applyThreshold()` (via `ThresholdModes.soft`) then does
+ * `value >= epsilon -> white, else soft-thresholded toward black`. A flat epsilon
+ * tuned for midtones will sit *below* S(x) everywhere in a bright region (crushing
+ * it to white with no edges surviving) and *above* S(x) everywhere in a dark one
+ * (crushing it to black). For epsilon to threshold something meaningful in both
+ * places, it has to move with local tone the same way S(x) does: lower in dark
+ * neighborhoods, higher in light ones. That's the ordering this module defaults to.
+ *
+ * This mirrors the paper's own fix for an analogous problem in ADoG -- Eq. (5)
+ * makes the contrast-sensitivity parameter rho(x) a tanh-shaped function of local
+ * tone I(x) instead of a constant. `toneAdaptiveEstimate` applies that same shape
+ * to epsilon: blur the input first to get a smooth "local area brightness" reading
+ * (rather than a noisy per-pixel one), then interpolate between a dark-region
+ * epsilon and a light-region epsilon using that curve.
+ *
+ * Each function returns a ChannelImage the same size as the input, suitable for
+ * wrapping with `ScalarField.fromChannelImage()` and passing as the `epsilon`
+ * override to any of the DoG implementations (see usage examples at the bottom).
+ */
+
+/**
  * Estimate a spatially-varying epsilon ChannelImage from local image tone.
  *
  * epsilon(x) = epsilonDark + (epsilonLight - epsilonDark) * tanh(s * localTone(x))
@@ -1717,24 +1750,38 @@ declare class EdgeTangentFlowComputer implements ETFComputer {
  */
 declare function toneAdaptiveEstimate(input: ChannelImage, options: ToneAdaptiveEpsilonOptions): Promise<ChannelImage>;
 /**
+ * Convenience wrapper: derive epsilonDark/epsilonLight from a single center
+ * value + spread instead of picking both endpoints by hand.
+ */
+declare function toneAdaptiveEstimateAuto(input: ChannelImage, options: ToneAdaptiveEpsilonAutoOptions): Promise<ChannelImage>;
+/**
  * Estimate epsilon directly as the local baseline of the sharpened response,
  * instead of interpolating between two hand-picked epsilonDark/epsilonLight
  * constants. Since S(x) ≈ local tone in flat regions (Eq. 7, see module
  * comment), blurring the input at the DoG's own `sigma` is a direct estimate
- * of that baseline -- this is `estimateToneAdaptiveEpsilon` with the tanh
- * shaping and two free endpoints removed, in favor of just tracking the
- * quantity epsilon is actually being compared against. Prefer this one
- * unless you specifically want the tanh curve's asymmetric dark/light
- * control (e.g. for a stylized look rather than a technically-motivated one).
+ * of that baseline -- this is `toneAdaptiveEstimate` with the tanh shaping
+ * and two free endpoints removed, in favor of just tracking the quantity
+ * epsilon is actually being compared against. Prefer this one unless you
+ * specifically want the tanh curve's asymmetric dark/light control (e.g. for
+ * a stylized look rather than a technically-motivated one).
  */
 declare function localBaselineEstimate(input: ChannelImage, options: LocalBaselineEpsilonOptions): Promise<ChannelImage>;
 
 declare const epsilon_localBaselineEstimate: typeof localBaselineEstimate;
 declare const epsilon_toneAdaptiveEstimate: typeof toneAdaptiveEstimate;
+declare const epsilon_toneAdaptiveEstimateAuto: typeof toneAdaptiveEstimateAuto;
 declare namespace epsilon {
   export {
     epsilon_localBaselineEstimate as localBaselineEstimate,
     epsilon_toneAdaptiveEstimate as toneAdaptiveEstimate,
+    epsilon_toneAdaptiveEstimateAuto as toneAdaptiveEstimateAuto,
+  };
+}
+
+declare const index$3_epsilon: typeof epsilon;
+declare namespace index$3 {
+  export {
+    index$3_epsilon as epsilon,
   };
 }
 
@@ -2144,11 +2191,10 @@ type index$2_Quantizer = Quantizer;
 declare const index$2_Quantizer: typeof Quantizer;
 declare const index$2_disposeWebGL: typeof disposeWebGL;
 declare const index$2_disposeWebGPU: typeof disposeWebGPU;
-declare const index$2_epsilon: typeof epsilon;
 declare const index$2_isWebGLAvailable: typeof isWebGLAvailable;
 declare const index$2_webgl: typeof webgl;
 declare namespace index$2 {
-  export { index$2_BilateralFilter as BilateralFilter, index$2_ContrastEnhancer as ContrastEnhancer, index$2_GaussianBlur as GaussianBlur, index$2_KuwaharaFilter as KuwaharaFilter, index$2_LocalVariancePreprocessor as LocalVariancePreprocessor, index$2_MedianFilter as MedianFilter, index$2_PreprocessingPipeline as PreprocessingPipeline, index$2_PreprocessingPresets as PreprocessingPresets, index$2_Quantizer as Quantizer, index$2_disposeWebGL as disposeWebGL, index$2_disposeWebGPU as disposeWebGPU, index$2_epsilon as epsilon, index$2_isWebGLAvailable as isWebGLAvailable, index$2_webgl as webgl };
+  export { index$2_BilateralFilter as BilateralFilter, index$2_ContrastEnhancer as ContrastEnhancer, index$2_GaussianBlur as GaussianBlur, index$2_KuwaharaFilter as KuwaharaFilter, index$2_LocalVariancePreprocessor as LocalVariancePreprocessor, index$2_MedianFilter as MedianFilter, index$2_PreprocessingPipeline as PreprocessingPipeline, index$2_PreprocessingPresets as PreprocessingPresets, index$2_Quantizer as Quantizer, index$2_disposeWebGL as disposeWebGL, index$2_disposeWebGPU as disposeWebGPU, index$2_isWebGLAvailable as isWebGLAvailable, index$3 as parameterEstimation, index$2_webgl as webgl };
   export type { index$2_BackendOptions as BackendOptions, index$2_LocalVarianceConfig as LocalVarianceConfig };
 }
 
@@ -3480,5 +3526,5 @@ declare namespace index {
   export type { index_AntiAliasingConfig as AntiAliasingConfig, index_BlendContext as BlendContext, index_BlendFunction as BlendFunction, index_BuiltinBlendMode as BuiltinBlendMode, index_Color as Color, index_ColorRetentionConfig as ColorRetentionConfig, index_ColorTransformFn as ColorTransformFn, index_DoGResult as DoGResult, index_ExtensionStrategy as ExtensionStrategy, index_HatchTexture as HatchTexture, index_HatchingConfig as HatchingConfig, index_MaskTransformFn as MaskTransformFn, index_MultiScaleConfig as MultiScaleConfig, index_MultiScaleLayer as MultiScaleLayer, index_NaturalMediaConfig as NaturalMediaConfig, index_NaturalMediaStyle as NaturalMediaStyle, index_PostProcessFn as PostProcessFn };
 }
 
-export { DEFAULT_ETF_CONFIG, DoGProcessor, EdgeTangentFlowComputer, ThresholdModes, applyCustomThreshold, index$3 as blur, index$4 as dog, index as extensions, index$2 as preprocess, threshold, index$1 as utilities };
+export { DEFAULT_ETF_CONFIG, DoGProcessor, EdgeTangentFlowComputer, ThresholdModes, applyCustomThreshold, index$4 as blur, index$5 as dog, index as extensions, index$2 as preprocess, threshold, index$1 as utilities };
 export type { ADoGConfig, ADoGProcessingResult, ADogConfigParamType, AntiAliasingConfig, BackendOptions, BilateralFilterConfig, BlendFunction, BlurStrategy, ChannelImage, ColorRetentionConfig, ColorTransformFn, DoGConfig, DoGImplementation, DoGResult, DogConfigParamType, ETFConfig, ExtensionStrategy, FDoGConfidenceWeightingConfig, FDoGConfig, FDogConfidenceWeightConfigParamType, FDogConfigParamType, FlowField, FlowGuidedBlurConfig, GradientAlignedBlurConfig, HDoGConfig, HDoGProcessingResult, HDogConfigParamType, HatchTexture, HatchingConfig, IsotropicBlurConfig, KuwaharaFilterConfig, LocalBaselineEpsilonOptions, LocalVarianceConfig, MaskTransformFn, MedianFilterConfig, MultiScaleConfig, MultiScaleLayer, NaturalMediaConfig, NaturalMediaStyle, ParamRange, PostProcessFn, Preprocessor, RGBImage$1 as RGBImage, ThresholdConfig, ThresholdStrategy, ToneAdaptiveEpsilonAutoOptions, ToneAdaptiveEpsilonOptions, Vec2, XDoGConfig };
