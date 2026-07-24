@@ -11,17 +11,18 @@ import type { BlurStrategy, BlurStrategyCtor, ChannelImage } from '../interfaces
 import {
   createChannelImage,
   getPixel,
-  generateGaussianKernel,
-  computeKernelSize,
+} from '../utils/image.js';
+import {
   isWebGLComputeSupported,
   isWebGPUSupported,
-} from '../utils/index.js';
+} from '../utils/device.js';
 import { BaseCPUStrategy, BaseWebGLStrategy, BaseWebGPUStrategy } from '../base.js';
 import VERTEX_SHADER_SOURCE from '../shaders/vertex-shader.wgsl.js'
 import WEBGL2_HORIZONTAL_BLUE_SOURCE from './shaders/isotropic/webgl-horizontal-blur.glsl.js'
 import WEBGL2_VERTICAL_BLUE_SOURCE from './shaders/isotropic/webgl-vertical-blur.glsl.js'
 import WEBGPU_HORIZONTAL_BLUE_SOURCE from './shaders/isotropic/webgpu-horizontal-blur.wgsl.js'
 import WEBGPU_VERTICAL_BLUE_SOURCE from './shaders/isotropic/webgpu-vertical-blur.wgsl.js'
+import { generateGaussianKernel } from '../utils/math.js';
 
 /**
  * Configuration for isotropic Gaussian blur
@@ -52,6 +53,19 @@ export interface FlowGuidedBlurConfig {
    * Smaller values give smoother integration but cost more
    */
   stepSize: number;
+}
+
+/**
+ * Compute kernel size from sigma
+ * Paper samples at all integer locations less than 2× sigma for flow-aligned,
+ * and extends to 2.45σ for structure tensor blur
+ * 
+ * @param sigma Standard deviation
+ * @param multiplier Size multiplier (default 6 = 3σ on each side)
+ */
+function computeKernelSize(sigma: number, multiplier: number = 6): number {
+  // Ensure odd size for symmetric kernel
+  return Math.max(3, Math.floor(sigma * multiplier) | 1);
 }
 
 /**

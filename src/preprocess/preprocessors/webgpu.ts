@@ -10,9 +10,8 @@ import type {
   MedianFilterConfig,
   KuwaharaFilterConfig,
   Preprocessor,
-} from '../interfaces/base.js';
-import { generateGaussianKernel, isWebGLComputeSupported } from '../utils/index.js';
-import { BaseWebGPUStrategy } from '../base.js';
+} from '../../interfaces/base.js';
+import { BaseWebGPUStrategy } from '../../base.js';
 import BILATERAL_SHADER from './shaders/webgpu/bilateral.wgsl.js';
 import KUWAHARA_SHADER from './shaders/webgpu/kuwahara.wgsl.js';
 import GAUSSIAN_SHADER from './shaders/webgpu/gaussian.wgsl.js';
@@ -20,6 +19,8 @@ import HISTOGRAM_SHADER from './shaders/webgpu/histogram.wgsl.js';
 import STRETCH_SHADER from './shaders/webgpu/stretch.wgsl.js';
 import QUANTIZE_SHADER from './shaders/webgpu/quantize.wgsl.js';
 import MEDIAN_SHADER_TEMPLATE from './shaders/webgpu/median.wgsl.js';
+import { isWebGLComputeSupported } from '../../utils/device.js';
+import { generateGaussianKernel } from '../../utils/math.js';
 
 /* ==================================================================== */
 /* GPU device management                                                */

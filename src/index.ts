@@ -83,7 +83,6 @@
  */
 
 // High-level API
-export type {BlurStrategy} from './interfaces/base.js';
 export * as dog from './dog/index.js';
 export type {
   DoGConfig,
@@ -129,6 +128,10 @@ export * as threshold from './threshold.js'
 
 // Types
 export type {
+  BlurStrategy,
+  LocalBaselineEpsilonOptions,
+  ToneAdaptiveEpsilonAutoOptions,
+  ToneAdaptiveEpsilonOptions,
   Vec2,
   ChannelImage,
   RGBImage,

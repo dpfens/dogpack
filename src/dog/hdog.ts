@@ -8,10 +8,10 @@
 import { 
   type ChannelImage,
 } from '../interfaces/base.js';
-import { andCombine } from '../utils/index.js';
 import { ADoG } from './adog.js';
 import { FDoG } from './fdog.js';
 import { DEFAULT_ADOG_CONFIG, DEFAULT_HDOG_CONFIG, type DoGImplementation, type HDoGConfig, type HDoGProcessingResult } from '../interfaces/dog.js';
+import { createChannelImage } from '../utils/image.js';
 
 
 export class HDoG implements DoGImplementation {
@@ -84,6 +84,40 @@ export class HDoG implements DoGImplementation {
       adogSecondaryResult: adog2Detailed.result,
     };
   }
+}
+
+/**
+ * Pixel-wise logical AND across N binarized (0/1) ChannelImages.
+ * 
+ * Generalizes Eq. (7)/(9) from "Gaussian Image Binarization":
+ *   HDoG = FDoG ∧ ADoG_s ∧ ADoG_s'
+ * 
+ * Since binarized images only contain 0 or 1, logical AND is equivalent to
+ * taking the minimum across images (no De Morgan's / inversion needed here
+ * -- see the paper's Eq. (8) for why AND and "invert-OR-invert" coincide;
+ * this just implements AND directly).
+ * 
+ * All images must have matching dimensions; this is not checked here for
+ * performance -- validate upstream if inputs could mismatch.
+ */
+function andCombine(images: ChannelImage[]): ChannelImage {
+  if (images.length === 0) {
+    throw new Error('andCombine requires at least one image');
+  }
+
+  const { width, height } = images[0];
+  const output = createChannelImage(width, height);
+  const size = width * height;
+
+  for (let i = 0; i < size; i++) {
+    let v = 1;
+    for (const img of images) {
+      v = Math.min(v, img.data[i]);
+    }
+    output.data[i] = v;
+  }
+
+  return output;
 }
 
 /**

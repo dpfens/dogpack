@@ -4,8 +4,8 @@
  * High-performance GPU implementations of image preprocessing filters.
  * Achieves 50-100x speedup over CPU implementations for large images.
  */
-import type { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig, Preprocessor } from '../interfaces/base.js';
-import { BaseWebGLStrategy } from '../base.js';
+import type { ChannelImage, BilateralFilterConfig, MedianFilterConfig, KuwaharaFilterConfig, Preprocessor } from '../../interfaces/base.js';
+import { BaseWebGLStrategy } from '../../base.js';
 import BILATERAL_SOURCE from './shaders/webgl/bilateral.glsl.js'
 import CONTRAST_SOURCE from './shaders/webgl/contrast.glsl.js'
 import GAUSSIAN_H_SOURCE from './shaders/webgl/guassian-horizontal.glsl.js'

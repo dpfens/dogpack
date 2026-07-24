@@ -3,7 +3,7 @@
  * gracefully if it fails later" preprocessors.
  */
 
-import type { ChannelImage, Preprocessor, PreprocessorCtor } from '../interfaces/base.js';
+import type { ChannelImage, Preprocessor, PreprocessorCtor } from '../../interfaces/base.js';
 
 export abstract class ResilientPreprocessor<TConfig> implements Preprocessor {
   private readonly failedBackends = new Set<PreprocessorCtor>();

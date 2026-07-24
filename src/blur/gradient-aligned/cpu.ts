@@ -13,8 +13,9 @@ import {
   type GradientAlignedBlurBackendConfig,
   type GradientAlignedBlurConfig,
 } from '../../interfaces/base.js';
-import { createChannelImage, getPixelBilinear, generateGaussianKernel } from '../../utils/index.js';
 import { BaseCPUStrategy } from '../../base.js';
+import { createChannelImage, getPixelBilinear } from '../../utils/image.js';
+import { generateGaussianKernel } from '../../utils/math.js';
 
 
 export class CPUGradientAlignedBlur extends BaseCPUStrategy implements BlurStrategy {

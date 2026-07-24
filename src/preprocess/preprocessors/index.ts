@@ -1,0 +1,5 @@
+export type { LocalVarianceConfig } from './cpu.js'
+export { LocalVariancePreprocessor } from './cpu.js'
+export type { BackendOptions } from './preprocessor.js'
+export * from './preprocessor.js'
+export * as webgl from './webgl.js'

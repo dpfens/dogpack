@@ -28,7 +28,7 @@ import type {
   KuwaharaFilterConfig,
   Preprocessor,
   PreprocessorCtor,
-} from '../interfaces/base.js';
+} from '../../interfaces/base.js';
 
 import { ResilientPreprocessor } from './resilient-preprocessor.js';
 

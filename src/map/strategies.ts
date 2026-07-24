@@ -6,8 +6,8 @@
  */
 
 import type { ChannelImage, Preprocessor, Disposable } from '../interfaces/base.js';
-import { GaussianBlur } from '../preprocess/preprocess.js';
-import { LocalVariancePreprocessorOptimized, type LocalVarianceConfig } from '../preprocess/local-variance.js';
+import { GaussianBlur } from '../preprocess/preprocessors/preprocessor.js';
+import { LocalVariancePreprocessor, type LocalVarianceConfig } from '../preprocess/preprocessors/cpu.js';
 import { computeStructureTensorMaps, type StructureTensorMaps } from './structure-tensor.js';
 import { lerpChannel, mapChannel, blendChannels, multiplyChannels, combineChannels, normalizeChannel } from './channel-map-ops.js';
 
@@ -29,7 +29,7 @@ export class TextureStrategy implements ParameterMapStrategy {
   ) {}
 
   async compute(input: ChannelImage): Promise<ChannelImage> {
-    const texture = await new LocalVariancePreprocessorOptimized(this.config).process(input);
+    const texture = await new LocalVariancePreprocessor(this.config).process(input);
     return this.param === 'p'
       ? lerpChannel(this.opts.high, this.opts.low, texture)
       : lerpChannel(this.opts.low, this.opts.high, texture);
