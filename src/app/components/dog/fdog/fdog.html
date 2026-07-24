@@ -1,4 +1,3 @@
-
 <div class="d-flex align-items-center justify-content-between">
   <span class="ff-display mb-3">FDoG</span>
   <button type="button" class="btn btn-primary btn-sm" [disabled]="previewPending()" (click)="runPreview()">
@@ -63,4 +62,58 @@
       [formControl]="sigmaA" />
     <div class="form-text">{{ hint('sigmaA') }}</div>
   </div>
+
+  <div class="mb-3 form-check">
+    <input
+      type="checkbox"
+      class="form-check-input"
+      id="confidenceWeightingToggle"
+      [checked]="confidenceWeightingEnabled()"
+      (change)="toggleConfidenceWeighting($any($event.target).checked)" />
+    <label class="form-check-label" for="confidenceWeightingToggle">
+      Confidence weighting
+    </label>
+    <div class="form-text">
+      Weight FDoG's smoothing/sharpening passes by flow confidence (anisotropy × normalized magnitude) instead of applying them uniformly, to suppress spurious edges in flat or noisy regions.
+    </div>
+  </div>
+
+  @if (confidenceWeightingEnabled()) {
+    <div class="ms-3">
+      <div class="mb-3">
+        <label class="form-label">epsilon margin (adaptive threshold)</label>
+        <param-slider
+          [sliderMin]="confidenceWeightRanges.epsilonMargin.recommendedMin"
+          [sliderMax]="confidenceWeightRanges.epsilonMargin.recommendedMax"
+          [hardMin]="confidenceWeightRanges.epsilonMargin.hardMin"
+          [hardMax]="confidenceWeightRanges.epsilonMargin.hardMax"
+          [step]="confidenceWeightRanges.epsilonMargin.step"
+          [formControl]="epsilonMargin" />
+        <div class="form-text">
+          Margin added where flow confidence is low, raising the threshold to suppress spurious edges in flat/noisy regions. Set to 0 to disable epsilon adaptation while leaving the other confidence-weighted passes on.
+        </div>
+      </div>
+
+      <div class="form-check mb-2">
+        <input type="checkbox" class="form-check-input" id="sigmaMBlendToggle" [formControl]="sigmaMBlend" />
+        <label class="form-check-label" for="sigmaMBlendToggle">
+          Blend σm pass by anisotropy
+        </label>
+      </div>
+
+      <div class="form-check mb-2">
+        <input type="checkbox" class="form-check-input" id="sigmaABlendToggle" [formControl]="sigmaABlend" />
+        <label class="form-check-label" for="sigmaABlendToggle">
+          Blend σa pass by anisotropy
+        </label>
+      </div>
+
+      <div class="form-check mb-3">
+        <input type="checkbox" class="form-check-input" id="pByMagnitudeToggle" [formControl]="pByMagnitude" />
+        <label class="form-check-label" for="pByMagnitudeToggle">
+          Scale sharpening by ETF magnitude
+        </label>
+      </div>
+    </div>
+  }
 </div>

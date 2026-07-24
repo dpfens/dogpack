@@ -134,7 +134,7 @@ export const ADOG_EXTRA_PARAM_HINTS: Record<'tau' | 's' | 'noiseScaleC' | 'kerne
 // FDoG extras (FDogConfigParamType: sigmaC, sigmaM, sigmaA)
 // ---------------------------------------------------------------------------
 
-export const FDOG_EXTRA_PARAM_HINTS: Record<'sigmaC' | 'sigmaM' | 'sigmaA', ParamHint> = {
+export const FDOG_EXTRA_PARAM_HINTS: Record<'sigmaC' | 'sigmaM' | 'sigmaA' | 'epsilonMargin', ParamHint> = {
   sigmaC: {
     label: '\u03c3c (structure tensor smoothing)',
     hint: 'Controls how smooth the detected flow field (the image\u2019s "grain" direction) is before edges are traced along it. Higher gives longer, more coherent strokes; lower follows fine texture more literally.',
@@ -146,6 +146,10 @@ export const FDOG_EXTRA_PARAM_HINTS: Record<'sigmaC' | 'sigmaM' | 'sigmaA', Para
   sigmaA: {
     label: '\u03c3a (anti-aliasing LIC)',
     hint: 'Optional final smoothing pass along the flow field to soften jagged pixel edges. 0 disables it.',
+  },
+  epsilonMargin: {
+    label: '\u03c3a Epsilon margin',
+    hint: 'Optional value indiating the.',
   },
 };
 
