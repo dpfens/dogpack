@@ -66,7 +66,6 @@ import {
   type ETFConfig,
   type ETFComputer,
   DEFAULT_ETF_CONFIG,
-  type ETFDetailedResult,
 } from '../interfaces/base.js';
 import { TangentFlowField } from './flow-field.js';
 import { BaseWebGPUStrategy } from '../base.js';
@@ -433,8 +432,7 @@ export class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy implements
    * there's only one channel (see STRUCTURE_TENSOR_ACCUMULATE_SHADER).
    */
   async compute(input: ChannelImage, config: Partial<ETFConfig> = {}, sigmaC?: number): Promise<FlowField> {
-    const { flowField } = await this.computeInternal([input], config, sigmaC);
-    return flowField;
+    return await this.computeInternal([input], config, sigmaC);
   }
 
   /**
@@ -444,17 +442,7 @@ export class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy implements
    */
   async computeMultiChannel(inputs: ChannelImage[], config: Partial<ETFConfig> = {}, sigmaC?: number): Promise<FlowField> {
     this.validateChannels(inputs);
-    const { flowField } = await this.computeInternal(inputs, config, sigmaC);
-    return flowField;
-  }
-
-  async computeDetailed(input: ChannelImage, config: Partial<ETFConfig> = {}, sigmaC?: number): Promise<ETFDetailedResult> {
-    return this.computeInternal([input], config, sigmaC);
-  }
-
-  async computeMultiChannelDetailed(inputs: ChannelImage[], config: Partial<ETFConfig> = {}, sigmaC?: number): Promise<ETFDetailedResult> {
-    this.validateChannels(inputs);
-    return this.computeInternal(inputs, config, sigmaC);
+    return await this.computeInternal(inputs, config, sigmaC);
   }
 
   /**
@@ -492,7 +480,7 @@ export class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy implements
     inputs: ChannelImage[],
     config: Partial<ETFConfig>,
     sigmaC?: number
-  ): Promise<ETFDetailedResult> {
+  ): Promise<FlowField> {
     const cfg = { ...DEFAULT_ETF_CONFIG, ...config };
     const { width, height } = inputs[0];
     const channelCount = inputs.length;
@@ -765,11 +753,9 @@ export class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy implements
         kernelBuf.destroy();
       }
 
-      return {
-        flowField: TangentFlowField.fromFloat32Array(tangents, width, height),
-        magnitude: { data: magnitude, width, height },
-        anisotropy: { data: anisotropy, width, height },
-      };
+      return TangentFlowField.fromFloat32Array(
+        tangents, width, height, magnitude, anisotropy
+      )
     });
   }
 }

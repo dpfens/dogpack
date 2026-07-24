@@ -14,7 +14,7 @@
  * identical whether the accumulated tensor came from one channel or many.
  */
 
-import type { ChannelImage, FlowField, Vec2, ETFConfig, ETFComputer, ETFDetailedResult } from '../interfaces/base.js';
+import type { ChannelImage, FlowField, Vec2, ETFConfig, ETFComputer } from '../interfaces/base.js';
 import { DEFAULT_ETF_CONFIG } from '../interfaces/base.js';
 import { isWebGLComputeSupported, generateGaussianKernel } from '../utils/index.js';
 import { TangentFlowField } from './flow-field.js';
@@ -72,20 +72,18 @@ export class WebGLEdgeTangentFlowComputer extends BaseWebGLStrategy implements E
   }
 
   async compute(input: ChannelImage, config: Partial<ETFConfig> = {}, sigmaC?: number): Promise<FlowField> {
-    const { flowField } = await this.computeDetailed(input, config, sigmaC);
-    return flowField;
+    return await this.computeDetailed(input, config, sigmaC);
   }
 
-  async computeDetailed(input: ChannelImage, config: Partial<ETFConfig> = {}, sigmaC?: number): Promise<ETFDetailedResult> {
+  async computeDetailed(input: ChannelImage, config: Partial<ETFConfig> = {}, sigmaC?: number): Promise<FlowField> {
     return this.computeMultiChannelDetailed([input], config, sigmaC);
   }
 
   async computeMultiChannel(inputs: ChannelImage[], config: Partial<ETFConfig> = {}, sigmaC?: number): Promise<FlowField> {
-    const { flowField } = await this.computeMultiChannelDetailed(inputs, config, sigmaC);
-    return flowField;
+    return await this.computeMultiChannelDetailed(inputs, config, sigmaC);
   }
 
-  async computeMultiChannelDetailed(inputs: ChannelImage[], config: Partial<ETFConfig> = {}, sigmaC?: number): Promise<ETFDetailedResult> {
+  async computeMultiChannelDetailed(inputs: ChannelImage[], config: Partial<ETFConfig> = {}, sigmaC?: number): Promise<FlowField> {
     if (inputs.length === 0) {
       throw new Error('computeMultiChannel requires at least one channel');
     }
@@ -245,11 +243,9 @@ export class WebGLEdgeTangentFlowComputer extends BaseWebGLStrategy implements E
       deleteFramebuffer(gl, tangentFB2);
 
 
-      return {
-        flowField: TangentFlowField.fromVec2Array(tangents, width, height),
-        magnitude: { data: magnitude, width, height },
-        anisotropy: { data: anisotropy, width, height },
-      };
+      return TangentFlowField.fromVec2Array(
+        tangents, width, height, magnitude, anisotropy
+      )
     });
   }
 

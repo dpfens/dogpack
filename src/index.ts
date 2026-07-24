@@ -92,6 +92,8 @@ export type {
   XDoGConfig,
   FDoGConfig,
   FDogConfigParamType,
+  FDogConfidenceWeightConfigParamType,
+  FDoGConfidenceWeightingConfig,
   ADoGConfig,
   ADogConfigParamType,
   HDoGConfig,

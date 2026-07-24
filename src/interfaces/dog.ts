@@ -141,29 +141,60 @@ export interface FDoGConfig extends DoGConfig {
   etfIterations?: number;
 
   /**
-   * If true and `p` is a plain number, scale it per-pixel by normalized
-   * ETF magnitude (weak-gradient pixels get less sharpening). Ignored if
-   * `p` is already a ChannelImage — an explicit map is never overridden.
-   * Only applies to process()/processDetailed() (the ETF is computed
-   * internally there). Default: false — preserves flat-`p` behavior.
+   * Enables confidence-weighted adjustments to p/epsilon/sigmaM/sigmaA,
+   * derived from the ETF's per-pixel anisotropy/magnitude (see
+   * utils/scalar-field.ts's flowConfidenceField()).
+   *
+   * Undefined (the default) means fully OFF: this changes output versus
+   * flat p/epsilon and costs an extra per-pixel pass on every call, so
+   * callers opt in explicitly rather than getting it silently applied --
+   * see FDoGConfidenceWeightingConfig for what each sub-option does and its
+   * own default once enabled.
+   *
+   * Pass `{}` to turn everything on at its defaults, or set individual
+   * fields to override just one piece; unset fields fall back to
+   * DEFAULT_CONFIDENCE_WEIGHTING_CONFIG the same way FDoGConfig itself
+   * falls back to DEFAULT_FDOG_CONFIG.
    */
-  pByMagnitude?: boolean;
+  confidenceWeighting?: Partial<FDoGConfidenceWeightingConfig>;
+}
+
+/**
+ * Sub-options for FDoGConfig.confidenceWeighting. Each field defaults to
+ * "on" once the parent `confidenceWeighting` object is present at all --
+ * the opt-in gate is having the object, not these individual flags.
+ */
+export interface FDoGConfidenceWeightingConfig {
+  /**
+   * Margin added to a flat `epsilon` where flow confidence
+   * (anisotropy * normalized magnitude) is low, raising the threshold and
+   * suppressing spurious edges in flat/noisy regions. Ignored if
+   * `epsilon` is already a ChannelImage -- an explicit map is never
+   * overridden. Set to 0 to disable epsilon adaptation specifically while
+   * leaving the other confidence-weighted passes on (default: 0.15).
+   */
+  epsilonMargin: number;
 
   /**
-   * If true and `epsilon` is a plain number, raise it per-pixel where
-   * anisotropy * magnitude confidence is low, suppressing spurious edges
-   * in flat/noisy regions. Ignored if `epsilon` is already a ChannelImage.
-   * Default: false.
+   * Blend the sigmaM flow-aligned accumulation pass back toward its
+   * pre-blur input, weighted by anisotropy, instead of applying it
+   * uniformly (default: true).
    */
-  epsilonByConfidence?: boolean;
+  sigmaMBlend: boolean;
 
   /**
-   * If true, blend the sigmaM/sigmaA flow-aligned passes back toward
-   * their pre-blur input, weighted by anisotropy, instead of applying
-   * them uniformly. Only meaningful when the ETF's anisotropy field is
-   * available (i.e. via computeDetailed()). Default: false.
+   * Blend the sigmaA anti-aliasing pass back toward its pre-blur input,
+   * weighted by anisotropy, instead of applying it uniformly
+   * (default: true).
    */
-  weightFlowPassesByAnisotropy?: boolean;
+  sigmaABlend: boolean;
+
+  /**
+   * If `p` is a plain number, scale it per-pixel by normalized ETF
+   * magnitude (weak-gradient pixels get less sharpening). Ignored if `p`
+   * is already a ChannelImage (default: true).
+   */
+  pByMagnitude: boolean;
 }
 
 /**
@@ -370,6 +401,11 @@ export const FDOG_PARAM_RANGES: Record<DogConfigParamType | FDogConfigParamType,
   sigmaA: { hardMin: 0, hardMax: Infinity, recommendedMin: 0.5, recommendedMax: 7.2,  default: 1.0, step: 0.1 },
 } as const;
 
+export type FDogConfidenceWeightConfigParamType = 'epsilonMargin';
+export const FDOG_CONFIDENCE_WEIGHT_PARAM_RANGES: Record<FDogConfidenceWeightConfigParamType, ParamRange> = {
+  epsilonMargin: { hardMin: 0, hardMax: 1, recommendedMin: 0, recommendedMax: 0.3, default: 0.15, step: 0.01 },
+}
+
 /**
  * ADoG parameter ranges.
  *
@@ -416,6 +452,41 @@ export const DEFAULT_DOG_CONFIG: DoGConfig = {
 };
 
 /**
+ * Default values for FDoGConfig.confidenceWeighting's sub-options, used
+ * once the caller opts in by providing the (possibly empty) object.
+ * Not sourced from FDOG_PARAM_RANGES -- like HDoGConfig's
+ * adogSecondaryScaleFactor, these are structural/behavioral toggles
+ * rather than paper-tabulated sigma/p/epsilon/phi knobs.
+ */
+export const DEFAULT_CONFIDENCE_WEIGHTING_CONFIG: FDoGConfidenceWeightingConfig = {
+  epsilonMargin: FDOG_CONFIDENCE_WEIGHT_PARAM_RANGES.epsilonMargin.default,
+  sigmaMBlend: true,
+  sigmaABlend: true,
+  pByMagnitude: true,
+};
+
+const CONFIDENCE_WEIGHTING_DISABLED: FDoGConfidenceWeightingConfig = {
+  epsilonMargin: 0,
+  sigmaMBlend: false,
+  sigmaABlend: false,
+  pByMagnitude: false,
+};
+
+/**
+ * Resolve FDoGConfig.confidenceWeighting into a ResolvedConfidenceWeighting.
+ * `undefined` (opted out) resolves to CONFIDENCE_WEIGHTING_DISABLED; any
+ * object (even `{}`) merges over DEFAULT_CONFIDENCE_WEIGHTING_CONFIG
+ * following the same override convention used
+ * everywhere else in this file (`{ ...DEFAULT_X, ...overrides }`).
+ */
+export function resolveConfidenceWeighting(
+  config: Partial<FDoGConfidenceWeightingConfig> | undefined
+): FDoGConfidenceWeightingConfig {
+  if (!config) return CONFIDENCE_WEIGHTING_DISABLED;
+  return { ...DEFAULT_CONFIDENCE_WEIGHTING_CONFIG, ...config };
+}
+
+/**
  * Default FDoG configuration values
  * Based on Table A.1 in the paper
  */
@@ -425,6 +496,9 @@ export const DEFAULT_FDOG_CONFIG: FDoGConfig = {
   sigmaM: FDOG_PARAM_RANGES.sigmaM.default,   // Flow-aligned smoothing
   sigmaA: FDOG_PARAM_RANGES.sigmaA.default,   // Anti-aliasing,
   thresholdStrategy: new HardThresholdStrategy()
+  // confidenceWeighting intentionally omitted: undefined = off by
+  // default, so existing callers' output doesn't silently change (see
+  // FDoGConfig.confidenceWeighting's doc comment).
 };
 
 /**

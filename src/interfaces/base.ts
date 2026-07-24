@@ -6,17 +6,25 @@
  * and: "Gaussian Image Binarization" by Kang & Stamoulis (2021)
  */
 
-// NOTE: HardThresholdStrategy needs to be added to threshold.ts -- see the
-// threshold-additions.ts snippet for its implementation. Merge it into your
-// existing threshold.ts (it's a sibling of SoftThresholdStrategy) and this
-// import will resolve.
-
 /**
  * Simple 2D vector
  */
 export interface Vec2 {
   x: number;
   y: number;
+}
+
+/**
+ * A lazily-evaluated per-pixel scalar value. Replaces the old
+ * `number | ChannelImage` union used for spatially-varying parameters
+ * (p, epsilon, phi, ...): a plain number becomes `ScalarField.constant()`,
+ * an existing buffer becomes `ScalarField.fromChannelImage()`, and both
+ * compose via map()/blend()/scale() without allocating until
+ * materialize() forces evaluation into a real ChannelImage. See
+ * utils/scalar-field.ts for the constructors and combinators.
+ */
+export interface ScalarField {
+  sample(i: number): number;
 }
 
 /**
@@ -163,10 +171,33 @@ export const DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG: GradientAlignedBlurConfig = {
 
 
 /**
- * Flow field representing edge tangent directions at each pixel
+ * Flow field representing edge tangent directions at each pixel, along
+ * with the structure-tensor-derived confidence data for that direction.
+ *
+ * magnitude and anisotropy are first-class here (not a separate
+ * "detailed" result) because every consumer of a FlowField benefits from
+ * knowing how much to trust it -- not just the callers who happened to
+ * ask for the detailed variant. See ETFComputer.compute() for how these
+ * are produced.
  */
 export interface FlowField {
   getTangent(x: number, y: number): Vec2;
+
+  /**
+   * Structure-tensor trace magnitude, sqrt(E + G), at this pixel.
+   * Unnormalized -- scale depends on input contrast. Use
+   * utils/scalar-field.js's normalizedMagnitudeField() to get a [0,1]
+   * field normalized against this FlowField's own maximum.
+   */
+  getMagnitude(x: number, y: number): number;
+
+  /**
+   * (lambda1-lambda2)/(lambda1+lambda2) in [0,1] at this pixel. 1 =
+   * coherent line direction, 0 = isotropic (flat region, corner, or
+   * texture noise where local gradients disagree).
+   */
+  getAnisotropy(x: number, y: number): number;
+
   readonly width: number;
   readonly height: number;
 }
@@ -260,19 +291,6 @@ export interface ChannelTensor {
 }
 
 /**
- * Result of a *Detailed ETF computation: the flow field plus its
- * underlying magnitude field (the structure tensor's trace), exposed as
- * an ordinary ChannelImage so it composes with the rest of the library's
- * scalar-field tooling — e.g. as a stroke-opacity or seed-density map via
- * the same adaptiveMap() pattern used for spatially-varying p/epsilon.
- */
-export interface ETFDetailedResult {
-  flowField: FlowField;
-  magnitude: ChannelImage;
-  anisotropy: ChannelImage;
-}
-
-/**
  * Common interface implemented by every Edge Tangent Flow backend
  * (CPU, WebGL, WebGPU, ...).
  *
@@ -316,20 +334,6 @@ export interface ETFComputer extends Disposable, BackendIdentifiable {
     config?: Partial<ETFConfig>,
     sigmaC?: number
   ): Promise<FlowField>;
-
-  /** Same as compute(), but also returns the per-pixel structure-tensor
-   *  magnitude instead of discarding it. */
-  computeDetailed(
-    input: ChannelImage,
-    config?: Partial<ETFConfig>,
-    sigmaC?: number
-  ): Promise<ETFDetailedResult>;
-
-  computeMultiChannelDetailed(
-    inputs: ChannelImage[],
-    config?: Partial<ETFConfig>,
-    sigmaC?: number
-  ): Promise<ETFDetailedResult>;
 }
 
 /**
