@@ -9,8 +9,9 @@ exports.CPUGradientAlignedBlur = void 0;
  * edges but not along them.
  */
 const base_js_1 = require("../../interfaces/base.js");
-const index_js_1 = require("../../utils/index.js");
 const base_js_2 = require("../../base.js");
+const image_js_1 = require("../../utils/image.js");
+const math_js_1 = require("../../utils/math.js");
 class CPUGradientAlignedBlur extends base_js_2.BaseCPUStrategy {
     backend = 'cpu';
     config;
@@ -36,11 +37,11 @@ class CPUGradientAlignedBlur extends base_js_2.BaseCPUStrategy {
                 height: input.height,
             };
         }
-        const output = (0, index_js_1.createChannelImage)(input.width, input.height);
+        const output = (0, image_js_1.createChannelImage)(input.width, input.height);
         // Number of samples perpendicular to flow
         const halfSamples = Math.ceil(sigma * 2 / this.config.stepSize);
         const numSamples = halfSamples * 2 + 1;
-        const weights = (0, index_js_1.generateGaussianKernel)(sigma, numSamples);
+        const weights = (0, math_js_1.generateGaussianKernel)(sigma, numSamples);
         for (let y = 0; y < input.height; y++) {
             for (let x = 0; x < input.width; x++) {
                 const value = this.sampleAcrossFlow(input, x, y, halfSamples, weights);
@@ -61,7 +62,7 @@ class CPUGradientAlignedBlur extends base_js_2.BaseCPUStrategy {
         const gradX = -tangent.y; // Perpendicular: rotate 90 degrees
         const gradY = tangent.x;
         // Sample at center
-        sum += (0, index_js_1.getPixelBilinear)(input, startX, startY) * weights[halfSamples];
+        sum += (0, image_js_1.getPixelBilinear)(input, startX, startY) * weights[halfSamples];
         weightSum += weights[halfSamples];
         // Sample in positive gradient direction
         for (let i = 1; i <= halfSamples; i++) {
@@ -72,7 +73,7 @@ class CPUGradientAlignedBlur extends base_js_2.BaseCPUStrategy {
                 break;
             }
             const idx = halfSamples + i;
-            sum += (0, index_js_1.getPixelBilinear)(input, px, py) * weights[idx];
+            sum += (0, image_js_1.getPixelBilinear)(input, px, py) * weights[idx];
             weightSum += weights[idx];
         }
         // Sample in negative gradient direction
@@ -84,7 +85,7 @@ class CPUGradientAlignedBlur extends base_js_2.BaseCPUStrategy {
                 break;
             }
             const idx = halfSamples - i;
-            sum += (0, index_js_1.getPixelBilinear)(input, px, py) * weights[idx];
+            sum += (0, image_js_1.getPixelBilinear)(input, px, py) * weights[idx];
             weightSum += weights[idx];
         }
         return weightSum > 0 ? sum / weightSum : 0;

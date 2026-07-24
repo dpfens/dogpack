@@ -235,6 +235,84 @@ interface ETFComputer extends Disposable, BackendIdentifiable {
      */
     computeMultiChannel(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
 }
+interface ToneAdaptiveEpsilonOptions {
+    /**
+     * Epsilon to use where the local area is darkest (local tone -> 0).
+     */
+    epsilonDark: number;
+    /**
+     * Epsilon to use where the local area is lightest (local tone -> 1).
+     */
+    epsilonLight: number;
+    /**
+     * Gaussian sigma used to blur the input before reading its tone. This is
+     * what makes it a *local area* reading rather than a noisy per-pixel one --
+     * bigger sigma means tone is averaged over a broader neighborhood. Should
+     * generally be larger than the DoG's own sigmaC/sigmaS (which operate at
+     * edge scale) so this is describing the surrounding region, not the edge
+     * itself.
+     * Default: 8
+     */
+    localitySigma?: number;
+    /**
+     * Steepness of the tanh transition between epsilonDark and epsilonLight,
+     * mirroring the paper's `s` parameter in Eq. (5)/(6) (default there is 2).
+     * Higher values sharpen the transition around the midtones; lower values
+     * spread it out more gradually across the whole tone range.
+     * Default: 2
+     */
+    s?: number;
+    /**
+     * Reuse an existing blur strategy (e.g. one already created elsewhere in
+     * your pipeline) instead of spinning up a fresh IsotropicBlur. If omitted,
+     * one is created and disposed internally.
+     */
+    blurStrategy?: BlurStrategy;
+}
+interface ToneAdaptiveEpsilonAutoOptions extends Omit<ToneAdaptiveEpsilonOptions, 'epsilonDark' | 'epsilonLight'> {
+    /**
+     * Center epsilon to build the dark/light band around -- e.g. the output of
+     * `ADoG.estimateEpsilon(input)`, or whatever flat epsilon you're already
+     * using today.
+     */
+    center: number;
+    /**
+     * Half-width of the [epsilonDark, epsilonLight] band around `center`.
+     * Start small (e.g. 5-10% of `center`) and increase until dark/light
+     * regions both look right; too large will just push one extreme toward
+     * losing all detail.
+     */
+    spread: number;
+    /**
+     * If true (default), dark areas get `center - spread` and light areas get
+     * `center + spread` -- i.e. epsilon increases with local tone, the same
+     * direction the sharpened response itself moves in (see the module-level
+     * comment above, grounded in processor.ts's Eq. 7 + soft-threshold logic).
+     * Only flip this if you've changed the pipeline in a way that inverts that
+     * relationship (e.g. an unusually large `p`, or a custom ThresholdStrategy)
+     * and have confirmed the output actually looks better.
+     */
+    denserInDark?: boolean;
+}
+interface LocalBaselineEpsilonOptions {
+    /**
+     * Blur sigma used to estimate the local baseline. For this to track what
+     * `computeSharpening()` actually produces in flat regions, this should be
+     * close to the DoG's own `sigma` (blur1's scale) -- not `sigma * k`, and
+     * not an unrelated "how big is a neighborhood" value picked independently
+     * of the DoG config you're pairing it with.
+     */
+    sigma: number;
+    /**
+     * Flat offset applied on top of the local baseline. Positive -> stricter
+     * everywhere (more of each neighborhood crushes to black); negative ->
+     * looser everywhere (more crushes to white). Start at 0 and nudge from
+     * there; plays the same role as `ADoG.estimateEpsilon`'s `biasOffset`.
+     * Default: 0
+     */
+    offset?: number;
+    blurStrategy?: BlurStrategy;
+}
 
 interface ThresholdStrategy {
     threshold(sharpened: ChannelImage, config: ThresholdConfig): ChannelImage;
@@ -1628,16 +1706,47 @@ declare class EdgeTangentFlowComputer implements ETFComputer {
 }
 
 /**
- * Local variance-based texture detection preprocessor for XDoG/FDoG edge detection.
+ * Estimate a spatially-varying epsilon ChannelImage from local image tone.
  *
- * @remarks
- * Standard XDoG/FDoG apply the same parameters across an entire image, so
- * textured regions (fabric, foliage, skin) produce false edges alongside
- * genuine structural ones. This module addresses that by computing a texture
- * strength map — a {@link ChannelImage} whose values range from `0` (pure
- * structure) to `1` (pure texture) — from the local variance in a window
- * around each pixel, optionally normalized by the local gradient so that
- * subtle structural edges (e.g. wrinkles) aren't mistaken for texture.
+ * epsilon(x) = epsilonDark + (epsilonLight - epsilonDark) * tanh(s * localTone(x))
+ *
+ * Note tanh(s) doesn't quite reach 1 (e.g. tanh(2) ≈ 0.964), so the lightest
+ * areas land close to, but not exactly at, epsilonLight -- same approximation
+ * the paper accepts for rho(x) in Eq. (5), and generally not worth correcting
+ * for since epsilonDark/epsilonLight are empirically tuned anyway.
+ */
+declare function toneAdaptiveEstimate(input: ChannelImage, options: ToneAdaptiveEpsilonOptions): Promise<ChannelImage>;
+/**
+ * Estimate epsilon directly as the local baseline of the sharpened response,
+ * instead of interpolating between two hand-picked epsilonDark/epsilonLight
+ * constants. Since S(x) ≈ local tone in flat regions (Eq. 7, see module
+ * comment), blurring the input at the DoG's own `sigma` is a direct estimate
+ * of that baseline -- this is `estimateToneAdaptiveEpsilon` with the tanh
+ * shaping and two free endpoints removed, in favor of just tracking the
+ * quantity epsilon is actually being compared against. Prefer this one
+ * unless you specifically want the tanh curve's asymmetric dark/light
+ * control (e.g. for a stylized look rather than a technically-motivated one).
+ */
+declare function localBaselineEstimate(input: ChannelImage, options: LocalBaselineEpsilonOptions): Promise<ChannelImage>;
+
+declare const epsilon_localBaselineEstimate: typeof localBaselineEstimate;
+declare const epsilon_toneAdaptiveEstimate: typeof toneAdaptiveEstimate;
+declare namespace epsilon {
+  export {
+    epsilon_localBaselineEstimate as localBaselineEstimate,
+    epsilon_toneAdaptiveEstimate as toneAdaptiveEstimate,
+  };
+}
+
+/**
+ * Preprocessing module for XDoG/FDoG
+ *
+ * Provides filters to prepare images before line detection.
+ * These help reduce noise and texture while preserving important edges.
+ *
+ * Section 3.2 of the paper discusses the importance of bilateral
+ * preprocessing for "indication" - attenuating weak edges while
+ * preserving strong edges.
  */
 
 /**
@@ -1714,52 +1823,6 @@ interface LocalVarianceConfig {
  * ```
  */
 declare class LocalVariancePreprocessor implements Preprocessor {
-    private config;
-    /** CPU-only — no WebGL/WebGPU counterpart exists for this preprocessor. */
-    readonly backend: "cpu";
-    constructor(config?: Partial<LocalVarianceConfig>);
-    dispose(): void;
-    /**
-     * Compute texture strength map from image
-     *
-     * @param image Input grayscale image (Float32Array, 0-1 normalized)
-     * @returns ChannelImage containing texture strength values
-     *          Each pixel: 0 = pure structure (edges, boundaries)
-     *                     1 = pure texture (patterns, fine details)
-     *          Developer uses these values to adapt XDoG parameters
-     */
-    process(image: ChannelImage): Promise<ChannelImage>;
-    /**
-     * Compute variance of pixel values in a window
-     * @private
-     */
-    private computeLocalVariance;
-    /**
-     * Compute gradient magnitude at pixel (Sobel filter)
-     * Used to normalize variance (distinguish texture from edges)
-     * @private
-     */
-    private computeLocalGradient;
-}
-/**
- * Optimized Local Variance Texture Detector
- *
- * Same functionality as LocalVariancePreprocessor, but faster.
- * Uses separable convolution: O(n x r) instead of O(n x r^2)
- *
- * Approach: Variance = E[X^2] - E[X]^2
- * - Compute box blur of image (gives E[X])
- * - Compute box blur of image squared (gives E[X^2])
- * - Subtract to get variance
- *
- * Performance:
- * - Basic version: ~1-2ms for 1080p (5x5 window)
- * - Optimized version: ~0.5ms for 1080p (5x5 window)
- * - 3-4x faster for large windows
- *
- * Use this for real-time applications. Basic version is fine for batch processing.
- */
-declare class LocalVariancePreprocessorOptimized implements Preprocessor {
     private config;
     /** CPU-only — no WebGL/WebGPU counterpart exists for this preprocessor. */
     readonly backend: "cpu";
@@ -2072,8 +2135,6 @@ declare const index$2_KuwaharaFilter: typeof KuwaharaFilter;
 type index$2_LocalVarianceConfig = LocalVarianceConfig;
 type index$2_LocalVariancePreprocessor = LocalVariancePreprocessor;
 declare const index$2_LocalVariancePreprocessor: typeof LocalVariancePreprocessor;
-type index$2_LocalVariancePreprocessorOptimized = LocalVariancePreprocessorOptimized;
-declare const index$2_LocalVariancePreprocessorOptimized: typeof LocalVariancePreprocessorOptimized;
 type index$2_MedianFilter = MedianFilter;
 declare const index$2_MedianFilter: typeof MedianFilter;
 type index$2_PreprocessingPipeline = PreprocessingPipeline;
@@ -2083,12 +2144,88 @@ type index$2_Quantizer = Quantizer;
 declare const index$2_Quantizer: typeof Quantizer;
 declare const index$2_disposeWebGL: typeof disposeWebGL;
 declare const index$2_disposeWebGPU: typeof disposeWebGPU;
+declare const index$2_epsilon: typeof epsilon;
 declare const index$2_isWebGLAvailable: typeof isWebGLAvailable;
 declare const index$2_webgl: typeof webgl;
 declare namespace index$2 {
-  export { index$2_BilateralFilter as BilateralFilter, index$2_ContrastEnhancer as ContrastEnhancer, index$2_GaussianBlur as GaussianBlur, index$2_KuwaharaFilter as KuwaharaFilter, index$2_LocalVariancePreprocessor as LocalVariancePreprocessor, index$2_LocalVariancePreprocessorOptimized as LocalVariancePreprocessorOptimized, index$2_MedianFilter as MedianFilter, index$2_PreprocessingPipeline as PreprocessingPipeline, index$2_PreprocessingPresets as PreprocessingPresets, index$2_Quantizer as Quantizer, index$2_disposeWebGL as disposeWebGL, index$2_disposeWebGPU as disposeWebGPU, index$2_isWebGLAvailable as isWebGLAvailable, index$2_webgl as webgl };
+  export { index$2_BilateralFilter as BilateralFilter, index$2_ContrastEnhancer as ContrastEnhancer, index$2_GaussianBlur as GaussianBlur, index$2_KuwaharaFilter as KuwaharaFilter, index$2_LocalVariancePreprocessor as LocalVariancePreprocessor, index$2_MedianFilter as MedianFilter, index$2_PreprocessingPipeline as PreprocessingPipeline, index$2_PreprocessingPresets as PreprocessingPresets, index$2_Quantizer as Quantizer, index$2_disposeWebGL as disposeWebGL, index$2_disposeWebGPU as disposeWebGPU, index$2_epsilon as epsilon, index$2_isWebGLAvailable as isWebGLAvailable, index$2_webgl as webgl };
   export type { index$2_BackendOptions as BackendOptions, index$2_LocalVarianceConfig as LocalVarianceConfig };
 }
+
+declare function isWebGLComputeSupported(): boolean;
+declare function isWebGPUSupported(): Promise<boolean>;
+
+/**
+ * Create a new grayscale image with given dimensions
+ */
+declare function createChannelImage(width: number, height: number): ChannelImage;
+/**
+ * Clone a grayscale image
+ */
+declare function cloneChannelImage(image: ChannelImage): ChannelImage;
+/**
+ * Get pixel value with bounds checking (clamps to edge)
+ */
+declare function getPixel(image: ChannelImage, x: number, y: number): number;
+/**
+ * Get pixel value with bilinear interpolation for sub-pixel sampling
+ */
+declare function getPixelBilinear(image: ChannelImage, x: number, y: number): number;
+/**
+ * Set pixel value
+ */
+declare function setPixel(image: ChannelImage, x: number, y: number, value: number): void;
+/**
+ * Get pixel index for coordinates
+ */
+declare function getIndex(width: number, x: number, y: number): number;
+/**
+ * Convert RGB image to grayscale using luminance formula
+ */
+declare function rgbToGrayscale(rgb: RGBImage$1): ChannelImage;
+/**
+ * Convert ImageData (from canvas) to grayscale image
+ * Assumes values are in 0-255 range, normalizes to 0-1
+ */
+declare function imageDataToLuminance(imageData: ImageData): ChannelImage;
+/**
+ * Convert grayscale image to ImageData (for canvas display)
+ * Assumes input is in 0-1 range
+ *
+ * @param alpha Optional per-pixel alpha (0-255), one entry per pixel in
+ * the same row-major order as `gray.data`. Omit to get a fully opaque
+ * image (alpha = 255 everywhere), which matches this function's original
+ * behavior for callers that don't care about transparency.
+ */
+declare function luminanceToImageData(gray: ChannelImage, alpha?: Uint8ClampedArray): ImageData;
+
+/**
+ * Normalize a 2D vector
+ */
+declare function normalizeVec2(v: Vec2): Vec2;
+/**
+ * Compute dot product of two vectors
+ */
+declare function dotVec2(a: Vec2, b: Vec2): number;
+/**
+ * Rotate vector 90 degrees counter-clockwise (perpendicular)
+ */
+declare function perpendicular(v: Vec2): Vec2;
+/**
+ * Generate 1D Gaussian kernel
+ * @param sigma Standard deviation
+ * @param size Kernel size (should be odd)
+ * @returns Normalized Gaussian kernel
+ */
+declare function generateGaussianKernel(sigma: number, size: number): Float32Array;
+/**
+ * Clamp a value to a range
+ */
+declare function clamp(value: number, min: number, max: number): number;
+/**
+ * Linear interpolation
+ */
+declare function lerp(a: number, b: number, t: number): number;
 
 /**
  * Color space conversion utilities
@@ -2146,123 +2283,16 @@ declare namespace color {
  */
 
 /**
- * Create a new grayscale image with given dimensions
- */
-declare function createChannelImage(width: number, height: number): ChannelImage;
-/**
- * Clone a grayscale image
- */
-declare function cloneChannelImage(image: ChannelImage): ChannelImage;
-/**
- * Get pixel value with bounds checking (clamps to edge)
- */
-declare function getPixel(image: ChannelImage, x: number, y: number): number;
-/**
- * Get pixel value with bilinear interpolation for sub-pixel sampling
- */
-declare function getPixelBilinear(image: ChannelImage, x: number, y: number): number;
-/**
- * Set pixel value
- */
-declare function setPixel(image: ChannelImage, x: number, y: number, value: number): void;
-/**
- * Get pixel index for coordinates
- */
-declare function getIndex(width: number, x: number, y: number): number;
-/**
- * Convert RGB image to grayscale using luminance formula
- */
-declare function rgbToGrayscale(rgb: RGBImage$1): ChannelImage;
-/**
- * Convert ImageData (from canvas) to grayscale image
- * Assumes values are in 0-255 range, normalizes to 0-1
- */
-declare function imageDataToLuminance(imageData: ImageData): ChannelImage;
-/**
- * Convert grayscale image to ImageData (for canvas display)
- * Assumes input is in 0-1 range
- *
- * @param alpha Optional per-pixel alpha (0-255), one entry per pixel in
- * the same row-major order as `gray.data`. Omit to get a fully opaque
- * image (alpha = 255 everywhere), which matches this function's original
- * behavior for callers that don't care about transparency.
- */
-declare function luminanceToImageData(gray: ChannelImage, alpha?: Uint8ClampedArray): ImageData;
-/**
- * Normalize a 2D vector
- */
-declare function normalizeVec2(v: Vec2): Vec2;
-/**
- * Compute dot product of two vectors
- */
-declare function dotVec2(a: Vec2, b: Vec2): number;
-/**
- * Rotate vector 90 degrees counter-clockwise (perpendicular)
- */
-declare function perpendicular(v: Vec2): Vec2;
-/**
- * Generate 1D Gaussian kernel
- * @param sigma Standard deviation
- * @param size Kernel size (should be odd)
- * @returns Normalized Gaussian kernel
- */
-declare function generateGaussianKernel(sigma: number, size: number): Float32Array;
-/**
- * Compute kernel size from sigma
- * Paper samples at all integer locations less than 2× sigma for flow-aligned,
- * and extends to 2.45σ for structure tensor blur
- *
- * @param sigma Standard deviation
- * @param multiplier Size multiplier (default 6 = 3σ on each side)
- */
-declare function computeKernelSize(sigma: number, multiplier?: number): number;
-/**
- * Clamp a value to a range
- */
-declare function clamp(value: number, min: number, max: number): number;
-/**
- * Linear interpolation
- */
-declare function lerp(a: number, b: number, t: number): number;
-/**
  * Reads a value that may be a scalar (uniform) or a per-pixel ChannelImage.
  */
 declare function at(value: number | ChannelImage, i: number): number;
-/**
- * Sample a single value from a standard normal distribution N(0, 1)
- * using the Box-Muller transform.
- *
- * Used by ADoG's adaptive noise injection (Eq. 6): the sampled value is
- * scaled by a tone-dependent sigma(x) and added to the input luminance.
- */
-declare function gaussianSample(): number;
-/**
- * Pixel-wise logical AND across N binarized (0/1) ChannelImages.
- *
- * Generalizes Eq. (7)/(9) from "Gaussian Image Binarization":
- *   HDoG = FDoG ∧ ADoG_s ∧ ADoG_s'
- *
- * Since binarized images only contain 0 or 1, logical AND is equivalent to
- * taking the minimum across images (no De Morgan's / inversion needed here
- * -- see the paper's Eq. (8) for why AND and "invert-OR-invert" coincide;
- * this just implements AND directly).
- *
- * All images must have matching dimensions; this is not checked here for
- * performance -- validate upstream if inputs could mismatch.
- */
-declare function andCombine(images: ChannelImage[]): ChannelImage;
-declare function isWebGLComputeSupported(): boolean;
-declare function isWebGPUSupported(): Promise<boolean>;
 
-declare const index$1_andCombine: typeof andCombine;
 declare const index$1_at: typeof at;
 declare const index$1_clamp: typeof clamp;
 declare const index$1_cloneChannelImage: typeof cloneChannelImage;
 declare const index$1_color: typeof color;
-declare const index$1_computeKernelSize: typeof computeKernelSize;
 declare const index$1_createChannelImage: typeof createChannelImage;
 declare const index$1_dotVec2: typeof dotVec2;
-declare const index$1_gaussianSample: typeof gaussianSample;
 declare const index$1_generateGaussianKernel: typeof generateGaussianKernel;
 declare const index$1_getIndex: typeof getIndex;
 declare const index$1_getPixel: typeof getPixel;
@@ -2278,15 +2308,12 @@ declare const index$1_rgbToGrayscale: typeof rgbToGrayscale;
 declare const index$1_setPixel: typeof setPixel;
 declare namespace index$1 {
   export {
-    index$1_andCombine as andCombine,
     index$1_at as at,
     index$1_clamp as clamp,
     index$1_cloneChannelImage as cloneChannelImage,
     index$1_color as color,
-    index$1_computeKernelSize as computeKernelSize,
     index$1_createChannelImage as createChannelImage,
     index$1_dotVec2 as dotVec2,
-    index$1_gaussianSample as gaussianSample,
     index$1_generateGaussianKernel as generateGaussianKernel,
     index$1_getIndex as getIndex,
     index$1_getPixel as getPixel,
@@ -3454,4 +3481,4 @@ declare namespace index {
 }
 
 export { DEFAULT_ETF_CONFIG, DoGProcessor, EdgeTangentFlowComputer, ThresholdModes, applyCustomThreshold, index$3 as blur, index$4 as dog, index as extensions, index$2 as preprocess, threshold, index$1 as utilities };
-export type { ADoGConfig, ADoGProcessingResult, ADogConfigParamType, AntiAliasingConfig, BackendOptions, BilateralFilterConfig, BlendFunction, BlurStrategy, ChannelImage, ColorRetentionConfig, ColorTransformFn, DoGConfig, DoGImplementation, DoGResult, DogConfigParamType, ETFConfig, ExtensionStrategy, FDoGConfidenceWeightingConfig, FDoGConfig, FDogConfidenceWeightConfigParamType, FDogConfigParamType, FlowField, FlowGuidedBlurConfig, GradientAlignedBlurConfig, HDoGConfig, HDoGProcessingResult, HDogConfigParamType, HatchTexture, HatchingConfig, IsotropicBlurConfig, KuwaharaFilterConfig, LocalVarianceConfig, MaskTransformFn, MedianFilterConfig, MultiScaleConfig, MultiScaleLayer, NaturalMediaConfig, NaturalMediaStyle, ParamRange, PostProcessFn, Preprocessor, RGBImage$1 as RGBImage, ThresholdConfig, ThresholdStrategy, Vec2, XDoGConfig };
+export type { ADoGConfig, ADoGProcessingResult, ADogConfigParamType, AntiAliasingConfig, BackendOptions, BilateralFilterConfig, BlendFunction, BlurStrategy, ChannelImage, ColorRetentionConfig, ColorTransformFn, DoGConfig, DoGImplementation, DoGResult, DogConfigParamType, ETFConfig, ExtensionStrategy, FDoGConfidenceWeightingConfig, FDoGConfig, FDogConfidenceWeightConfigParamType, FDogConfigParamType, FlowField, FlowGuidedBlurConfig, GradientAlignedBlurConfig, HDoGConfig, HDoGProcessingResult, HDogConfigParamType, HatchTexture, HatchingConfig, IsotropicBlurConfig, KuwaharaFilterConfig, LocalBaselineEpsilonOptions, LocalVarianceConfig, MaskTransformFn, MedianFilterConfig, MultiScaleConfig, MultiScaleLayer, NaturalMediaConfig, NaturalMediaStyle, ParamRange, PostProcessFn, Preprocessor, RGBImage$1 as RGBImage, ThresholdConfig, ThresholdStrategy, ToneAdaptiveEpsilonAutoOptions, ToneAdaptiveEpsilonOptions, Vec2, XDoGConfig };

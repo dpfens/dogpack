@@ -9,7 +9,8 @@ exports.WebGPUGradientAlignedBlur = void 0;
  *
  */
 const base_js_1 = require("../../interfaces/base.js");
-const index_js_1 = require("../../utils/index.js");
+const image_js_1 = require("../../utils/image.js");
+const math_js_1 = require("../../utils/math.js");
 const webgpu_fragment_wgsl_js_1 = require("../shaders/gradient-aligned/webgpu-fragment.wgsl.js");
 const MAX_SAMPLES = 256;
 const WORKGROUP_SIZE = 8;
@@ -264,7 +265,7 @@ class WebGPUGradientAlignedBlur {
             console.warn(`[GradientAlignedBlur/WebGPU] halfSamples clamped to ${MAX_SAMPLES - 1} (sigma=${sigma} wanted ${wantedHalfSamples}); kernel truncated. Raise MAX_SAMPLES if this matters.`);
         }
         const numSamples = halfSamples * 2 + 1;
-        const weights = (0, index_js_1.generateGaussianKernel)(sigma, numSamples);
+        const weights = (0, math_js_1.generateGaussianKernel)(sigma, numSamples);
         const paddedWeights = new Float32Array(MAX_SAMPLES);
         paddedWeights.set(weights);
         // Row-band tile plan. Only the output/readback buffers scale with
@@ -311,7 +312,7 @@ class WebGPUGradientAlignedBlur {
                     { binding: 4, resource: { buffer: outputBuffer } },
                 ],
             });
-            const output = (0, index_js_1.createChannelImage)(width, height);
+            const output = (0, image_js_1.createChannelImage)(width, height);
             // Tiles are processed sequentially (dispatch -> readback -> next)
             // rather than pipelined, since outputBuffer/readBuffer are reused
             // across iterations — that reuse is exactly what keeps memory

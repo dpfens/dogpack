@@ -21,9 +21,9 @@
  * compute()/computeMultiChannel() is ever called.
  */
 import { DEFAULT_ETF_CONFIG } from '../interfaces/base.js';
-import { normalizeVec2, dotVec2, generateGaussianKernel } from '../utils/index.js';
 import { TangentFlowField } from './flow-field.js';
 import { BaseCPUStrategy } from '../base.js';
+import { dotVec2, generateGaussianKernel, normalizeVec2 } from '../utils/math.js';
 /**
  * CPU-backed ETFComputer. Synchronous under the hood, but exposes the
  * same async ETFComputer contract as the WebGL/WebGPU backends so callers

@@ -6,7 +6,8 @@
  *
  */
 import { DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, } from '../../interfaces/base.js';
-import { generateGaussianKernel, createChannelImage } from '../../utils/index.js';
+import { createChannelImage } from '../../utils/image.js';
+import { generateGaussianKernel } from '../../utils/math.js';
 import FRAGMENT_SOURCE from '../shaders/gradient-aligned/webgpu-fragment.wgsl.js';
 const MAX_SAMPLES = 256;
 const WORKGROUP_SIZE = 8;

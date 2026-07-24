@@ -7,9 +7,10 @@
  *
  */
 import { DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, } from '../../interfaces/base.js';
-import { generateGaussianKernel, createChannelImage } from '../../utils/index.js';
 import FRAGMENT_SOURCE from '../shaders/gradient-aligned/webgl2-fragment.glsl.js';
-import VERTEX_SOURCE from '../shaders//gradient-aligned/vertex.glsl.js';
+import VERTEX_SOURCE from '../shaders/gradient-aligned/vertex.glsl.js';
+import { generateGaussianKernel } from '../../utils/math.js';
+import { createChannelImage } from '../../utils/image.js';
 // Must match the unrolled loop bound in FRAGMENT_SOURCE.
 const MAX_SAMPLES = 256;
 function compileShader(gl, type, source) {

@@ -10,7 +10,6 @@ exports.ADoG = void 0;
 exports.adog = adog;
 const index_js_1 = require("../utils/index.js");
 const isotropic_js_1 = require("../blur/isotropic.js");
-const index_js_2 = require("../utils/index.js");
 const dog_js_1 = require("../interfaces/dog.js");
 class ADoG {
     config;
@@ -125,7 +124,7 @@ class ADoG {
         const output = (0, index_js_1.createChannelImage)(input.width, input.height);
         for (let i = 0; i < input.data.length; i++) {
             const sigma = c * (1 - Math.tanh(s * input.data[i]));
-            output.data[i] = input.data[i] + sigma * (0, index_js_2.gaussianSample)();
+            output.data[i] = input.data[i] + sigma * gaussianSample();
         }
         return output;
     }
@@ -147,6 +146,22 @@ class ADoG {
     }
 }
 exports.ADoG = ADoG;
+/**
+ * Sample a single value from a standard normal distribution N(0, 1)
+ * using the Box-Muller transform.
+ *
+ * Used by ADoG's adaptive noise injection (Eq. 6): the sampled value is
+ * scaled by a tone-dependent sigma(x) and added to the input luminance.
+ */
+function gaussianSample() {
+    // Avoid Math.log(0) by excluding 0 from the uniform sample
+    let u1 = 0;
+    while (u1 === 0) {
+        u1 = Math.random();
+    }
+    const u2 = Math.random();
+    return Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+}
 /**
  * Convenience function for one-shot ADoG processing, matching xdog()/fdog()
  * in dog.ts

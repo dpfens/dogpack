@@ -84,6 +84,7 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.extensions = exports.utilities = exports.DEFAULT_ETF_CONFIG = exports.threshold = exports.preprocess = exports.EdgeTangentFlowComputer = exports.blur = exports.applyCustomThreshold = exports.ThresholdModes = exports.DoGProcessor = exports.dog = void 0;
+// High-level API
 exports.dog = require("./dog/index.js");
 // Core processor (for advanced usage)
 var processor_js_1 = require("./processor.js");

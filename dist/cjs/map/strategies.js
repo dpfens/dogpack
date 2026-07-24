@@ -8,8 +8,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ParameterMapPipeline = exports.CompositeStrategy = exports.StructureTensorAnisotropyStrategy = exports.StructureTensorMagnitudeStrategy = exports.DetailResidualStrategy = exports.LuminanceStrategy = exports.TextureStrategy = void 0;
 exports.structureTensorStrategies = structureTensorStrategies;
-const preprocess_js_1 = require("../preprocess/preprocess.js");
-const local_variance_js_1 = require("../preprocess/local-variance.js");
+const preprocessor_js_1 = require("../preprocess/preprocessors/preprocessor.js");
+const cpu_js_1 = require("../preprocess/preprocessors/cpu.js");
 const structure_tensor_js_1 = require("./structure-tensor.js");
 const channel_map_ops_js_1 = require("./channel-map-ops.js");
 // ---- Concrete strategies -----------------------------------------------
@@ -24,7 +24,7 @@ class TextureStrategy {
         this.config = config;
     }
     async compute(input) {
-        const texture = await new local_variance_js_1.LocalVariancePreprocessorOptimized(this.config).process(input);
+        const texture = await new cpu_js_1.LocalVariancePreprocessor(this.config).process(input);
         return this.param === 'p'
             ? (0, channel_map_ops_js_1.lerpChannel)(this.opts.high, this.opts.low, texture)
             : (0, channel_map_ops_js_1.lerpChannel)(this.opts.low, this.opts.high, texture);
@@ -43,7 +43,7 @@ class LuminanceStrategy {
         this.opts = opts;
     }
     async compute(input) {
-        this.blurPromise ??= preprocess_js_1.GaussianBlur.create(this.opts.blurSigma ?? 8);
+        this.blurPromise ??= preprocessor_js_1.GaussianBlur.create(this.opts.blurSigma ?? 8);
         const luminance = await (await this.blurPromise).process(input);
         return (0, channel_map_ops_js_1.lerpChannel)(this.opts.epsilonDark, this.opts.epsilonLight, luminance);
     }

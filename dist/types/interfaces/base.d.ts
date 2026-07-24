@@ -288,4 +288,82 @@ export interface ETFComputer extends Disposable, BackendIdentifiable {
  * Static (constructor) interface for ETFComputer classes.
  */
 export type ETFComputerCtor = StrategyCtor<ETFComputer>;
+export interface ToneAdaptiveEpsilonOptions {
+    /**
+     * Epsilon to use where the local area is darkest (local tone -> 0).
+     */
+    epsilonDark: number;
+    /**
+     * Epsilon to use where the local area is lightest (local tone -> 1).
+     */
+    epsilonLight: number;
+    /**
+     * Gaussian sigma used to blur the input before reading its tone. This is
+     * what makes it a *local area* reading rather than a noisy per-pixel one --
+     * bigger sigma means tone is averaged over a broader neighborhood. Should
+     * generally be larger than the DoG's own sigmaC/sigmaS (which operate at
+     * edge scale) so this is describing the surrounding region, not the edge
+     * itself.
+     * Default: 8
+     */
+    localitySigma?: number;
+    /**
+     * Steepness of the tanh transition between epsilonDark and epsilonLight,
+     * mirroring the paper's `s` parameter in Eq. (5)/(6) (default there is 2).
+     * Higher values sharpen the transition around the midtones; lower values
+     * spread it out more gradually across the whole tone range.
+     * Default: 2
+     */
+    s?: number;
+    /**
+     * Reuse an existing blur strategy (e.g. one already created elsewhere in
+     * your pipeline) instead of spinning up a fresh IsotropicBlur. If omitted,
+     * one is created and disposed internally.
+     */
+    blurStrategy?: BlurStrategy;
+}
+export interface ToneAdaptiveEpsilonAutoOptions extends Omit<ToneAdaptiveEpsilonOptions, 'epsilonDark' | 'epsilonLight'> {
+    /**
+     * Center epsilon to build the dark/light band around -- e.g. the output of
+     * `ADoG.estimateEpsilon(input)`, or whatever flat epsilon you're already
+     * using today.
+     */
+    center: number;
+    /**
+     * Half-width of the [epsilonDark, epsilonLight] band around `center`.
+     * Start small (e.g. 5-10% of `center`) and increase until dark/light
+     * regions both look right; too large will just push one extreme toward
+     * losing all detail.
+     */
+    spread: number;
+    /**
+     * If true (default), dark areas get `center - spread` and light areas get
+     * `center + spread` -- i.e. epsilon increases with local tone, the same
+     * direction the sharpened response itself moves in (see the module-level
+     * comment above, grounded in processor.ts's Eq. 7 + soft-threshold logic).
+     * Only flip this if you've changed the pipeline in a way that inverts that
+     * relationship (e.g. an unusually large `p`, or a custom ThresholdStrategy)
+     * and have confirmed the output actually looks better.
+     */
+    denserInDark?: boolean;
+}
+export interface LocalBaselineEpsilonOptions {
+    /**
+     * Blur sigma used to estimate the local baseline. For this to track what
+     * `computeSharpening()` actually produces in flat regions, this should be
+     * close to the DoG's own `sigma` (blur1's scale) -- not `sigma * k`, and
+     * not an unrelated "how big is a neighborhood" value picked independently
+     * of the DoG config you're pairing it with.
+     */
+    sigma: number;
+    /**
+     * Flat offset applied on top of the local baseline. Positive -> stricter
+     * everywhere (more of each neighborhood crushes to black); negative ->
+     * looser everywhere (more crushes to white). Start at 0 and nudge from
+     * there; plays the same role as `ADoG.estimateEpsilon`'s `biasOffset`.
+     * Default: 0
+     */
+    offset?: number;
+    blurStrategy?: BlurStrategy;
+}
 //# sourceMappingURL=base.d.ts.map

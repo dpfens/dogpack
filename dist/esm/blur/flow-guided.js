@@ -1,8 +1,10 @@
-import { createChannelImage, getPixelBilinear, generateGaussianKernel, isWebGLComputeSupported, isWebGPUSupported, } from '../utils/index.js';
 import { BaseCPUStrategy, BaseWebGLStrategy, BaseWebGPUStrategy } from '../base.js';
 import FLOW_BLUR_SHADER_SOURCE_WEBGL from './shaders/flow-guided/webgl2-flow-blur.glsl.js';
 import VERTEX_SHADER_SOURCE from './shaders/flow-guided/webgl2-vertex.glsl.js';
 import FLOW_BLUR_SHADER_SOURCE_WEBGPU from './shaders/flow-guided/webgpu-flow-blur.wgsl.js';
+import { createChannelImage, getPixelBilinear } from '../utils/image.js';
+import { generateGaussianKernel } from '../utils/math.js';
+import { isWebGLComputeSupported, isWebGPUSupported } from '../utils/device.js';
 const DEFAULT_FLOW_CONFIG = {
     kernelSizeMultiplier: 6,
     stepSize: 1.0,

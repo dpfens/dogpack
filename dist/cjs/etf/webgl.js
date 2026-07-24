@@ -17,7 +17,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.WebGLEdgeTangentFlowComputer = void 0;
 const base_js_1 = require("../interfaces/base.js");
-const index_js_1 = require("../utils/index.js");
 const flow_field_js_1 = require("./flow-field.js");
 const base_js_2 = require("../base.js");
 const vertex_glsl_js_1 = require("./shaders/webgl/vertex.glsl.js");
@@ -28,6 +27,8 @@ const gaussian_blur_v_glsl_js_1 = require("./shaders/webgl/gaussian_blur_v.glsl.
 const tangent_extract_glsl_js_1 = require("./shaders/webgl/tangent_extract.glsl.js");
 const tangent_refine_glsl_js_1 = require("./shaders/webgl/tangent_refine.glsl.js");
 const finalize_magnitude_glsl_js_1 = require("./shaders/webgl/finalize_magnitude.glsl.js");
+const device_js_1 = require("../utils/device.js");
+const math_js_1 = require("../utils/math.js");
 /**
  * WebGL-backed ETFComputer. Holds a lazily-initialized GPU context and
  * shader programs; call dispose() when done to release them.
@@ -41,10 +42,10 @@ class WebGLEdgeTangentFlowComputer extends base_js_2.BaseWebGLStrategy {
      * this particular check is cheap and synchronous under the hood.
      */
     static async isSupported() {
-        return (0, index_js_1.isWebGLComputeSupported)();
+        return (0, device_js_1.isWebGLComputeSupported)();
     }
     static getUnsupportedReason() {
-        if ((0, index_js_1.isWebGLComputeSupported)()) {
+        if ((0, device_js_1.isWebGLComputeSupported)()) {
             return undefined;
         }
         return 'WebGL2 with float texture support (EXT_color_buffer_float) is not available in this environment';
@@ -137,7 +138,7 @@ class WebGLEdgeTangentFlowComputer extends base_js_2.BaseWebGLStrategy {
             const smoothSigma = sigmaC ?? (cfg.kernelSize / 2.45);
             const radius = Math.min(16, Math.ceil(smoothSigma * 2.45));
             const kernelSize = radius * 2 + 1;
-            const kernel = (0, index_js_1.generateGaussianKernel)(smoothSigma, kernelSize);
+            const kernel = (0, math_js_1.generateGaussianKernel)(smoothSigma, kernelSize);
             gl.bindFramebuffer(gl.FRAMEBUFFER, blurTempFB.fb);
             gl.useProgram(res.gaussianBlurHProgram);
             gl.activeTexture(gl.TEXTURE0);

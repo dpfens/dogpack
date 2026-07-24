@@ -1,11 +1,13 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.FlowGuidedBlur = exports.WebGPUFlowGuidedBlur = exports.WebGLFlowGuidedBlur = exports.CPUFlowGuidedBlur = void 0;
-const index_js_1 = require("../utils/index.js");
 const base_js_1 = require("../base.js");
 const webgl2_flow_blur_glsl_js_1 = require("./shaders/flow-guided/webgl2-flow-blur.glsl.js");
 const webgl2_vertex_glsl_js_1 = require("./shaders/flow-guided/webgl2-vertex.glsl.js");
 const webgpu_flow_blur_wgsl_js_1 = require("./shaders/flow-guided/webgpu-flow-blur.wgsl.js");
+const image_js_1 = require("../utils/image.js");
+const math_js_1 = require("../utils/math.js");
+const device_js_1 = require("../utils/device.js");
 const DEFAULT_FLOW_CONFIG = {
     kernelSizeMultiplier: 6,
     stepSize: 1.0,
@@ -37,13 +39,13 @@ class CPUFlowGuidedBlur extends base_js_1.BaseCPUStrategy {
                 height: input.height,
             };
         }
-        const output = (0, index_js_1.createChannelImage)(input.width, input.height);
+        const output = (0, image_js_1.createChannelImage)(input.width, input.height);
         // Number of samples along the flow line
         // Paper samples at 2× sigma in each direction
         const halfSamples = Math.ceil(sigma * 2 / this.config.stepSize);
         const numSamples = halfSamples * 2 + 1;
         // Generate 1D Gaussian weights
-        const weights = (0, index_js_1.generateGaussianKernel)(sigma, numSamples);
+        const weights = (0, math_js_1.generateGaussianKernel)(sigma, numSamples);
         for (let y = 0; y < input.height; y++) {
             for (let x = 0; x < input.width; x++) {
                 const value = this.sampleAlongFlow(input, x, y, halfSamples, weights);
@@ -63,7 +65,7 @@ class CPUFlowGuidedBlur extends base_js_1.BaseCPUStrategy {
         let sum = 0;
         let weightSum = 0;
         // Sample at center (index = halfSamples)
-        sum += (0, index_js_1.getPixelBilinear)(input, startX, startY) * weights[halfSamples];
+        sum += (0, image_js_1.getPixelBilinear)(input, startX, startY) * weights[halfSamples];
         weightSum += weights[halfSamples];
         // Sample in positive flow direction
         let px = startX;
@@ -79,7 +81,7 @@ class CPUFlowGuidedBlur extends base_js_1.BaseCPUStrategy {
                 break;
             }
             const idx = halfSamples + i;
-            const value = (0, index_js_1.getPixelBilinear)(input, px, py);
+            const value = (0, image_js_1.getPixelBilinear)(input, px, py);
             sum += value * weights[idx];
             weightSum += weights[idx];
         }
@@ -97,7 +99,7 @@ class CPUFlowGuidedBlur extends base_js_1.BaseCPUStrategy {
                 break;
             }
             const idx = halfSamples - i;
-            const value = (0, index_js_1.getPixelBilinear)(input, px, py);
+            const value = (0, image_js_1.getPixelBilinear)(input, px, py);
             sum += value * weights[idx];
             weightSum += weights[idx];
         }
@@ -169,7 +171,7 @@ class WebGLFlowGuidedBlur extends base_js_1.BaseWebGLStrategy {
      * context with float render targets, excluding software rasterizers.
      */
     static async isSupported() {
-        return (0, index_js_1.isWebGLComputeSupported)();
+        return (0, device_js_1.isWebGLComputeSupported)();
     }
     initResources() {
         if (this.resources)
@@ -265,7 +267,7 @@ class WebGLFlowGuidedBlur extends base_js_1.BaseWebGLStrategy {
         const { width, height } = input;
         this.ensureTextureSize(gl, width, height);
         const kernelSize = Math.min(this.config.maxKernelSize, Math.max(3, Math.floor(sigma * this.config.kernelSizeMultiplier) | 1));
-        const kernel = (0, index_js_1.generateGaussianKernel)(sigma, kernelSize);
+        const kernel = (0, math_js_1.generateGaussianKernel)(sigma, kernelSize);
         const paddedKernel = new Float32Array(64);
         paddedKernel.set(kernel);
         const inputRGBA = new Uint8Array(width * height * 4);
@@ -302,7 +304,7 @@ class WebGLFlowGuidedBlur extends base_js_1.BaseWebGLStrategy {
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
         const outputRGBA = new Uint8Array(width * height * 4);
         gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, outputRGBA);
-        const output = (0, index_js_1.createChannelImage)(width, height);
+        const output = (0, image_js_1.createChannelImage)(width, height);
         for (let i = 0; i < output.data.length; i++) {
             output.data[i] = outputRGBA[i * 4] / 255;
         }
@@ -375,7 +377,7 @@ class WebGPUFlowGuidedBlur extends base_js_1.BaseWebGPUStrategy {
      * `navigator.gpu` exists as an API surface.
      */
     static async isSupported() {
-        return (0, index_js_1.isWebGPUSupported)();
+        return (0, device_js_1.isWebGPUSupported)();
     }
     async initResources() {
         if (this.resources)
@@ -525,7 +527,7 @@ class WebGPUFlowGuidedBlur extends base_js_1.BaseWebGPUStrategy {
         this.assertWithinTextureLimits(device, width, height);
         const flowTexture = this.getFlowTexture(device, width, height);
         const kernelSize = Math.min(this.config.maxKernelSize, Math.max(3, Math.floor(sigma * this.config.kernelSizeMultiplier) | 1));
-        const kernel = (0, index_js_1.generateGaussianKernel)(sigma, kernelSize);
+        const kernel = (0, math_js_1.generateGaussianKernel)(sigma, kernelSize);
         if (this.currentKernelSize < kernelSize) {
             this.kernelBuffer?.destroy();
             this.kernelBuffer = device.createBuffer({
@@ -573,7 +575,7 @@ class WebGPUFlowGuidedBlur extends base_js_1.BaseWebGPUStrategy {
                     { binding: 4, resource: { buffer: outputBuffer } },
                 ],
             });
-            const output = (0, index_js_1.createChannelImage)(width, height);
+            const output = (0, image_js_1.createChannelImage)(width, height);
             // Tiles are processed sequentially (dispatch -> readback -> next),
             // since outputBuffer/readBuffer are reused across iterations — that
             // reuse is exactly what keeps memory bounded, at the cost of some

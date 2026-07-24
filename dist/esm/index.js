@@ -81,6 +81,7 @@
  * const result = await xdog.process(cleaned);
  * ```
  */
+// High-level API
 export * as dog from './dog/index.js';
 // Core processor (for advanced usage)
 export { DoGProcessor, ThresholdModes, applyCustomThreshold } from './processor.js';

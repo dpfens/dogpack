@@ -9,16 +9,30 @@
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.IsotropicBlur = exports.WebGPUIsotropicBlur = exports.WebGLIsotropicBlur = exports.CPUIsotropicBlur = void 0;
-const index_js_1 = require("../utils/index.js");
+const image_js_1 = require("../utils/image.js");
+const device_js_1 = require("../utils/device.js");
 const base_js_1 = require("../base.js");
 const vertex_shader_wgsl_js_1 = require("../shaders/vertex-shader.wgsl.js");
 const webgl_horizontal_blur_glsl_js_1 = require("./shaders/isotropic/webgl-horizontal-blur.glsl.js");
 const webgl_vertical_blur_glsl_js_1 = require("./shaders/isotropic/webgl-vertical-blur.glsl.js");
 const webgpu_horizontal_blur_wgsl_js_1 = require("./shaders/isotropic/webgpu-horizontal-blur.wgsl.js");
 const webgpu_vertical_blur_wgsl_js_1 = require("./shaders/isotropic/webgpu-vertical-blur.wgsl.js");
+const math_js_1 = require("../utils/math.js");
 const DEFAULT_ISOTROPIC_CONFIG = {
     kernelSizeMultiplier: 6,
 };
+/**
+ * Compute kernel size from sigma
+ * Paper samples at all integer locations less than 2× sigma for flow-aligned,
+ * and extends to 2.45σ for structure tensor blur
+ *
+ * @param sigma Standard deviation
+ * @param multiplier Size multiplier (default 6 = 3σ on each side)
+ */
+function computeKernelSize(sigma, multiplier = 6) {
+    // Ensure odd size for symmetric kernel
+    return Math.max(3, Math.floor(sigma * multiplier) | 1);
+}
 /**
  * Standard isotropic Gaussian blur using separable convolution
  * This is the blur used in basic XDoG
@@ -44,29 +58,29 @@ class CPUIsotropicBlur extends base_js_1.BaseCPUStrategy {
             };
         }
         // Compute kernel size (odd number)
-        const kernelSize = (0, index_js_1.computeKernelSize)(sigma, this.config.kernelSizeMultiplier);
-        const kernel = (0, index_js_1.generateGaussianKernel)(sigma, kernelSize);
+        const kernelSize = computeKernelSize(sigma, this.config.kernelSizeMultiplier);
+        const kernel = (0, math_js_1.generateGaussianKernel)(sigma, kernelSize);
         const halfKernel = Math.floor(kernelSize / 2);
         // Separable convolution: horizontal pass
-        const temp = (0, index_js_1.createChannelImage)(input.width, input.height);
+        const temp = (0, image_js_1.createChannelImage)(input.width, input.height);
         for (let y = 0; y < input.height; y++) {
             for (let x = 0; x < input.width; x++) {
                 let sum = 0;
                 for (let k = 0; k < kernelSize; k++) {
                     const sampleX = x + k - halfKernel;
-                    sum += (0, index_js_1.getPixel)(input, sampleX, y) * kernel[k];
+                    sum += (0, image_js_1.getPixel)(input, sampleX, y) * kernel[k];
                 }
                 temp.data[y * input.width + x] = sum;
             }
         }
         // Separable convolution: vertical pass
-        const output = (0, index_js_1.createChannelImage)(input.width, input.height);
+        const output = (0, image_js_1.createChannelImage)(input.width, input.height);
         for (let y = 0; y < input.height; y++) {
             for (let x = 0; x < input.width; x++) {
                 let sum = 0;
                 for (let k = 0; k < kernelSize; k++) {
                     const sampleY = y + k - halfKernel;
-                    sum += (0, index_js_1.getPixel)(temp, x, sampleY) * kernel[k];
+                    sum += (0, image_js_1.getPixel)(temp, x, sampleY) * kernel[k];
                 }
                 output.data[y * input.width + x] = sum;
             }
@@ -140,7 +154,7 @@ class WebGLIsotropicBlur extends base_js_1.BaseWebGLStrategy {
      * rasterizers, which are too slow to be a useful GPU fallback.
      */
     static async isSupported() {
-        return (0, index_js_1.isWebGLComputeSupported)();
+        return (0, device_js_1.isWebGLComputeSupported)();
     }
     initResources(canvas) {
         if (this.resources)
@@ -180,7 +194,7 @@ class WebGLIsotropicBlur extends base_js_1.BaseWebGLStrategy {
         const { gl } = resources;
         const { width, height } = input;
         const kernelSize = Math.min(this.config.maxKernelSize, Math.max(3, Math.floor(sigma * this.config.kernelSizeMultiplier) | 1));
-        const kernel = (0, index_js_1.generateGaussianKernel)(sigma, kernelSize);
+        const kernel = (0, math_js_1.generateGaussianKernel)(sigma, kernelSize);
         // Create or reuse textures
         if (this.currentWidth !== width || this.currentHeight !== height) {
             this.textures.forEach(t => gl.deleteTexture(t));
@@ -289,7 +303,7 @@ class WebGPUIsotropicBlur extends base_js_1.BaseWebGPUStrategy {
      * `navigator.gpu` exists as an API surface.
      */
     static async isSupported() {
-        return (0, index_js_1.isWebGPUSupported)();
+        return (0, device_js_1.isWebGPUSupported)();
     }
     /**
      * Initialize WebGPU resources
@@ -359,7 +373,7 @@ class WebGPUIsotropicBlur extends base_js_1.BaseWebGPUStrategy {
         const pixelCount = width * height;
         const bufferSize = pixelCount * 4;
         const kernelSize = Math.min(this.config.maxKernelSize, Math.max(3, Math.floor(sigma * this.config.kernelSizeMultiplier) | 1));
-        const kernel = (0, index_js_1.generateGaussianKernel)(sigma, kernelSize);
+        const kernel = (0, math_js_1.generateGaussianKernel)(sigma, kernelSize);
         // Per-call resources -- never shared with a concurrent blur() call on
         // this same instance.
         const paramsBuffer = device.createBuffer({

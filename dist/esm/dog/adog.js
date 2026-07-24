@@ -7,7 +7,6 @@
 import {} from '../interfaces/base.js';
 import { createChannelImage, imageDataToLuminance, luminanceToImageData } from '../utils/index.js';
 import { IsotropicBlur } from '../blur/isotropic.js';
-import { gaussianSample } from '../utils/index.js';
 import { DEFAULT_ADOG_CONFIG } from '../interfaces/dog.js';
 export class ADoG {
     config;
@@ -142,6 +141,22 @@ export class ADoG {
         }
         return output;
     }
+}
+/**
+ * Sample a single value from a standard normal distribution N(0, 1)
+ * using the Box-Muller transform.
+ *
+ * Used by ADoG's adaptive noise injection (Eq. 6): the sampled value is
+ * scaled by a tone-dependent sigma(x) and added to the input luminance.
+ */
+function gaussianSample() {
+    // Avoid Math.log(0) by excluding 0 from the uniform sample
+    let u1 = 0;
+    while (u1 === 0) {
+        u1 = Math.random();
+    }
+    const u2 = Math.random();
+    return Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
 }
 /**
  * Convenience function for one-shot ADoG processing, matching xdog()/fdog()

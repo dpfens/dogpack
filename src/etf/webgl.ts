@@ -16,7 +16,6 @@
 
 import type { ChannelImage, FlowField, Vec2, ETFConfig, ETFComputer } from '../interfaces/base.js';
 import { DEFAULT_ETF_CONFIG } from '../interfaces/base.js';
-import { isWebGLComputeSupported, generateGaussianKernel } from '../utils/index.js';
 import { TangentFlowField } from './flow-field.js';
 import { BaseWebGLStrategy } from '../base.js';
 import VERTEX_SHADER from './shaders/webgl/vertex.glsl.js';
@@ -27,6 +26,8 @@ import GAUSSIAN_BLUR_V_SHADER from './shaders/webgl/gaussian_blur_v.glsl.js';
 import TANGENT_EXTRACT_SHADER from './shaders/webgl/tangent_extract.glsl.js';
 import TANGENT_REFINE_SHADER from './shaders/webgl/tangent_refine.glsl.js';
 import FINALIZE_MAGNITUDE_SHADER from './shaders/webgl/finalize_magnitude.glsl.js';
+import { isWebGLComputeSupported } from '../utils/device.js';
+import { generateGaussianKernel } from '../utils/math.js';
 
 /**
  * WebGL context and resources for ETF computation

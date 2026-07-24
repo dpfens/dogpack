@@ -10,9 +10,10 @@ exports.WebGLGradientAlignedBlur = void 0;
  *
  */
 const base_js_1 = require("../../interfaces/base.js");
-const index_js_1 = require("../../utils/index.js");
 const webgl2_fragment_glsl_js_1 = require("../shaders/gradient-aligned/webgl2-fragment.glsl.js");
-const vertex_glsl_js_1 = require("../shaders//gradient-aligned/vertex.glsl.js");
+const vertex_glsl_js_1 = require("../shaders/gradient-aligned/vertex.glsl.js");
+const math_js_1 = require("../../utils/math.js");
+const image_js_1 = require("../../utils/image.js");
 // Must match the unrolled loop bound in FRAGMENT_SOURCE.
 const MAX_SAMPLES = 256;
 function compileShader(gl, type, source) {
@@ -239,7 +240,7 @@ class WebGLGradientAlignedBlur {
             console.warn(`[GradientAlignedBlur/WebGL] halfSamples clamped to ${MAX_SAMPLES - 1} (sigma=${sigma} wanted more); kernel truncated. Raise MAX_SAMPLES if this matters.`);
         }
         const numSamples = halfSamples * 2 + 1;
-        const weights = (0, index_js_1.generateGaussianKernel)(sigma, numSamples);
+        const weights = (0, math_js_1.generateGaussianKernel)(sigma, numSamples);
         const paddedWeights = new Float32Array(MAX_SAMPLES);
         paddedWeights.set(weights);
         const tUpload = performance.now();
@@ -260,7 +261,7 @@ class WebGLGradientAlignedBlur {
         gl.drawArrays(gl.TRIANGLES, 0, 6);
         console.log(`[GradientAlignedBlur/WebGL] Draw call submit (JS-side only, GPU work is async — see note at top of file): ${(performance.now() - tDraw).toFixed(2)}ms`);
         const tReadback = performance.now();
-        const output = (0, index_js_1.createChannelImage)(width, height);
+        const output = (0, image_js_1.createChannelImage)(width, height);
         gl.readPixels(0, 0, width, height, gl.RED, gl.FLOAT, output.data);
         console.log(`[GradientAlignedBlur/WebGL] Readback (this is where the GPU wait actually happens): ${(performance.now() - tReadback).toFixed(2)}ms`);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);

@@ -8,10 +8,10 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.HDoG = void 0;
 exports.hdog = hdog;
-const index_js_1 = require("../utils/index.js");
 const adog_js_1 = require("./adog.js");
 const fdog_js_1 = require("./fdog.js");
 const dog_js_1 = require("../interfaces/dog.js");
+const image_js_1 = require("../utils/image.js");
 class HDoG {
     fdog;
     adogPrimary;
@@ -52,7 +52,7 @@ class HDoG {
             this.adogPrimary.process(input),
             this.adogSecondary.process(input),
         ]);
-        return (0, index_js_1.andCombine)([lines, tone1, tone2]);
+        return andCombine([lines, tone1, tone2]);
     }
     async processDetailed(input) {
         const [fdogDetailed, adog1Detailed, adog2Detailed] = await Promise.all([
@@ -60,7 +60,7 @@ class HDoG {
             this.adogPrimary.processDetailed(input),
             this.adogSecondary.processDetailed(input),
         ]);
-        const result = (0, index_js_1.andCombine)([
+        const result = andCombine([
             fdogDetailed.result,
             adog1Detailed.result,
             adog2Detailed.result,
@@ -75,6 +75,36 @@ class HDoG {
     }
 }
 exports.HDoG = HDoG;
+/**
+ * Pixel-wise logical AND across N binarized (0/1) ChannelImages.
+ *
+ * Generalizes Eq. (7)/(9) from "Gaussian Image Binarization":
+ *   HDoG = FDoG ∧ ADoG_s ∧ ADoG_s'
+ *
+ * Since binarized images only contain 0 or 1, logical AND is equivalent to
+ * taking the minimum across images (no De Morgan's / inversion needed here
+ * -- see the paper's Eq. (8) for why AND and "invert-OR-invert" coincide;
+ * this just implements AND directly).
+ *
+ * All images must have matching dimensions; this is not checked here for
+ * performance -- validate upstream if inputs could mismatch.
+ */
+function andCombine(images) {
+    if (images.length === 0) {
+        throw new Error('andCombine requires at least one image');
+    }
+    const { width, height } = images[0];
+    const output = (0, image_js_1.createChannelImage)(width, height);
+    const size = width * height;
+    for (let i = 0; i < size; i++) {
+        let v = 1;
+        for (const img of images) {
+            v = Math.min(v, img.data[i]);
+        }
+        output.data[i] = v;
+    }
+    return output;
+}
 /**
  * Convenience function for one-shot HDoG processing, matching xdog()/fdog()
  * in dog.ts and adog() in adog.ts

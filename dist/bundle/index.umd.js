@@ -4,123 +4,59 @@
     (global = typeof globalThis !== 'undefined' ? globalThis : global || self, factory(global.DogPack = {}));
 })(this, (function (exports) { 'use strict';
 
-    /**
-     * Color space conversion utilities
-     *
-     * Responsible for turning an RGBImage into a set of independent
-     * ChannelImage instances, either as raw RGB channels or as CIE Lab
-     * channels (L, a, b). Kept separate from the ETF/structure-tensor math
-     * so that flow.ts stays focused purely on the Di Zenzo / eigen-decomposition
-     * pipeline and doesn't need to know anything about color science.
-     */
-    function createChannelImage$1(width, height) {
-        return {
-            data: new Float32Array(width * height),
-            width,
-            height,
-        };
-    }
-    /**
-     * Split an interleaved RGBImage into three independent ChannelImages,
-     * one per channel, each still in 0-1 range.
-     */
-    function splitRGBChannels(rgb) {
-        const { width, height, data } = rgb;
-        const size = width * height;
-        const r = createChannelImage$1(width, height);
-        const g = createChannelImage$1(width, height);
-        const b = createChannelImage$1(width, height);
-        for (let i = 0; i < size; i++) {
-            const o = i * 3;
-            r.data[i] = data[o];
-            g.data[i] = data[o + 1];
-            b.data[i] = data[o + 2];
+    let webglComputeSupportCache = null;
+    function isWebGLComputeSupported() {
+        if (webglComputeSupportCache !== null)
+            return webglComputeSupportCache;
+        try {
+            const canvas = typeof OffscreenCanvas !== 'undefined'
+                ? new OffscreenCanvas(1, 1)
+                : typeof document !== 'undefined'
+                    ? document.createElement('canvas')
+                    : null;
+            if (!canvas) {
+                webglComputeSupportCache = false;
+                return webglComputeSupportCache;
+            }
+            const gl = canvas.getContext('webgl2');
+            if (!gl) {
+                webglComputeSupportCache = false;
+                return webglComputeSupportCache;
+            }
+            // Exclude software rasterizers — too slow to be a useful compute fallback
+            const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+            const renderer = debugInfo
+                ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL)
+                : '';
+            const isSoftware = /swiftshader|software|llvmpipe/i.test(renderer);
+            // Required for float render targets, used in most GPGPU-style passes
+            const hasFloatTargets = gl.getExtension('EXT_color_buffer_float') !== null;
+            gl.getExtension('WEBGL_lose_context')?.loseContext();
+            webglComputeSupportCache = !isSoftware && hasFloatTargets;
+            return webglComputeSupportCache;
         }
-        return [r, g, b];
-    }
-    /**
-     * Convert an interleaved RGBImage into three independent ChannelImages
-     * representing CIE Lab's L, a, and b components.
-     *
-     * L is normalized from its native [0, 100] range to [0, 1] by dividing by 100.
-     * a and b are normalized from their native (roughly [-128, 127]) range to
-     * [0, 1] via (v + 128) / 255.
-     *
-     * This normalization is a deliberate choice: it keeps all three channels in
-     * comparable numeric ranges before gradients/tensors are computed, so that
-     * chroma channels don't dominate or get drowned out purely due to differing
-     * native scales relative to L. Input RGB is assumed to be sRGB with values
-     * in [0, 1].
-     */
-    function rgbToLabChannels(rgb) {
-        const { width, height, data } = rgb;
-        const size = width * height;
-        const l = createChannelImage$1(width, height);
-        const a = createChannelImage$1(width, height);
-        const bCh = createChannelImage$1(width, height);
-        for (let i = 0; i < size; i++) {
-            const o = i * 3;
-            const [labL, labA, labB] = srgbToLab(data[o], data[o + 1], data[o + 2]);
-            l.data[i] = labL / 100;
-            a.data[i] = (labA + 128) / 255;
-            bCh.data[i] = (labB + 128) / 255;
+        catch {
+            webglComputeSupportCache = false;
+            return webglComputeSupportCache;
         }
-        return [l, a, bCh];
     }
-    /**
-     * Convert a single sRGB pixel (each component in [0, 1]) to CIE Lab
-     * (D65 white point). L is in [0, 100]; a and b are roughly in [-128, 127]
-     * but are not hard-clamped.
-     */
-    function srgbToLab(r, g, b) {
-        const [x, y, z] = srgbToXyz(r, g, b);
-        return xyzToLab(x, y, z);
-    }
-    // D65 reference white, 2-degree observer
-    const REF_X = 0.95047;
-    const REF_Y = 1.0;
-    const REF_Z = 1.08883;
-    function srgbChannelToLinear(c) {
-        return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-    }
-    function srgbToXyz(r, g, b) {
-        const lr = srgbChannelToLinear(r);
-        const lg = srgbChannelToLinear(g);
-        const lb = srgbChannelToLinear(b);
-        // sRGB -> XYZ (D65) matrix
-        const x = lr * 0.4124564 + lg * 0.3575761 + lb * 0.1804375;
-        const y = lr * 0.2126729 + lg * 0.7151522 + lb * 0.0721750;
-        const z = lr * 0.0193339 + lg * 0.1191920 + lb * 0.9503041;
-        return [x, y, z];
-    }
-    function xyzToLab(x, y, z) {
-        const fx = labF(x / REF_X);
-        const fy = labF(y / REF_Y);
-        const fz = labF(z / REF_Z);
-        const l = 116 * fy - 16;
-        const a = 500 * (fx - fy);
-        const b = 200 * (fy - fz);
-        return [l, a, b];
-    }
-    function labF(t) {
-        const delta = 6 / 29;
-        return t > delta ** 3 ? Math.cbrt(t) : t / (3 * delta * delta) + 4 / 29;
+    async function isWebGPUSupported() {
+        if (typeof navigator === 'undefined' || !('gpu' in navigator)) {
+            return false;
+        }
+        try {
+            const adapter = await navigator.gpu.requestAdapter();
+            return adapter !== null;
+        }
+        catch {
+            return false;
+        }
     }
 
-    var color = /*#__PURE__*/Object.freeze({
-        __proto__: null,
-        rgbToLabChannels: rgbToLabChannels,
-        splitRGBChannels: splitRGBChannels,
-        srgbToLab: srgbToLab
-    });
-
-    /**
-     * Image utility functions
-     */
     /**
      * Create a new grayscale image with given dimensions
      */
-    function createChannelImage(width, height) {
+    function createChannelImage$1(width, height) {
         return {
             data: new Float32Array(width * height),
             width,
@@ -182,7 +118,7 @@
      * Convert RGB image to grayscale using luminance formula
      */
     function rgbToGrayscale(rgb) {
-        const gray = createChannelImage(rgb.width, rgb.height);
+        const gray = createChannelImage$1(rgb.width, rgb.height);
         const pixelCount = rgb.width * rgb.height;
         for (let i = 0; i < pixelCount; i++) {
             const r = rgb.data[i * 3];
@@ -198,7 +134,7 @@
      * Assumes values are in 0-255 range, normalizes to 0-1
      */
     function imageDataToLuminance(imageData) {
-        const gray = createChannelImage(imageData.width, imageData.height);
+        const gray = createChannelImage$1(imageData.width, imageData.height);
         const pixelCount = imageData.width * imageData.height;
         for (let i = 0; i < pixelCount; i++) {
             const r = imageData.data[i * 4] / 255;
@@ -229,6 +165,7 @@
         }
         return imageData;
     }
+
     /**
      * Normalize a 2D vector
      */
@@ -274,18 +211,6 @@
         return kernel;
     }
     /**
-     * Compute kernel size from sigma
-     * Paper samples at all integer locations less than 2× sigma for flow-aligned,
-     * and extends to 2.45σ for structure tensor blur
-     *
-     * @param sigma Standard deviation
-     * @param multiplier Size multiplier (default 6 = 3σ on each side)
-     */
-    function computeKernelSize(sigma, multiplier = 6) {
-        // Ensure odd size for symmetric kernel
-        return Math.max(3, Math.floor(sigma * multiplier) | 1);
-    }
-    /**
      * Clamp a value to a range
      */
     function clamp$1(value, min, max) {
@@ -297,118 +222,135 @@
     function lerp(a, b, t) {
         return a + (b - a) * t;
     }
+
+    /**
+     * Color space conversion utilities
+     *
+     * Responsible for turning an RGBImage into a set of independent
+     * ChannelImage instances, either as raw RGB channels or as CIE Lab
+     * channels (L, a, b). Kept separate from the ETF/structure-tensor math
+     * so that flow.ts stays focused purely on the Di Zenzo / eigen-decomposition
+     * pipeline and doesn't need to know anything about color science.
+     */
+    function createChannelImage(width, height) {
+        return {
+            data: new Float32Array(width * height),
+            width,
+            height,
+        };
+    }
+    /**
+     * Split an interleaved RGBImage into three independent ChannelImages,
+     * one per channel, each still in 0-1 range.
+     */
+    function splitRGBChannels(rgb) {
+        const { width, height, data } = rgb;
+        const size = width * height;
+        const r = createChannelImage(width, height);
+        const g = createChannelImage(width, height);
+        const b = createChannelImage(width, height);
+        for (let i = 0; i < size; i++) {
+            const o = i * 3;
+            r.data[i] = data[o];
+            g.data[i] = data[o + 1];
+            b.data[i] = data[o + 2];
+        }
+        return [r, g, b];
+    }
+    /**
+     * Convert an interleaved RGBImage into three independent ChannelImages
+     * representing CIE Lab's L, a, and b components.
+     *
+     * L is normalized from its native [0, 100] range to [0, 1] by dividing by 100.
+     * a and b are normalized from their native (roughly [-128, 127]) range to
+     * [0, 1] via (v + 128) / 255.
+     *
+     * This normalization is a deliberate choice: it keeps all three channels in
+     * comparable numeric ranges before gradients/tensors are computed, so that
+     * chroma channels don't dominate or get drowned out purely due to differing
+     * native scales relative to L. Input RGB is assumed to be sRGB with values
+     * in [0, 1].
+     */
+    function rgbToLabChannels(rgb) {
+        const { width, height, data } = rgb;
+        const size = width * height;
+        const l = createChannelImage(width, height);
+        const a = createChannelImage(width, height);
+        const bCh = createChannelImage(width, height);
+        for (let i = 0; i < size; i++) {
+            const o = i * 3;
+            const [labL, labA, labB] = srgbToLab(data[o], data[o + 1], data[o + 2]);
+            l.data[i] = labL / 100;
+            a.data[i] = (labA + 128) / 255;
+            bCh.data[i] = (labB + 128) / 255;
+        }
+        return [l, a, bCh];
+    }
+    /**
+     * Convert a single sRGB pixel (each component in [0, 1]) to CIE Lab
+     * (D65 white point). L is in [0, 100]; a and b are roughly in [-128, 127]
+     * but are not hard-clamped.
+     */
+    function srgbToLab(r, g, b) {
+        const [x, y, z] = srgbToXyz(r, g, b);
+        return xyzToLab(x, y, z);
+    }
+    // D65 reference white, 2-degree observer
+    const REF_X = 0.95047;
+    const REF_Y = 1.0;
+    const REF_Z = 1.08883;
+    function srgbChannelToLinear(c) {
+        return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    }
+    function srgbToXyz(r, g, b) {
+        const lr = srgbChannelToLinear(r);
+        const lg = srgbChannelToLinear(g);
+        const lb = srgbChannelToLinear(b);
+        // sRGB -> XYZ (D65) matrix
+        const x = lr * 0.4124564 + lg * 0.3575761 + lb * 0.1804375;
+        const y = lr * 0.2126729 + lg * 0.7151522 + lb * 0.0721750;
+        const z = lr * 0.0193339 + lg * 0.1191920 + lb * 0.9503041;
+        return [x, y, z];
+    }
+    function xyzToLab(x, y, z) {
+        const fx = labF(x / REF_X);
+        const fy = labF(y / REF_Y);
+        const fz = labF(z / REF_Z);
+        const l = 116 * fy - 16;
+        const a = 500 * (fx - fy);
+        const b = 200 * (fy - fz);
+        return [l, a, b];
+    }
+    function labF(t) {
+        const delta = 6 / 29;
+        return t > delta ** 3 ? Math.cbrt(t) : t / (3 * delta * delta) + 4 / 29;
+    }
+
+    var color = /*#__PURE__*/Object.freeze({
+        __proto__: null,
+        rgbToLabChannels: rgbToLabChannels,
+        splitRGBChannels: splitRGBChannels,
+        srgbToLab: srgbToLab
+    });
+
+    /**
+     * Image utility functions
+     */
     /**
      * Reads a value that may be a scalar (uniform) or a per-pixel ChannelImage.
      */
     function at(value, i) {
         return typeof value === "number" ? value : value.data[i];
     }
-    /**
-     * Sample a single value from a standard normal distribution N(0, 1)
-     * using the Box-Muller transform.
-     *
-     * Used by ADoG's adaptive noise injection (Eq. 6): the sampled value is
-     * scaled by a tone-dependent sigma(x) and added to the input luminance.
-     */
-    function gaussianSample() {
-        // Avoid Math.log(0) by excluding 0 from the uniform sample
-        let u1 = 0;
-        while (u1 === 0) {
-            u1 = Math.random();
-        }
-        const u2 = Math.random();
-        return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
-    }
-    /**
-     * Pixel-wise logical AND across N binarized (0/1) ChannelImages.
-     *
-     * Generalizes Eq. (7)/(9) from "Gaussian Image Binarization":
-     *   HDoG = FDoG ∧ ADoG_s ∧ ADoG_s'
-     *
-     * Since binarized images only contain 0 or 1, logical AND is equivalent to
-     * taking the minimum across images (no De Morgan's / inversion needed here
-     * -- see the paper's Eq. (8) for why AND and "invert-OR-invert" coincide;
-     * this just implements AND directly).
-     *
-     * All images must have matching dimensions; this is not checked here for
-     * performance -- validate upstream if inputs could mismatch.
-     */
-    function andCombine(images) {
-        if (images.length === 0) {
-            throw new Error('andCombine requires at least one image');
-        }
-        const { width, height } = images[0];
-        const output = createChannelImage(width, height);
-        const size = width * height;
-        for (let i = 0; i < size; i++) {
-            let v = 1;
-            for (const img of images) {
-                v = Math.min(v, img.data[i]);
-            }
-            output.data[i] = v;
-        }
-        return output;
-    }
-    let webglComputeSupportCache = null;
-    function isWebGLComputeSupported() {
-        if (webglComputeSupportCache !== null)
-            return webglComputeSupportCache;
-        try {
-            const canvas = typeof OffscreenCanvas !== 'undefined'
-                ? new OffscreenCanvas(1, 1)
-                : typeof document !== 'undefined'
-                    ? document.createElement('canvas')
-                    : null;
-            if (!canvas) {
-                webglComputeSupportCache = false;
-                return webglComputeSupportCache;
-            }
-            const gl = canvas.getContext('webgl2');
-            if (!gl) {
-                webglComputeSupportCache = false;
-                return webglComputeSupportCache;
-            }
-            // Exclude software rasterizers — too slow to be a useful compute fallback
-            const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
-            const renderer = debugInfo
-                ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL)
-                : '';
-            const isSoftware = /swiftshader|software|llvmpipe/i.test(renderer);
-            // Required for float render targets, used in most GPGPU-style passes
-            const hasFloatTargets = gl.getExtension('EXT_color_buffer_float') !== null;
-            gl.getExtension('WEBGL_lose_context')?.loseContext();
-            webglComputeSupportCache = !isSoftware && hasFloatTargets;
-            return webglComputeSupportCache;
-        }
-        catch {
-            webglComputeSupportCache = false;
-            return webglComputeSupportCache;
-        }
-    }
-    async function isWebGPUSupported() {
-        if (typeof navigator === 'undefined' || !('gpu' in navigator)) {
-            return false;
-        }
-        try {
-            const adapter = await navigator.gpu.requestAdapter();
-            return adapter !== null;
-        }
-        catch {
-            return false;
-        }
-    }
 
     var index$4 = /*#__PURE__*/Object.freeze({
         __proto__: null,
-        andCombine: andCombine,
         at: at,
         clamp: clamp$1,
         cloneChannelImage: cloneChannelImage,
         color: color,
-        computeKernelSize: computeKernelSize,
-        createChannelImage: createChannelImage,
+        createChannelImage: createChannelImage$1,
         dotVec2: dotVec2,
-        gaussianSample: gaussianSample,
         generateGaussianKernel: generateGaussianKernel$1,
         getIndex: getIndex,
         getPixel: getPixel,
@@ -426,7 +368,7 @@
 
     class SoftThresholdStrategy {
         threshold(sharpened, config) {
-            const output = createChannelImage(sharpened.width, sharpened.height);
+            const output = createChannelImage$1(sharpened.width, sharpened.height);
             const size = sharpened.width * sharpened.height;
             for (let i = 0; i < size; i++) {
                 const u = sharpened.data[i];
@@ -446,7 +388,7 @@
      */
     class HardThresholdStrategy {
         threshold(input, config) {
-            const output = createChannelImage(input.width, input.height);
+            const output = createChannelImage$1(input.width, input.height);
             const size = input.width * input.height;
             for (let i = 0; i < size; i++) {
                 const eps = at(config.epsilon, i);
@@ -487,9 +429,9 @@
             this.lowOffset = lowOffset;
         }
         threshold(sharpened, config) {
-            const output = createChannelImage(sharpened.width, sharpened.height);
+            const output = createChannelImage$1(sharpened.width, sharpened.height);
             const { width, height } = sharpened;
-            const edgeMap = createChannelImage(width, height);
+            const edgeMap = createChannelImage$1(width, height);
             const visited = new Uint8Array(width * height);
             // epsilonHigh/epsilonLow are now resolved per-pixel inside the loop,
             // since epsilon itself may vary per-pixel.
@@ -964,7 +906,7 @@
          * This is the standard DoG without any weighting
          */
         computeDoG(blur1, blur2) {
-            const output = createChannelImage(blur1.width, blur1.height);
+            const output = createChannelImage$1(blur1.width, blur1.height);
             const size = blur1.width * blur1.height;
             for (let i = 0; i < size; i++) {
                 output.data[i] = blur1.data[i] - blur2.data[i];
@@ -984,7 +926,7 @@
          * @param p Sharpening strength (p ≈ 20 typical, p ≈ 100 for woodcut)
          */
         computeSharpening(blur1, blur2, p) {
-            const output = createChannelImage(blur1.width, blur1.height);
+            const output = createChannelImage$1(blur1.width, blur1.height);
             const size = blur1.width * blur1.height;
             for (let i = 0; i < size; i++) {
                 const pValue = at(p, i);
@@ -1069,7 +1011,7 @@
      * Apply a custom threshold function to a grayscale image
      */
     function applyCustomThreshold(input, thresholdFn) {
-        const output = createChannelImage(input.width, input.height);
+        const output = createChannelImage$1(input.width, input.height);
         const size = input.width * input.height;
         for (let i = 0; i < size; i++) {
             output.data[i] = thresholdFn(input.data[i]);
@@ -1476,6 +1418,18 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         kernelSizeMultiplier: 6,
     };
     /**
+     * Compute kernel size from sigma
+     * Paper samples at all integer locations less than 2× sigma for flow-aligned,
+     * and extends to 2.45σ for structure tensor blur
+     *
+     * @param sigma Standard deviation
+     * @param multiplier Size multiplier (default 6 = 3σ on each side)
+     */
+    function computeKernelSize(sigma, multiplier = 6) {
+        // Ensure odd size for symmetric kernel
+        return Math.max(3, Math.floor(sigma * multiplier) | 1);
+    }
+    /**
      * Standard isotropic Gaussian blur using separable convolution
      * This is the blur used in basic XDoG
      */
@@ -1504,7 +1458,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             const kernel = generateGaussianKernel$1(sigma, kernelSize);
             const halfKernel = Math.floor(kernelSize / 2);
             // Separable convolution: horizontal pass
-            const temp = createChannelImage(input.width, input.height);
+            const temp = createChannelImage$1(input.width, input.height);
             for (let y = 0; y < input.height; y++) {
                 for (let x = 0; x < input.width; x++) {
                     let sum = 0;
@@ -1516,7 +1470,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                 }
             }
             // Separable convolution: vertical pass
-            const output = createChannelImage(input.width, input.height);
+            const output = createChannelImage$1(input.width, input.height);
             for (let y = 0; y < input.height; y++) {
                 for (let x = 0; x < input.width; x++) {
                     let sum = 0;
@@ -2200,7 +2154,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
          * Encodes direction as intensity (useful for debugging).
          */
         visualize() {
-            const output = createChannelImage(this.width, this.height);
+            const output = createChannelImage$1(this.width, this.height);
             for (let i = 0; i < this.width * this.height; i++) {
                 const tx = this.tangents[i * 2];
                 const ty = this.tangents[i * 2 + 1];
@@ -4505,7 +4459,7 @@ void main() {
          *  consumer (e.g. a GPU backend that wants a real texture, not a
          *  per-pixel JS callback) can't work with a lazy field directly. */
         materialize(field, width, height) {
-            const out = createChannelImage(width, height);
+            const out = createChannelImage$1(width, height);
             const size = width * height;
             for (let i = 0; i < size; i++)
                 out.data[i] = field.sample(i);
@@ -4581,7 +4535,7 @@ void main() {
                     height: input.height,
                 };
             }
-            const output = createChannelImage(input.width, input.height);
+            const output = createChannelImage$1(input.width, input.height);
             // Number of samples perpendicular to flow
             const halfSamples = Math.ceil(sigma * 2 / this.config.stepSize);
             const numSamples = halfSamples * 2 + 1;
@@ -4987,7 +4941,7 @@ void main() {
             gl.drawArrays(gl.TRIANGLES, 0, 6);
             console.log(`[GradientAlignedBlur/WebGL] Draw call submit (JS-side only, GPU work is async — see note at top of file): ${(performance.now() - tDraw).toFixed(2)}ms`);
             const tReadback = performance.now();
-            const output = createChannelImage(width, height);
+            const output = createChannelImage$1(width, height);
             gl.readPixels(0, 0, width, height, gl.RED, gl.FLOAT, output.data);
             console.log(`[GradientAlignedBlur/WebGL] Readback (this is where the GPU wait actually happens): ${(performance.now() - tReadback).toFixed(2)}ms`);
             gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -5399,7 +5353,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
                         { binding: 4, resource: { buffer: outputBuffer } },
                     ],
                 });
-                const output = createChannelImage(width, height);
+                const output = createChannelImage$1(width, height);
                 // Tiles are processed sequentially (dispatch -> readback -> next)
                 // rather than pipelined, since outputBuffer/readBuffer are reused
                 // across iterations — that reuse is exactly what keeps memory
@@ -5745,7 +5699,7 @@ struct Params {
                     height: input.height,
                 };
             }
-            const output = createChannelImage(input.width, input.height);
+            const output = createChannelImage$1(input.width, input.height);
             // Number of samples along the flow line
             // Paper samples at 2× sigma in each direction
             const halfSamples = Math.ceil(sigma * 2 / this.config.stepSize);
@@ -6009,7 +5963,7 @@ struct Params {
             gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
             const outputRGBA = new Uint8Array(width * height * 4);
             gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, outputRGBA);
-            const output = createChannelImage(width, height);
+            const output = createChannelImage$1(width, height);
             for (let i = 0; i < output.data.length; i++) {
                 output.data[i] = outputRGBA[i * 4] / 255;
             }
@@ -6279,7 +6233,7 @@ struct Params {
                         { binding: 4, resource: { buffer: outputBuffer } },
                     ],
                 });
-                const output = createChannelImage(width, height);
+                const output = createChannelImage$1(width, height);
                 // Tiles are processed sequentially (dispatch -> readback -> next),
                 // since outputBuffer/readBuffer are reused across iterations — that
                 // reuse is exactly what keeps memory bounded, at the cost of some
@@ -6744,7 +6698,7 @@ struct Params {
         }
         /** Eq. (5): rho(x) = tau + (1 - tau) * (1 - tanh(s * I(x))) */
         computeRhoMap(input, tau, s) {
-            const output = createChannelImage(input.width, input.height);
+            const output = createChannelImage$1(input.width, input.height);
             for (let i = 0; i < input.data.length; i++) {
                 output.data[i] = tau + (1 - tau) * (1 - Math.tanh(s * input.data[i]));
             }
@@ -6752,7 +6706,7 @@ struct Params {
         }
         /** Eq. (6): sigma(x) = c * (1 - tanh(s * I(x))); sampled noise ~ N(0,1) * sigma(x) added to I(x) */
         injectAdaptiveNoise(input, c, s) {
-            const output = createChannelImage(input.width, input.height);
+            const output = createChannelImage$1(input.width, input.height);
             for (let i = 0; i < input.data.length; i++) {
                 const sigma = c * (1 - Math.tanh(s * input.data[i]));
                 output.data[i] = input.data[i] + sigma * gaussianSample();
@@ -6761,7 +6715,7 @@ struct Params {
         }
         /** Eq. (3)/(4): ADoG(x) = G_sigmaC(x) - rho(x) * G_sigmaS(x) */
         computeWeightedDoG(blurC, blurS, rho) {
-            const output = createChannelImage(blurC.width, blurC.height);
+            const output = createChannelImage$1(blurC.width, blurC.height);
             for (let i = 0; i < blurC.data.length; i++) {
                 output.data[i] = blurC.data[i] - rho.data[i] * blurS.data[i];
             }
@@ -6769,12 +6723,28 @@ struct Params {
         }
         /** Standard (non-adaptive) DoG: G_sigmaC(x) - G_sigmaS(x), i.e. rho == 1 everywhere */
         computeUnweightedDoG(blurC, blurS) {
-            const output = createChannelImage(blurC.width, blurC.height);
+            const output = createChannelImage$1(blurC.width, blurC.height);
             for (let i = 0; i < blurC.data.length; i++) {
                 output.data[i] = blurC.data[i] - blurS.data[i];
             }
             return output;
         }
+    }
+    /**
+     * Sample a single value from a standard normal distribution N(0, 1)
+     * using the Box-Muller transform.
+     *
+     * Used by ADoG's adaptive noise injection (Eq. 6): the sampled value is
+     * scaled by a tone-dependent sigma(x) and added to the input luminance.
+     */
+    function gaussianSample() {
+        // Avoid Math.log(0) by excluding 0 from the uniform sample
+        let u1 = 0;
+        while (u1 === 0) {
+            u1 = Math.random();
+        }
+        const u2 = Math.random();
+        return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
     }
     /**
      * Convenience function for one-shot ADoG processing, matching xdog()/fdog()
@@ -6856,6 +6826,36 @@ struct Params {
         }
     }
     /**
+     * Pixel-wise logical AND across N binarized (0/1) ChannelImages.
+     *
+     * Generalizes Eq. (7)/(9) from "Gaussian Image Binarization":
+     *   HDoG = FDoG ∧ ADoG_s ∧ ADoG_s'
+     *
+     * Since binarized images only contain 0 or 1, logical AND is equivalent to
+     * taking the minimum across images (no De Morgan's / inversion needed here
+     * -- see the paper's Eq. (8) for why AND and "invert-OR-invert" coincide;
+     * this just implements AND directly).
+     *
+     * All images must have matching dimensions; this is not checked here for
+     * performance -- validate upstream if inputs could mismatch.
+     */
+    function andCombine(images) {
+        if (images.length === 0) {
+            throw new Error('andCombine requires at least one image');
+        }
+        const { width, height } = images[0];
+        const output = createChannelImage$1(width, height);
+        const size = width * height;
+        for (let i = 0; i < size; i++) {
+            let v = 1;
+            for (const img of images) {
+                v = Math.min(v, img.data[i]);
+            }
+            output.data[i] = v;
+        }
+        return output;
+    }
+    /**
      * Convenience function for one-shot HDoG processing, matching xdog()/fdog()
      * in dog.ts and adog() in adog.ts
      */
@@ -6906,17 +6906,405 @@ struct Params {
     });
 
     /**
-     * Local variance-based texture detection preprocessor for XDoG/FDoG edge detection.
+     * Tone-adaptive epsilon estimation
      *
-     * @remarks
-     * Standard XDoG/FDoG apply the same parameters across an entire image, so
-     * textured regions (fabric, foliage, skin) produce false edges alongside
-     * genuine structural ones. This module addresses that by computing a texture
-     * strength map — a {@link ChannelImage} whose values range from `0` (pure
-     * structure) to `1` (pure texture) — from the local variance in a window
-     * around each pixel, optionally normalized by the local gradient so that
-     * subtle structural edges (e.g. wrinkles) aren't mistaken for texture.
+     * XDoG/FDoG/ADoG all threshold their (continuous) sharpened response against a
+     * single scalar `epsilon`. That's fine when the image's tone is roughly uniform,
+     * but a fixed epsilon under-serves one extreme or the other on high-dynamic-range
+     * input: an epsilon tuned to hold onto shadow detail tends to flood highlights
+     * with noise, and vice versa.
+     *
+     * Why epsilon needs to track local tone at all (confirmed against processor.ts):
+     * `computeSharpening()` implements Eq. 7, S(x) = (1+p)*blur1(x) - p*blur2(x). In
+     * any roughly flat neighborhood blur1(x) ≈ blur2(x) ≈ that neighborhood's local
+     * brightness, so S(x) itself sits near the local tone there -- it's not centered
+     * on some fixed midpoint. `applyThreshold()` (via `ThresholdModes.soft`) then does
+     * `value >= epsilon -> white, else soft-thresholded toward black`. A flat epsilon
+     * tuned for midtones will sit *below* S(x) everywhere in a bright region (crushing
+     * it to white with no edges surviving) and *above* S(x) everywhere in a dark one
+     * (crushing it to black). For epsilon to threshold something meaningful in both
+     * places, it has to move with local tone the same way S(x) does: lower in dark
+     * neighborhoods, higher in light ones. That's the ordering this module defaults to.
+     *
+     * This mirrors the paper's own fix for an analogous problem in ADoG -- Eq. (5)
+     * makes the contrast-sensitivity parameter rho(x) a tanh-shaped function of local
+     * tone I(x) instead of a constant. Here we apply the same shape to epsilon: rather
+     * than reading raw per-pixel intensity (noisy), we blur the input first to get a
+     * smooth "local area brightness" reading, then interpolate between a dark-region
+     * epsilon and a light-region epsilon using that same tanh curve.
+     *
+     * The result is a ChannelImage the same size as the input, suitable for wrapping
+     * with `ScalarField.fromChannelImage()` and passing as the `epsilon` override to
+     * any of the DoG implementations (see usage examples at the bottom).
      */
+    /**
+     * Estimate a spatially-varying epsilon ChannelImage from local image tone.
+     *
+     * epsilon(x) = epsilonDark + (epsilonLight - epsilonDark) * tanh(s * localTone(x))
+     *
+     * Note tanh(s) doesn't quite reach 1 (e.g. tanh(2) ≈ 0.964), so the lightest
+     * areas land close to, but not exactly at, epsilonLight -- same approximation
+     * the paper accepts for rho(x) in Eq. (5), and generally not worth correcting
+     * for since epsilonDark/epsilonLight are empirically tuned anyway.
+     */
+    async function toneAdaptiveEstimate(input, options) {
+        const { epsilonDark, epsilonLight, localitySigma = 8, s = 2 } = options;
+        const blurStrategy = options.blurStrategy ?? (await IsotropicBlur.create({ kernelSizeMultiplier: 4 }));
+        const ownsBlurStrategy = !options.blurStrategy;
+        try {
+            const localTone = await blurStrategy.blur(input, localitySigma);
+            const epsilon = createChannelImage$1(input.width, input.height);
+            for (let i = 0; i < epsilon.data.length; i++) {
+                const w = Math.tanh(s * localTone.data[i]); // 0 (dark) -> ~1 (light)
+                epsilon.data[i] = epsilonDark + (epsilonLight - epsilonDark) * w;
+            }
+            return epsilon;
+        }
+        finally {
+            if (ownsBlurStrategy)
+                blurStrategy.dispose();
+        }
+    }
+    /**
+     * Estimate epsilon directly as the local baseline of the sharpened response,
+     * instead of interpolating between two hand-picked epsilonDark/epsilonLight
+     * constants. Since S(x) ≈ local tone in flat regions (Eq. 7, see module
+     * comment), blurring the input at the DoG's own `sigma` is a direct estimate
+     * of that baseline -- this is `estimateToneAdaptiveEpsilon` with the tanh
+     * shaping and two free endpoints removed, in favor of just tracking the
+     * quantity epsilon is actually being compared against. Prefer this one
+     * unless you specifically want the tanh curve's asymmetric dark/light
+     * control (e.g. for a stylized look rather than a technically-motivated one).
+     */
+    async function localBaselineEstimate(input, options) {
+        const { sigma, offset = 0 } = options;
+        const blurStrategy = options.blurStrategy ?? (await IsotropicBlur.create({ kernelSizeMultiplier: 4 }));
+        const ownsBlurStrategy = !options.blurStrategy;
+        try {
+            const baseline = await blurStrategy.blur(input, sigma);
+            const epsilon = createChannelImage$1(input.width, input.height);
+            for (let i = 0; i < epsilon.data.length; i++) {
+                epsilon.data[i] = baseline.data[i] + offset;
+            }
+            return epsilon;
+        }
+        finally {
+            if (ownsBlurStrategy)
+                blurStrategy.dispose();
+        }
+    }
+    /**
+     * Usage (recommended default -- tracks the DoG's own blur directly):
+     *
+     *   import { XDoG } from '../implementations/xdog.js';
+     *   import { ScalarField } from './scalar-field.js';
+     *   import { estimateLocalBaselineEpsilon } from './adaptive-epsilon.js';
+     *
+     *   const sigma = 1.4;
+     *   const epsilonMap = await estimateLocalBaselineEpsilon(input, { sigma });
+     *
+     *   const xdog = new XDoG({ sigma, k: 1.6, phi: 10 });
+     *   const result = await xdog.process(input, {
+     *     epsilon: ScalarField.fromChannelImage(epsilonMap),
+     *   });
+     *
+     * Usage (tanh-shaped, for hand-tuned dark/light control instead):
+     *
+     *   import { ADoG } from '../implementations/adog.js';
+     *   import { estimateToneAdaptiveEpsilonAuto } from './adaptive-epsilon.js';
+     *
+     *   const center = await ADoG.estimateEpsilon(input); // reuse existing global estimator
+     *   const epsilonMap = await estimateToneAdaptiveEpsilonAuto(input, {
+     *     center,
+     *     spread: center * 0.15,
+     *     localitySigma: 12,
+     *   });
+     *
+     * Works the same way for FDoG/ADoG: `DoGConfig`'s p/epsilon/phi are
+     * ScalarFields internally (see utils/scalar-field.ts), so any of them
+     * accept a wrapped ChannelImage like this one as a config override.
+     */
+
+    var epsilon = /*#__PURE__*/Object.freeze({
+        __proto__: null,
+        localBaselineEstimate: localBaselineEstimate,
+        toneAdaptiveEstimate: toneAdaptiveEstimate
+    });
+
+    /**
+     * Preprocessing module for XDoG/FDoG
+     *
+     * Provides filters to prepare images before line detection.
+     * These help reduce noise and texture while preserving important edges.
+     *
+     * Section 3.2 of the paper discusses the importance of bilateral
+     * preprocessing for "indication" - attenuating weak edges while
+     * preserving strong edges.
+     */
+    const DEFAULT_BILATERAL_CONFIG$2 = {
+        sigmaSpatial: 3,
+        sigmaRange: 0.1,
+        radiusMultiplier: 2,
+    };
+    const DEFAULT_MEDIAN_CONFIG$2 = {
+        radius: 2,
+    };
+    const DEFAULT_KUWAHARA_CONFIG$2 = {
+        radius: 3,
+    };
+    /**
+     * Bilateral Filter
+     *
+     * Edge-preserving smoothing filter that averages pixels based on both
+     * spatial proximity AND intensity similarity. This smooths out texture
+     * (like grass) while keeping strong edges (like the car outline) sharp.
+     *
+     * This is the recommended preprocessing for most images.
+     *
+     * As mentioned in Section 3.2, bilateral filtering can serve as a
+     * "prioritization mechanism" for indication - attenuating weak edges
+     * while supporting strong edges.
+     *
+     * CPU is always available (BaseCPUStrategy.isSupported() / dispose() /
+     * backend all apply unchanged) — this is the universal fallback.
+     */
+    let BilateralFilter$1 = class BilateralFilter extends BaseCPUStrategy {
+        config;
+        constructor(config = {}) {
+            super();
+            this.config = { ...DEFAULT_BILATERAL_CONFIG$2, ...config };
+        }
+        async process(input) {
+            const cfg = this.config;
+            const { width, height } = input;
+            const output = createChannelImage$1(width, height);
+            const radius = Math.ceil(cfg.sigmaSpatial * (cfg.radiusMultiplier ?? 2));
+            const sigmaSpatial2 = 2 * cfg.sigmaSpatial * cfg.sigmaSpatial;
+            const sigmaRange2 = 2 * cfg.sigmaRange * cfg.sigmaRange;
+            // Precompute spatial weights
+            const spatialWeights = [];
+            for (let dy = -radius; dy <= radius; dy++) {
+                for (let dx = -radius; dx <= radius; dx++) {
+                    const dist2 = dx * dx + dy * dy;
+                    spatialWeights.push(Math.exp(-dist2 / sigmaSpatial2));
+                }
+            }
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const centerValue = getPixel(input, x, y);
+                    let sum = 0;
+                    let weightSum = 0;
+                    let idx = 0;
+                    for (let dy = -radius; dy <= radius; dy++) {
+                        for (let dx = -radius; dx <= radius; dx++) {
+                            const nx = x + dx;
+                            const ny = y + dy;
+                            const neighborValue = getPixel(input, nx, ny);
+                            // Range weight based on intensity difference
+                            const intensityDiff = neighborValue - centerValue;
+                            const rangeWeight = Math.exp(-(intensityDiff * intensityDiff) / sigmaRange2);
+                            // Combined weight
+                            const weight = spatialWeights[idx] * rangeWeight;
+                            sum += neighborValue * weight;
+                            weightSum += weight;
+                            idx++;
+                        }
+                    }
+                    output.data[y * width + x] = weightSum > 0 ? sum / weightSum : centerValue;
+                }
+            }
+            return output;
+        }
+    };
+    /**
+     * Median Filter
+     *
+     * Replaces each pixel with the median of its neighborhood.
+     * Excellent for removing salt-and-pepper noise and small texture details.
+     */
+    let MedianFilter$1 = class MedianFilter extends BaseCPUStrategy {
+        config;
+        constructor(config = {}) {
+            super();
+            this.config = { ...DEFAULT_MEDIAN_CONFIG$2, ...config };
+        }
+        async process(input) {
+            const { width, height } = input;
+            const output = createChannelImage$1(width, height);
+            const radius = this.config.radius;
+            const kernelSize = (2 * radius + 1) * (2 * radius + 1);
+            const values = new Array(kernelSize);
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    let idx = 0;
+                    for (let dy = -radius; dy <= radius; dy++) {
+                        for (let dx = -radius; dx <= radius; dx++) {
+                            values[idx++] = getPixel(input, x + dx, y + dy);
+                        }
+                    }
+                    // Sort and take median
+                    values.sort((a, b) => a - b);
+                    output.data[y * width + x] = values[Math.floor(kernelSize / 2)];
+                }
+            }
+            return output;
+        }
+    };
+    /**
+     * Kuwahara Filter
+     *
+     * Artistic smoothing filter that creates a painterly effect.
+     * Divides the neighborhood into 4 quadrants, finds the one with
+     * lowest variance, and uses its mean. Creates flat regions with
+     * preserved edges - great for a more stylized look.
+     */
+    let KuwaharaFilter$1 = class KuwaharaFilter extends BaseCPUStrategy {
+        config;
+        constructor(config = {}) {
+            super();
+            this.config = { ...DEFAULT_KUWAHARA_CONFIG$2, ...config };
+        }
+        async process(input) {
+            const { width, height } = input;
+            const output = createChannelImage$1(width, height);
+            const r = this.config.radius;
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    // Four quadrants: top-left, top-right, bottom-left, bottom-right
+                    const quadrants = [
+                        { startX: -r, endX: 0, startY: -r, endY: 0 },
+                        { startX: 0, endX: r, startY: -r, endY: 0 },
+                        { startX: -r, endX: 0, startY: 0, endY: r },
+                        { startX: 0, endX: r, startY: 0, endY: r },
+                    ];
+                    let minVariance = Infinity;
+                    let bestMean = getPixel(input, x, y);
+                    for (const q of quadrants) {
+                        let sum = 0;
+                        let sumSq = 0;
+                        let count = 0;
+                        for (let dy = q.startY; dy <= q.endY; dy++) {
+                            for (let dx = q.startX; dx <= q.endX; dx++) {
+                                const val = getPixel(input, x + dx, y + dy);
+                                sum += val;
+                                sumSq += val * val;
+                                count++;
+                            }
+                        }
+                        const mean = sum / count;
+                        const variance = (sumSq / count) - (mean * mean);
+                        if (variance < minVariance) {
+                            minVariance = variance;
+                            bestMean = mean;
+                        }
+                    }
+                    output.data[y * width + x] = bestMean;
+                }
+            }
+            return output;
+        }
+    };
+    /**
+     * Gaussian Blur
+     *
+     * Simple Gaussian smoothing. Less edge-preserving than bilateral,
+     * but faster. Good for very noisy images or when used with small sigma.
+     */
+    let GaussianBlur$1 = class GaussianBlur extends BaseCPUStrategy {
+        sigma;
+        constructor(sigma = 1.0) {
+            super();
+            this.sigma = sigma;
+        }
+        async process(input) {
+            const { width, height } = input;
+            const sigma = this.sigma;
+            if (sigma < 0.1) {
+                return { data: new Float32Array(input.data), width, height };
+            }
+            const radius = Math.ceil(sigma * 3);
+            const kernelSize = radius * 2 + 1;
+            const kernel = generateGaussianKernel$1(sigma, kernelSize);
+            // Horizontal pass
+            const temp = createChannelImage$1(width, height);
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    let val = 0;
+                    for (let k = 0; k < kernelSize; k++) {
+                        val += getPixel(input, x + k - radius, y) * kernel[k];
+                    }
+                    temp.data[y * width + x] = val;
+                }
+            }
+            // Vertical pass
+            const output = createChannelImage$1(width, height);
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    let val = 0;
+                    for (let k = 0; k < kernelSize; k++) {
+                        val += getPixel(temp, x, y + k - radius) * kernel[k];
+                    }
+                    output.data[y * width + x] = val;
+                }
+            }
+            return output;
+        }
+    };
+    /**
+     * Contrast Enhancement
+     *
+     * Stretches the histogram to use the full 0-1 range.
+     * Can help make edges more distinct before processing.
+     */
+    let ContrastEnhancer$1 = class ContrastEnhancer extends BaseCPUStrategy {
+        blackPoint;
+        whitePoint;
+        constructor(blackPoint = 0.01, whitePoint = 0.99) {
+            super();
+            this.blackPoint = blackPoint;
+            this.whitePoint = whitePoint;
+        }
+        async process(input) {
+            const { width, height, data } = input;
+            const output = createChannelImage$1(width, height);
+            const size = width * height;
+            // Find histogram percentiles
+            const sorted = new Float32Array(data).sort();
+            const minVal = sorted[Math.floor(size * this.blackPoint)];
+            const maxVal = sorted[Math.floor(size * this.whitePoint)];
+            const range = maxVal - minVal;
+            if (range < 0.01) {
+                return { data: new Float32Array(data), width, height };
+            }
+            for (let i = 0; i < size; i++) {
+                output.data[i] = Math.max(0, Math.min(1, (data[i] - minVal) / range));
+            }
+            return output;
+        }
+    };
+    /**
+     * Quantize to reduce color levels
+     *
+     * Reduces the number of intensity levels, creating a posterized effect.
+     * Can help reduce noise by grouping similar intensities together.
+     */
+    let Quantizer$1 = class Quantizer extends BaseCPUStrategy {
+        levels;
+        constructor(levels = 8) {
+            super();
+            this.levels = levels;
+        }
+        async process(input) {
+            const { width, height, data } = input;
+            const output = createChannelImage$1(width, height);
+            const size = width * height;
+            const step = 1 / (this.levels - 1);
+            for (let i = 0; i < size; i++) {
+                output.data[i] = Math.round(data[i] / step) * step;
+            }
+            return output;
+        }
+    };
     /**
      * Computes local variance as texture detection preprocessing
      *
@@ -6946,142 +7334,6 @@ struct Params {
      * ```
      */
     class LocalVariancePreprocessor {
-        config;
-        /** CPU-only — no WebGL/WebGPU counterpart exists for this preprocessor. */
-        backend = 'cpu';
-        constructor(config = {}) {
-            this.config = {
-                windowRadius: config.windowRadius ?? 2, // 5x5 window by default
-                normalizeByGradient: config.normalizeByGradient ?? true,
-                varianceScale: config.varianceScale ?? 1.0,
-                maxVariance: config.maxVariance,
-            };
-        }
-        dispose() {
-            // No resources to release.
-        }
-        /**
-         * Compute texture strength map from image
-         *
-         * @param image Input grayscale image (Float32Array, 0-1 normalized)
-         * @returns ChannelImage containing texture strength values
-         *          Each pixel: 0 = pure structure (edges, boundaries)
-         *                     1 = pure texture (patterns, fine details)
-         *          Developer uses these values to adapt XDoG parameters
-         */
-        async process(image) {
-            const result = new Float32Array(image.data.length);
-            const { width, height, data } = image;
-            const { windowRadius, normalizeByGradient, varianceScale, maxVariance } = this.config;
-            // For each pixel
-            for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                    const pixelIdx = y * width + x;
-                    // Compute variance in window around pixel
-                    const variance = this.computeLocalVariance(data, width, height, x, y, windowRadius);
-                    let textureStrength = variance * varianceScale;
-                    // Optional: Normalize by gradient strength
-                    if (normalizeByGradient) {
-                        const gradient = this.computeLocalGradient(data, width, height, x, y);
-                        // High gradient + high variance → likely edge, reduce texture score
-                        // Low gradient + high variance → likely texture, keep high
-                        const gradientFactor = 1.0 / (1.0 + gradient * gradient);
-                        textureStrength = textureStrength * gradientFactor;
-                    }
-                    // Clamp if requested
-                    if (maxVariance !== undefined) {
-                        textureStrength = Math.min(textureStrength, maxVariance);
-                    }
-                    // Normalize to 0-1
-                    result[pixelIdx] = Math.min(1.0, textureStrength);
-                }
-            }
-            return {
-                data: result,
-                width,
-                height,
-            };
-        }
-        /**
-         * Compute variance of pixel values in a window
-         * @private
-         */
-        computeLocalVariance(data, width, height, cx, cy, radius) {
-            let sum = 0;
-            let sumSquares = 0;
-            let count = 0;
-            // Sum values in window
-            for (let dy = -radius; dy <= radius; dy++) {
-                const y = cy + dy;
-                if (y < 0 || y >= height)
-                    continue;
-                const rowOffset = y * width; // computed once per row instead of once per pixel
-                for (let dx = -radius; dx <= radius; dx++) {
-                    const x = cx + dx;
-                    if (x < 0 || x >= width)
-                        continue;
-                    const value = data[rowOffset + x];
-                    sum += value;
-                    sumSquares += value * value;
-                    count++;
-                }
-            }
-            const mean = sum / count;
-            const meanOfSquares = sumSquares / count;
-            const variance = meanOfSquares - mean * mean;
-            return Math.max(0, variance); // Clamp to non-negative
-        }
-        /**
-         * Compute gradient magnitude at pixel (Sobel filter)
-         * Used to normalize variance (distinguish texture from edges)
-         * @private
-         */
-        computeLocalGradient(data, width, height, x, y) {
-            // Sobel kernel
-            let gx = 0;
-            let gy = 0;
-            if (x > 0 && x < width - 1 && y > 0 && y < height - 1) {
-                const rowUp = (y - 1) * width;
-                const rowMid = y * width;
-                const rowDown = (y + 1) * width;
-                // Each neighbor is read once and reused in both gx and gy,
-                // instead of re-indexing/re-reading it for each.
-                const tl = data[rowUp + x - 1];
-                const tm = data[rowUp + x];
-                const tr = data[rowUp + x + 1];
-                const ml = data[rowMid + x - 1];
-                const mr = data[rowMid + x + 1];
-                const bl = data[rowDown + x - 1];
-                const bm = data[rowDown + x];
-                const br = data[rowDown + x + 1];
-                // Gx (vertical edges)
-                gx = (-tl + tr) + (-2 * ml + 2 * mr) + (-bl + br);
-                // Gy (horizontal edges)
-                gy = (tl + 2 * tm + tr) - (bl + 2 * bm + br);
-            }
-            const magnitude = Math.sqrt(gx * gx + gy * gy);
-            return magnitude;
-        }
-    }
-    /**
-     * Optimized Local Variance Texture Detector
-     *
-     * Same functionality as LocalVariancePreprocessor, but faster.
-     * Uses separable convolution: O(n x r) instead of O(n x r^2)
-     *
-     * Approach: Variance = E[X^2] - E[X]^2
-     * - Compute box blur of image (gives E[X])
-     * - Compute box blur of image squared (gives E[X^2])
-     * - Subtract to get variance
-     *
-     * Performance:
-     * - Basic version: ~1-2ms for 1080p (5x5 window)
-     * - Optimized version: ~0.5ms for 1080p (5x5 window)
-     * - 3-4x faster for large windows
-     *
-     * Use this for real-time applications. Basic version is fine for batch processing.
-     */
-    class LocalVariancePreprocessorOptimized {
         config;
         /** CPU-only — no WebGL/WebGPU counterpart exists for this preprocessor. */
         backend = 'cpu';
@@ -7308,7 +7560,7 @@ struct Params {
     }
 
     // AUTO-GENERATED FILE — DO NOT EDIT.
-    // Source: preprocess/shaders/webgl/bilateral.glsl
+    // Source: preprocess/preprocessors/shaders/webgl/bilateral.glsl
     // Regenerate with `npm run build:shaders`.
     const source$e = `#version 300 es
 precision highp float;
@@ -7353,7 +7605,7 @@ void main() {
 }`;
 
     // AUTO-GENERATED FILE — DO NOT EDIT.
-    // Source: preprocess/shaders/webgl/contrast.glsl
+    // Source: preprocess/preprocessors/shaders/webgl/contrast.glsl
     // Regenerate with `npm run build:shaders`.
     const source$d = `#version 300 es
 precision highp float;
@@ -7378,7 +7630,7 @@ void main() {
 }`;
 
     // AUTO-GENERATED FILE — DO NOT EDIT.
-    // Source: preprocess/shaders/webgl/guassian-horizontal.glsl
+    // Source: preprocess/preprocessors/shaders/webgl/guassian-horizontal.glsl
     // Regenerate with `npm run build:shaders`.
     const source$c = `#version 300 es
 precision highp float;
@@ -7409,7 +7661,7 @@ void main() {
 }`;
 
     // AUTO-GENERATED FILE — DO NOT EDIT.
-    // Source: preprocess/shaders/webgl/guassian-vertical.glsl
+    // Source: preprocess/preprocessors/shaders/webgl/guassian-vertical.glsl
     // Regenerate with `npm run build:shaders`.
     const source$b = `#version 300 es
 precision highp float;
@@ -7440,7 +7692,7 @@ void main() {
 }`;
 
     // AUTO-GENERATED FILE — DO NOT EDIT.
-    // Source: preprocess/shaders/webgl/kuwahara.glsl
+    // Source: preprocess/preprocessors/shaders/webgl/kuwahara.glsl
     // Regenerate with `npm run build:shaders`.
     const source$a = `#version 300 es
 precision highp float;
@@ -7496,7 +7748,7 @@ void main() {
 }`;
 
     // AUTO-GENERATED FILE — DO NOT EDIT.
-    // Source: preprocess/shaders/webgl/median-small.glsl
+    // Source: preprocess/preprocessors/shaders/webgl/median-small.glsl
     // Regenerate with `npm run build:shaders`.
     const source$9 = `// For small radius, use direct sorting approach (more accurate)
 #version 300 es
@@ -7545,7 +7797,7 @@ void main() {
 }`;
 
     // AUTO-GENERATED FILE — DO NOT EDIT.
-    // Source: preprocess/shaders/webgl/median.glsl
+    // Source: preprocess/preprocessors/shaders/webgl/median.glsl
     // Regenerate with `npm run build:shaders`.
     const source$8 = `// True median requires sorting which isn't efficient in shaders.
 // We use a weighted percentile approximation that's very close to median.
@@ -7601,7 +7853,7 @@ void main() {
 }`;
 
     // AUTO-GENERATED FILE — DO NOT EDIT.
-    // Source: preprocess/shaders/webgl/quantize.glsl
+    // Source: preprocess/preprocessors/shaders/webgl/quantize.glsl
     // Regenerate with `npm run build:shaders`.
     const source$7 = `#version 300 es
 precision highp float;
@@ -7621,15 +7873,15 @@ void main() {
 }`;
 
     // Default config values (mirrors the CPU implementation in cpu.ts)
-    const DEFAULT_BILATERAL_CONFIG$2 = {
+    const DEFAULT_BILATERAL_CONFIG$1 = {
         sigmaSpatial: 3,
         sigmaRange: 0.1,
         radiusMultiplier: 2,
     };
-    const DEFAULT_MEDIAN_CONFIG$2 = {
+    const DEFAULT_MEDIAN_CONFIG$1 = {
         radius: 2,
     };
-    const DEFAULT_KUWAHARA_CONFIG$2 = {
+    const DEFAULT_KUWAHARA_CONFIG$1 = {
         radius: 3,
     };
     // ============================================================================
@@ -7885,7 +8137,7 @@ void main() {
         }
         constructor(config = {}) {
             super();
-            this.config = { ...DEFAULT_BILATERAL_CONFIG$2, ...config };
+            this.config = { ...DEFAULT_BILATERAL_CONFIG$1, ...config };
         }
         async process(input) {
             const config = this.config;
@@ -8015,7 +8267,7 @@ void main() {
         }
         constructor(config = {}) {
             super();
-            this.config = { ...DEFAULT_MEDIAN_CONFIG$2, ...config };
+            this.config = { ...DEFAULT_MEDIAN_CONFIG$1, ...config };
         }
         async process(input) {
             const config = this.config;
@@ -8070,7 +8322,7 @@ void main() {
         }
         constructor(config = {}) {
             super();
-            this.config = { ...DEFAULT_KUWAHARA_CONFIG$2, ...config };
+            this.config = { ...DEFAULT_KUWAHARA_CONFIG$1, ...config };
         }
         async process(input) {
             const config = this.config;
@@ -8263,7 +8515,7 @@ void main() {
     });
 
     // AUTO-GENERATED FILE — DO NOT EDIT.
-    // Source: preprocess/shaders/webgpu/bilateral.wgsl
+    // Source: preprocess/preprocessors/shaders/webgpu/bilateral.wgsl
     // Regenerate with `npm run build:shaders`.
     const source$6 = `struct Params {
   width: u32,
@@ -8326,7 +8578,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 `;
 
     // AUTO-GENERATED FILE — DO NOT EDIT.
-    // Source: preprocess/shaders/webgpu/kuwahara.wgsl
+    // Source: preprocess/preprocessors/shaders/webgpu/kuwahara.wgsl
     // Regenerate with `npm run build:shaders`.
     const source$5 = `struct Params {
   width: u32,
@@ -8392,7 +8644,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 `;
 
     // AUTO-GENERATED FILE — DO NOT EDIT.
-    // Source: preprocess/shaders/webgpu/gaussian.wgsl
+    // Source: preprocess/preprocessors/shaders/webgpu/gaussian.wgsl
     // Regenerate with `npm run build:shaders`.
     const source$4 = `struct Params {
   width: u32,
@@ -8442,7 +8694,7 @@ fn main_v(@builtin(global_invocation_id) gid: vec3<u32>) {
 `;
 
     // AUTO-GENERATED FILE — DO NOT EDIT.
-    // Source: preprocess/shaders/webgpu/histogram.wgsl
+    // Source: preprocess/preprocessors/shaders/webgpu/histogram.wgsl
     // Regenerate with `npm run build:shaders`.
     const source$3 = `struct Params {
   width: u32,
@@ -8471,7 +8723,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 `;
 
     // AUTO-GENERATED FILE — DO NOT EDIT.
-    // Source: preprocess/shaders/webgpu/stretch.wgsl
+    // Source: preprocess/preprocessors/shaders/webgpu/stretch.wgsl
     // Regenerate with `npm run build:shaders`.
     const source$2 = `struct Params {
   width: u32,
@@ -8500,7 +8752,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 `;
 
     // AUTO-GENERATED FILE — DO NOT EDIT.
-    // Source: preprocess/shaders/webgpu/quantize.wgsl
+    // Source: preprocess/preprocessors/shaders/webgpu/quantize.wgsl
     // Regenerate with `npm run build:shaders`.
     const source$1 = `struct Params {
   width: u32,
@@ -8528,7 +8780,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 `;
 
     // AUTO-GENERATED FILE — DO NOT EDIT.
-    // Source: preprocess/shaders/webgpu/median.wgsl
+    // Source: preprocess/preprocessors/shaders/webgpu/median.wgsl
     // Regenerate with `npm run build:shaders`.
     const source = `struct Params {
   width: u32,
@@ -8745,7 +8997,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     /* ==================================================================== */
     /* Bilateral Filter                                                      */
     /* ==================================================================== */
-    const DEFAULT_BILATERAL_CONFIG$1 = {
+    const DEFAULT_BILATERAL_CONFIG = {
         sigmaSpatial: 3,
         sigmaRange: 0.1,
         radiusMultiplier: 2,
@@ -8769,7 +9021,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         }
         constructor(config = {}) {
             super();
-            this.config = { ...DEFAULT_BILATERAL_CONFIG$1, ...config };
+            this.config = { ...DEFAULT_BILATERAL_CONFIG, ...config };
         }
         async process(input) {
             const device = await getWebGPUDevice();
@@ -8855,7 +9107,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     /* ==================================================================== */
     /* Median Filter                                                         */
     /* ==================================================================== */
-    const DEFAULT_MEDIAN_CONFIG$1 = {
+    const DEFAULT_MEDIAN_CONFIG = {
         radius: 2,
     };
     // N (the per-pixel neighborhood size) sizes a function-local `var`, not a
@@ -8880,7 +9132,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         }
         constructor(config = {}) {
             super();
-            this.config = { ...DEFAULT_MEDIAN_CONFIG$1, ...config };
+            this.config = { ...DEFAULT_MEDIAN_CONFIG, ...config };
             if (this.config.radius > 6) {
                 console.warn(`GPUMedianFilter: radius=${this.config.radius} means a per-pixel ` +
                     `neighborhood array of ${(2 * this.config.radius + 1) ** 2} elements, ` +
@@ -8923,7 +9175,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     /* ==================================================================== */
     /* Kuwahara Filter                                                       */
     /* ==================================================================== */
-    const DEFAULT_KUWAHARA_CONFIG$1 = {
+    const DEFAULT_KUWAHARA_CONFIG = {
         radius: 3,
     };
     class GPUKuwaharaFilter extends BaseWebGPUStrategy {
@@ -8936,7 +9188,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         }
         constructor(config = {}) {
             super();
-            this.config = { ...DEFAULT_KUWAHARA_CONFIG$1, ...config };
+            this.config = { ...DEFAULT_KUWAHARA_CONFIG, ...config };
         }
         async process(input) {
             const device = await getWebGPUDevice();
@@ -9227,281 +9479,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
 
     /**
-     * Preprocessing module for XDoG/FDoG
-     *
-     * Provides filters to prepare images before line detection.
-     * These help reduce noise and texture while preserving important edges.
-     *
-     * Section 3.2 of the paper discusses the importance of bilateral
-     * preprocessing for "indication" - attenuating weak edges while
-     * preserving strong edges.
-     */
-    const DEFAULT_BILATERAL_CONFIG = {
-        sigmaSpatial: 3,
-        sigmaRange: 0.1,
-        radiusMultiplier: 2,
-    };
-    const DEFAULT_MEDIAN_CONFIG = {
-        radius: 2,
-    };
-    const DEFAULT_KUWAHARA_CONFIG = {
-        radius: 3,
-    };
-    /**
-     * Bilateral Filter
-     *
-     * Edge-preserving smoothing filter that averages pixels based on both
-     * spatial proximity AND intensity similarity. This smooths out texture
-     * (like grass) while keeping strong edges (like the car outline) sharp.
-     *
-     * This is the recommended preprocessing for most images.
-     *
-     * As mentioned in Section 3.2, bilateral filtering can serve as a
-     * "prioritization mechanism" for indication - attenuating weak edges
-     * while supporting strong edges.
-     *
-     * CPU is always available (BaseCPUStrategy.isSupported() / dispose() /
-     * backend all apply unchanged) — this is the universal fallback.
-     */
-    let BilateralFilter$1 = class BilateralFilter extends BaseCPUStrategy {
-        config;
-        constructor(config = {}) {
-            super();
-            this.config = { ...DEFAULT_BILATERAL_CONFIG, ...config };
-        }
-        async process(input) {
-            const cfg = this.config;
-            const { width, height } = input;
-            const output = createChannelImage(width, height);
-            const radius = Math.ceil(cfg.sigmaSpatial * (cfg.radiusMultiplier ?? 2));
-            const sigmaSpatial2 = 2 * cfg.sigmaSpatial * cfg.sigmaSpatial;
-            const sigmaRange2 = 2 * cfg.sigmaRange * cfg.sigmaRange;
-            // Precompute spatial weights
-            const spatialWeights = [];
-            for (let dy = -radius; dy <= radius; dy++) {
-                for (let dx = -radius; dx <= radius; dx++) {
-                    const dist2 = dx * dx + dy * dy;
-                    spatialWeights.push(Math.exp(-dist2 / sigmaSpatial2));
-                }
-            }
-            for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                    const centerValue = getPixel(input, x, y);
-                    let sum = 0;
-                    let weightSum = 0;
-                    let idx = 0;
-                    for (let dy = -radius; dy <= radius; dy++) {
-                        for (let dx = -radius; dx <= radius; dx++) {
-                            const nx = x + dx;
-                            const ny = y + dy;
-                            const neighborValue = getPixel(input, nx, ny);
-                            // Range weight based on intensity difference
-                            const intensityDiff = neighborValue - centerValue;
-                            const rangeWeight = Math.exp(-(intensityDiff * intensityDiff) / sigmaRange2);
-                            // Combined weight
-                            const weight = spatialWeights[idx] * rangeWeight;
-                            sum += neighborValue * weight;
-                            weightSum += weight;
-                            idx++;
-                        }
-                    }
-                    output.data[y * width + x] = weightSum > 0 ? sum / weightSum : centerValue;
-                }
-            }
-            return output;
-        }
-    };
-    /**
-     * Median Filter
-     *
-     * Replaces each pixel with the median of its neighborhood.
-     * Excellent for removing salt-and-pepper noise and small texture details.
-     */
-    let MedianFilter$1 = class MedianFilter extends BaseCPUStrategy {
-        config;
-        constructor(config = {}) {
-            super();
-            this.config = { ...DEFAULT_MEDIAN_CONFIG, ...config };
-        }
-        async process(input) {
-            const { width, height } = input;
-            const output = createChannelImage(width, height);
-            const radius = this.config.radius;
-            const kernelSize = (2 * radius + 1) * (2 * radius + 1);
-            const values = new Array(kernelSize);
-            for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                    let idx = 0;
-                    for (let dy = -radius; dy <= radius; dy++) {
-                        for (let dx = -radius; dx <= radius; dx++) {
-                            values[idx++] = getPixel(input, x + dx, y + dy);
-                        }
-                    }
-                    // Sort and take median
-                    values.sort((a, b) => a - b);
-                    output.data[y * width + x] = values[Math.floor(kernelSize / 2)];
-                }
-            }
-            return output;
-        }
-    };
-    /**
-     * Kuwahara Filter
-     *
-     * Artistic smoothing filter that creates a painterly effect.
-     * Divides the neighborhood into 4 quadrants, finds the one with
-     * lowest variance, and uses its mean. Creates flat regions with
-     * preserved edges - great for a more stylized look.
-     */
-    let KuwaharaFilter$1 = class KuwaharaFilter extends BaseCPUStrategy {
-        config;
-        constructor(config = {}) {
-            super();
-            this.config = { ...DEFAULT_KUWAHARA_CONFIG, ...config };
-        }
-        async process(input) {
-            const { width, height } = input;
-            const output = createChannelImage(width, height);
-            const r = this.config.radius;
-            for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                    // Four quadrants: top-left, top-right, bottom-left, bottom-right
-                    const quadrants = [
-                        { startX: -r, endX: 0, startY: -r, endY: 0 },
-                        { startX: 0, endX: r, startY: -r, endY: 0 },
-                        { startX: -r, endX: 0, startY: 0, endY: r },
-                        { startX: 0, endX: r, startY: 0, endY: r },
-                    ];
-                    let minVariance = Infinity;
-                    let bestMean = getPixel(input, x, y);
-                    for (const q of quadrants) {
-                        let sum = 0;
-                        let sumSq = 0;
-                        let count = 0;
-                        for (let dy = q.startY; dy <= q.endY; dy++) {
-                            for (let dx = q.startX; dx <= q.endX; dx++) {
-                                const val = getPixel(input, x + dx, y + dy);
-                                sum += val;
-                                sumSq += val * val;
-                                count++;
-                            }
-                        }
-                        const mean = sum / count;
-                        const variance = (sumSq / count) - (mean * mean);
-                        if (variance < minVariance) {
-                            minVariance = variance;
-                            bestMean = mean;
-                        }
-                    }
-                    output.data[y * width + x] = bestMean;
-                }
-            }
-            return output;
-        }
-    };
-    /**
-     * Gaussian Blur
-     *
-     * Simple Gaussian smoothing. Less edge-preserving than bilateral,
-     * but faster. Good for very noisy images or when used with small sigma.
-     */
-    let GaussianBlur$1 = class GaussianBlur extends BaseCPUStrategy {
-        sigma;
-        constructor(sigma = 1.0) {
-            super();
-            this.sigma = sigma;
-        }
-        async process(input) {
-            const { width, height } = input;
-            const sigma = this.sigma;
-            if (sigma < 0.1) {
-                return { data: new Float32Array(input.data), width, height };
-            }
-            const radius = Math.ceil(sigma * 3);
-            const kernelSize = radius * 2 + 1;
-            const kernel = generateGaussianKernel$1(sigma, kernelSize);
-            // Horizontal pass
-            const temp = createChannelImage(width, height);
-            for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                    let val = 0;
-                    for (let k = 0; k < kernelSize; k++) {
-                        val += getPixel(input, x + k - radius, y) * kernel[k];
-                    }
-                    temp.data[y * width + x] = val;
-                }
-            }
-            // Vertical pass
-            const output = createChannelImage(width, height);
-            for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                    let val = 0;
-                    for (let k = 0; k < kernelSize; k++) {
-                        val += getPixel(temp, x, y + k - radius) * kernel[k];
-                    }
-                    output.data[y * width + x] = val;
-                }
-            }
-            return output;
-        }
-    };
-    /**
-     * Contrast Enhancement
-     *
-     * Stretches the histogram to use the full 0-1 range.
-     * Can help make edges more distinct before processing.
-     */
-    let ContrastEnhancer$1 = class ContrastEnhancer extends BaseCPUStrategy {
-        blackPoint;
-        whitePoint;
-        constructor(blackPoint = 0.01, whitePoint = 0.99) {
-            super();
-            this.blackPoint = blackPoint;
-            this.whitePoint = whitePoint;
-        }
-        async process(input) {
-            const { width, height, data } = input;
-            const output = createChannelImage(width, height);
-            const size = width * height;
-            // Find histogram percentiles
-            const sorted = new Float32Array(data).sort();
-            const minVal = sorted[Math.floor(size * this.blackPoint)];
-            const maxVal = sorted[Math.floor(size * this.whitePoint)];
-            const range = maxVal - minVal;
-            if (range < 0.01) {
-                return { data: new Float32Array(data), width, height };
-            }
-            for (let i = 0; i < size; i++) {
-                output.data[i] = Math.max(0, Math.min(1, (data[i] - minVal) / range));
-            }
-            return output;
-        }
-    };
-    /**
-     * Quantize to reduce color levels
-     *
-     * Reduces the number of intensity levels, creating a posterized effect.
-     * Can help reduce noise by grouping similar intensities together.
-     */
-    let Quantizer$1 = class Quantizer extends BaseCPUStrategy {
-        levels;
-        constructor(levels = 8) {
-            super();
-            this.levels = levels;
-        }
-        async process(input) {
-            const { width, height, data } = input;
-            const output = createChannelImage(width, height);
-            const size = width * height;
-            const step = 1 / (this.levels - 1);
-            for (let i = 0; i < size; i++) {
-                output.data[i] = Math.round(data[i] / step) * step;
-            }
-            return output;
-        }
-    };
-
-    /**
      * Composed Preprocessing Module for XDoG/FDoG
      *
      * This module is the single entry point the rest of the codebase should
@@ -9780,13 +9757,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         GaussianBlur: GaussianBlur,
         KuwaharaFilter: KuwaharaFilter,
         LocalVariancePreprocessor: LocalVariancePreprocessor,
-        LocalVariancePreprocessorOptimized: LocalVariancePreprocessorOptimized,
         MedianFilter: MedianFilter,
         PreprocessingPipeline: PreprocessingPipeline,
         PreprocessingPresets: PreprocessingPresets,
         Quantizer: Quantizer,
         disposeWebGL: disposeWebGL,
         disposeWebGPU: disposeWebGPU,
+        epsilon: epsilon,
         isWebGLAvailable: isWebGLAvailable,
         webgl: webgl
     });
@@ -10724,7 +10701,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
                 // Each mask covers "below this threshold"
                 // Darkest areas activate ALL masks, lightest activate NONE
                 for (let i = 0; i < levels.length; i++) {
-                    const mask = createChannelImage(width, height);
+                    const mask = createChannelImage$1(width, height);
                     const threshold = levels[i];
                     for (let j = 0; j < width * height; j++) {
                         const val = sharpened.data[j];
@@ -10743,7 +10720,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
                     masks.push(mask);
                 }
                 // Add a final "base" mask that's always slightly active for paper texture
-                const baseMask = createChannelImage(width, height);
+                const baseMask = createChannelImage$1(width, height);
                 for (let j = 0; j < width * height; j++) {
                     baseMask.data[j] = 0.0; // No hatching in lightest areas
                 }
@@ -10752,7 +10729,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             else {
                 // Non-cumulative: independent bands (original behavior, but fixed)
                 for (let i = 0; i <= levels.length; i++) {
-                    const mask = createChannelImage(width, height);
+                    const mask = createChannelImage$1(width, height);
                     const lowerBound = i === 0 ? 0 : levels[i - 1];
                     const upperBound = i === levels.length ? 1 : levels[i];
                     const bandCenter = (lowerBound + upperBound) / 2;
@@ -10782,7 +10759,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             const { width, height } = sharpened;
             // Generate masks
             const masks = this.generateMasks(sharpened, cfg);
-            const output = createChannelImage(width, height);
+            const output = createChannelImage$1(width, height);
             if (!cfg.textures || cfg.textures.length === 0) {
                 // Simple tonal bands without textures
                 // Map input luminance to output with quantized bands
@@ -10877,7 +10854,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
          * The rotation parameter rotates the SAMPLING, not the line pattern itself.
          */
         static generateHatchTexture(width, height, spacing, thickness, rotation = 0) {
-            const data = createChannelImage(width, height);
+            const data = createChannelImage$1(width, height);
             // Create horizontal lines (rotation is applied during sampling)
             for (let y = 0; y < height; y++) {
                 for (let x = 0; x < width; x++) {
@@ -10904,7 +10881,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
          * Generate a cross-hatching texture (two overlapping line patterns)
          */
         static generateCrossHatchTexture(width, height, spacing, thickness, angle1 = 0, angle2 = Math.PI / 2) {
-            const data = createChannelImage(width, height);
+            const data = createChannelImage$1(width, height);
             for (let y = 0; y < height; y++) {
                 for (let x = 0; x < width; x++) {
                     // First set of lines
@@ -11376,7 +11353,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             return this.blendLayers(layerResults, this.config.layers, blend, width, height);
         }
         blendLayers(layers, layerConfigs, blend, width, height) {
-            const output = createChannelImage(width, height);
+            const output = createChannelImage$1(width, height);
             // Pre-compute normalized weights
             const totalWeight = layerConfigs.reduce((sum, l) => sum + l.weight, 0);
             const normalizedWeights = layerConfigs.map(l => l.weight / totalWeight);
