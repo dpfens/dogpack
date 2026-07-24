@@ -59,7 +59,7 @@
  * before a slot's buffers — in particular its mapped staging buffer — are
  * reused).
  */
-import { type ChannelImage, type FlowField, type ETFConfig, type ETFComputer, type ETFDetailedResult } from '../interfaces/base.js';
+import { type ChannelImage, type FlowField, type ETFConfig, type ETFComputer } from '../interfaces/base.js';
 import { BaseWebGPUStrategy } from '../base.js';
 /**
  * WebGPU-accelerated ETFComputer. Device/pipeline resources are cached
@@ -112,8 +112,6 @@ export declare class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy im
      * channels must share the same width/height.
      */
     computeMultiChannel(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
-    computeDetailed(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number): Promise<ETFDetailedResult>;
-    computeMultiChannelDetailed(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<ETFDetailedResult>;
     /**
      * Release the cached WebGPU device + pipelines. Safe to call even if no
      * compute()/computeMultiChannel() call has happened yet. Since the

@@ -20,7 +20,7 @@
  * the caller's responsibility (see utils/color.ts) and happens before
  * compute()/computeMultiChannel() is ever called.
  */
-import type { ChannelImage, FlowField, ETFConfig, ETFComputer, ETFDetailedResult } from '../interfaces/base.js';
+import type { ChannelImage, FlowField, ETFConfig, ETFComputer } from '../interfaces/base.js';
 import { BaseCPUStrategy } from '../base.js';
 /**
  * CPU-backed ETFComputer. Synchronous under the hood, but exposes the
@@ -30,8 +30,6 @@ import { BaseCPUStrategy } from '../base.js';
 export declare class CpuEdgeTangentFlowComputer extends BaseCPUStrategy implements ETFComputer {
     compute(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
     computeMultiChannel(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
-    computeDetailed(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number): Promise<ETFDetailedResult>;
-    computeMultiChannelDetailed(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<ETFDetailedResult>;
     private validateChannels;
 }
 //# sourceMappingURL=cpu.d.ts.map

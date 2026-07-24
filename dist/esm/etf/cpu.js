@@ -31,18 +31,10 @@ import { BaseCPUStrategy } from '../base.js';
  */
 export class CpuEdgeTangentFlowComputer extends BaseCPUStrategy {
     async compute(input, config = {}, sigmaC) {
-        const { flowField } = await this.computeDetailed(input, config, sigmaC);
-        return flowField;
-    }
-    async computeMultiChannel(inputs, config = {}, sigmaC) {
-        const { flowField } = await this.computeMultiChannelDetailed(inputs, config, sigmaC);
-        return flowField;
-    }
-    async computeDetailed(input, config = {}, sigmaC) {
         const channelTensor = computeChannelTensor(input);
         return buildFlowField(channelTensor, input.width, input.height, config, sigmaC);
     }
-    async computeMultiChannelDetailed(inputs, config = {}, sigmaC) {
+    async computeMultiChannel(inputs, config = {}, sigmaC) {
         this.validateChannels(inputs);
         const { width, height } = inputs[0];
         const channelTensors = inputs.map(computeChannelTensor);
@@ -66,6 +58,11 @@ export class CpuEdgeTangentFlowComputer extends BaseCPUStrategy {
  * refinement, given a (possibly channel-summed) structure tensor. This is
  * the single composition point used by both compute() and
  * computeMultiChannel() above.
+ *
+ * Magnitude and anisotropy are baked directly into the returned
+ * TangentFlowField rather than surfaced as separate sibling results —
+ * FlowField now carries its own confidence data (see interfaces/base.ts),
+ * so there's no separate "detailed" result type to build here anymore.
  */
 function buildFlowField(channelTensor, width, height, config, sigmaC) {
     const cfg = { ...DEFAULT_ETF_CONFIG, ...config };
@@ -80,11 +77,7 @@ function buildFlowField(channelTensor, width, height, config, sigmaC) {
     // from — not recomputed post-refine, since refine only perturbs
     // direction, not the tensor anisotropy reflects.
     const anisotropy = tensorAnisotropy(smoothedTensor, width * height);
-    return {
-        flowField: TangentFlowField.fromVec2Array(tangents, width, height),
-        magnitude: { data: channelTensor.magnitude, width, height },
-        anisotropy: { data: anisotropy, width, height },
-    };
+    return TangentFlowField.fromVec2Array(tangents, width, height, channelTensor.magnitude, anisotropy);
 }
 /**
  * (lambda1-lambda2)/(lambda1+lambda2) in [0,1]. 1 = coherent line

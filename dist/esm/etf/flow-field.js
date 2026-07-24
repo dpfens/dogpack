@@ -6,23 +6,33 @@ export class TangentFlowField {
     tangents;
     width;
     height;
+    magnitude;
+    anisotropy;
     // Flat, stride-2 (x, y) buffer — avoids allocating pixelCount JS
     // objects regardless of which backend produced the data.
-    constructor(tangents, width, height) {
+    //
+    // magnitude/anisotropy are flat, stride-1 (one value per pixel) buffers,
+    // both optional so that callers who genuinely have no confidence data
+    // (e.g. a hand-authored or interpolated flow field) can omit them rather
+    // than fabricate zeros; missing values read back as 0, which is the
+    // conservative "trust nothing" default for confidence-weighted consumers.
+    constructor(tangents, width, height, magnitude, anisotropy) {
         this.tangents = tangents;
         this.width = width;
         this.height = height;
+        this.magnitude = magnitude;
+        this.anisotropy = anisotropy;
     }
-    static fromFloat32Array(tangents, width, height) {
-        return new TangentFlowField(tangents, width, height);
+    static fromFloat32Array(tangents, width, height, magnitude, anisotropy) {
+        return new TangentFlowField(tangents, width, height, magnitude, anisotropy);
     }
-    static fromVec2Array(tangents, width, height) {
+    static fromVec2Array(tangents, width, height, magnitude, anisotropy) {
         const flat = new Float32Array(tangents.length * 2);
         for (let i = 0; i < tangents.length; i++) {
             flat[i * 2] = tangents[i].x;
             flat[i * 2 + 1] = tangents[i].y;
         }
-        return new TangentFlowField(flat, width, height);
+        return new TangentFlowField(flat, width, height, magnitude, anisotropy);
     }
     getTangent(x, y) {
         const clampedX = Math.max(0, Math.min(this.width - 1, Math.round(x)));
@@ -32,6 +42,21 @@ export class TangentFlowField {
     }
     getTangentArray() {
         return this.tangents.slice();
+    }
+    clampedIndex(x, y) {
+        const clampedX = Math.max(0, Math.min(this.width - 1, Math.round(x)));
+        const clampedY = Math.max(0, Math.min(this.height - 1, Math.round(y)));
+        return clampedY * this.width + clampedX;
+    }
+    getMagnitude(x, y) {
+        if (!this.magnitude)
+            return 0;
+        return this.magnitude[this.clampedIndex(x, y)];
+    }
+    getAnisotropy(x, y) {
+        if (!this.anisotropy)
+            return 0;
+        return this.anisotropy[this.clampedIndex(x, y)];
     }
     /**
      * Visualize the flow field as a grayscale image.

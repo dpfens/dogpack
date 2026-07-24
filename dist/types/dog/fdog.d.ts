@@ -8,6 +8,7 @@
  * advanced image stylization" by Winnemöller et al. (2012)
  */
 import { type ChannelImage, type FlowField } from '../interfaces/base.js';
+import { ScalarField } from '../utils/scalar-field.js';
 import { FDOG_STYLE_PRESETS, type DoGImplementation, type FDoGConfig } from '../interfaces/dog.js';
 /**
  * FDoG (Flow-based Difference of Gaussians)
@@ -77,12 +78,17 @@ export declare class FDoG implements DoGImplementation {
      */
     setConfig(config: Partial<FDoGConfig>): void;
 }
-/** weight=1 trusts `a`, weight=0 trusts `b`. */
-export declare function blendByConfidence(a: ChannelImage, b: ChannelImage, confidence: ChannelImage): ChannelImage;
-/** Scale a base scalar by normalized magnitude. */
-export declare function scaleByMagnitude(magnitude: ChannelImage, base: number): ChannelImage;
-/** Raise a base epsilon where anisotropy/magnitude confidence is low. */
-export declare function computeEpsilonMap(anisotropy: ChannelImage, magnitude: ChannelImage, base: number, margin?: number): ChannelImage;
+/**
+ * Blend two already-materialized images by a confidence field.
+ * weight=1 trusts `a`, weight=0 trusts `b`.
+ *
+ * Unlike the p/epsilon adaptive maps (which stay lazy ScalarFields all
+ * the way to processor.ts), `a`/`b` here are real per-call blur outputs;
+ * there's no config-shaped ScalarField to hand off to, so this blends
+ * and materializes eagerly via ScalarField.blend()/materialize() rather
+ * than exposing another bespoke pixel loop.
+ */
+export declare function blendByConfidence(a: ChannelImage, b: ChannelImage, confidence: ScalarField): ChannelImage;
 /**
  * Convenience function for one-shot FDoG processing
  */

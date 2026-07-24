@@ -50,15 +50,13 @@ class WebGLEdgeTangentFlowComputer extends base_js_2.BaseWebGLStrategy {
         return 'WebGL2 with float texture support (EXT_color_buffer_float) is not available in this environment';
     }
     async compute(input, config = {}, sigmaC) {
-        const { flowField } = await this.computeDetailed(input, config, sigmaC);
-        return flowField;
+        return await this.computeDetailed(input, config, sigmaC);
     }
     async computeDetailed(input, config = {}, sigmaC) {
         return this.computeMultiChannelDetailed([input], config, sigmaC);
     }
     async computeMultiChannel(inputs, config = {}, sigmaC) {
-        const { flowField } = await this.computeMultiChannelDetailed(inputs, config, sigmaC);
-        return flowField;
+        return await this.computeMultiChannelDetailed(inputs, config, sigmaC);
     }
     async computeMultiChannelDetailed(inputs, config = {}, sigmaC) {
         if (inputs.length === 0) {
@@ -200,11 +198,7 @@ class WebGLEdgeTangentFlowComputer extends base_js_2.BaseWebGLStrategy {
             deleteFramebuffer(gl, blurOutputFB);
             deleteFramebuffer(gl, tangentFB1);
             deleteFramebuffer(gl, tangentFB2);
-            return {
-                flowField: flow_field_js_1.TangentFlowField.fromVec2Array(tangents, width, height),
-                magnitude: { data: magnitude, width, height },
-                anisotropy: { data: anisotropy, width, height },
-            };
+            return flow_field_js_1.TangentFlowField.fromVec2Array(tangents, width, height, magnitude, anisotropy);
         });
     }
     /**

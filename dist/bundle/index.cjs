@@ -588,6 +588,9 @@ const FDOG_PARAM_RANGES = {
     sigmaM: { hardMin: 0, hardMax: Infinity, recommendedMin: 3.0, recommendedMax: 20.0, default: 4.0, step: 0.5 },
     sigmaA: { hardMin: 0, hardMax: Infinity, recommendedMin: 0.5, recommendedMax: 7.2, default: 1.0, step: 0.1 },
 };
+const FDOG_CONFIDENCE_WEIGHT_PARAM_RANGES = {
+    epsilonMargin: { hardMin: 0, hardMax: 1, recommendedMin: 0, recommendedMax: 0.3, default: 0.15, step: 0.01 },
+};
 const ADOG_PARAM_RANGES = {
     ...DOG_PARAM_RANGES,
     kernelSizeMultiplier: XDOG_PARAM_RANGES.kernelSizeMultiplier,
@@ -616,6 +619,37 @@ const DEFAULT_DOG_CONFIG = {
     thresholdStrategy: new SoftThresholdStrategy()
 };
 /**
+ * Default values for FDoGConfig.confidenceWeighting's sub-options, used
+ * once the caller opts in by providing the (possibly empty) object.
+ * Not sourced from FDOG_PARAM_RANGES -- like HDoGConfig's
+ * adogSecondaryScaleFactor, these are structural/behavioral toggles
+ * rather than paper-tabulated sigma/p/epsilon/phi knobs.
+ */
+const DEFAULT_CONFIDENCE_WEIGHTING_CONFIG = {
+    epsilonMargin: FDOG_CONFIDENCE_WEIGHT_PARAM_RANGES.epsilonMargin.default,
+    sigmaMBlend: true,
+    sigmaABlend: true,
+    pByMagnitude: true,
+};
+const CONFIDENCE_WEIGHTING_DISABLED = {
+    epsilonMargin: 0,
+    sigmaMBlend: false,
+    sigmaABlend: false,
+    pByMagnitude: false,
+};
+/**
+ * Resolve FDoGConfig.confidenceWeighting into a ResolvedConfidenceWeighting.
+ * `undefined` (opted out) resolves to CONFIDENCE_WEIGHTING_DISABLED; any
+ * object (even `{}`) merges over DEFAULT_CONFIDENCE_WEIGHTING_CONFIG
+ * following the same override convention used
+ * everywhere else in this file (`{ ...DEFAULT_X, ...overrides }`).
+ */
+function resolveConfidenceWeighting(config) {
+    if (!config)
+        return CONFIDENCE_WEIGHTING_DISABLED;
+    return { ...DEFAULT_CONFIDENCE_WEIGHTING_CONFIG, ...config };
+}
+/**
  * Default FDoG configuration values
  * Based on Table A.1 in the paper
  */
@@ -625,6 +659,9 @@ const DEFAULT_FDOG_CONFIG = {
     sigmaM: FDOG_PARAM_RANGES.sigmaM.default, // Flow-aligned smoothing
     sigmaA: FDOG_PARAM_RANGES.sigmaA.default, // Anti-aliasing,
     thresholdStrategy: new HardThresholdStrategy()
+    // confidenceWeighting intentionally omitted: undefined = off by
+    // default, so existing callers' output doesn't silently change (see
+    // FDoGConfig.confidenceWeighting's doc comment).
 };
 /**
  * Default ADoG configuration values
@@ -2102,23 +2139,33 @@ class TangentFlowField {
     tangents;
     width;
     height;
+    magnitude;
+    anisotropy;
     // Flat, stride-2 (x, y) buffer — avoids allocating pixelCount JS
     // objects regardless of which backend produced the data.
-    constructor(tangents, width, height) {
+    //
+    // magnitude/anisotropy are flat, stride-1 (one value per pixel) buffers,
+    // both optional so that callers who genuinely have no confidence data
+    // (e.g. a hand-authored or interpolated flow field) can omit them rather
+    // than fabricate zeros; missing values read back as 0, which is the
+    // conservative "trust nothing" default for confidence-weighted consumers.
+    constructor(tangents, width, height, magnitude, anisotropy) {
         this.tangents = tangents;
         this.width = width;
         this.height = height;
+        this.magnitude = magnitude;
+        this.anisotropy = anisotropy;
     }
-    static fromFloat32Array(tangents, width, height) {
-        return new TangentFlowField(tangents, width, height);
+    static fromFloat32Array(tangents, width, height, magnitude, anisotropy) {
+        return new TangentFlowField(tangents, width, height, magnitude, anisotropy);
     }
-    static fromVec2Array(tangents, width, height) {
+    static fromVec2Array(tangents, width, height, magnitude, anisotropy) {
         const flat = new Float32Array(tangents.length * 2);
         for (let i = 0; i < tangents.length; i++) {
             flat[i * 2] = tangents[i].x;
             flat[i * 2 + 1] = tangents[i].y;
         }
-        return new TangentFlowField(flat, width, height);
+        return new TangentFlowField(flat, width, height, magnitude, anisotropy);
     }
     getTangent(x, y) {
         const clampedX = Math.max(0, Math.min(this.width - 1, Math.round(x)));
@@ -2128,6 +2175,21 @@ class TangentFlowField {
     }
     getTangentArray() {
         return this.tangents.slice();
+    }
+    clampedIndex(x, y) {
+        const clampedX = Math.max(0, Math.min(this.width - 1, Math.round(x)));
+        const clampedY = Math.max(0, Math.min(this.height - 1, Math.round(y)));
+        return clampedY * this.width + clampedX;
+    }
+    getMagnitude(x, y) {
+        if (!this.magnitude)
+            return 0;
+        return this.magnitude[this.clampedIndex(x, y)];
+    }
+    getAnisotropy(x, y) {
+        if (!this.anisotropy)
+            return 0;
+        return this.anisotropy[this.clampedIndex(x, y)];
     }
     /**
      * Visualize the flow field as a grayscale image.
@@ -2933,8 +2995,7 @@ class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy {
      * there's only one channel (see STRUCTURE_TENSOR_ACCUMULATE_SHADER).
      */
     async compute(input, config = {}, sigmaC) {
-        const { flowField } = await this.computeInternal([input], config, sigmaC);
-        return flowField;
+        return await this.computeInternal([input], config, sigmaC);
     }
     /**
      * Compute ETF jointly from several co-registered scalar channels (e.g.
@@ -2943,15 +3004,7 @@ class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy {
      */
     async computeMultiChannel(inputs, config = {}, sigmaC) {
         this.validateChannels(inputs);
-        const { flowField } = await this.computeInternal(inputs, config, sigmaC);
-        return flowField;
-    }
-    async computeDetailed(input, config = {}, sigmaC) {
-        return this.computeInternal([input], config, sigmaC);
-    }
-    async computeMultiChannelDetailed(inputs, config = {}, sigmaC) {
-        this.validateChannels(inputs);
-        return this.computeInternal(inputs, config, sigmaC);
+        return await this.computeInternal(inputs, config, sigmaC);
     }
     /**
      * Release the cached WebGPU device + pipelines. Safe to call even if no
@@ -3223,11 +3276,7 @@ class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy {
                     destroyBandBufferSet(bufs);
                 kernelBuf.destroy();
             }
-            return {
-                flowField: TangentFlowField.fromFloat32Array(tangents, width, height),
-                magnitude: { data: magnitude, width, height },
-                anisotropy: { data: anisotropy, width, height },
-            };
+            return TangentFlowField.fromFloat32Array(tangents, width, height, magnitude, anisotropy);
         });
     }
 }
@@ -3685,15 +3734,13 @@ class WebGLEdgeTangentFlowComputer extends BaseWebGLStrategy {
         return 'WebGL2 with float texture support (EXT_color_buffer_float) is not available in this environment';
     }
     async compute(input, config = {}, sigmaC) {
-        const { flowField } = await this.computeDetailed(input, config, sigmaC);
-        return flowField;
+        return await this.computeDetailed(input, config, sigmaC);
     }
     async computeDetailed(input, config = {}, sigmaC) {
         return this.computeMultiChannelDetailed([input], config, sigmaC);
     }
     async computeMultiChannel(inputs, config = {}, sigmaC) {
-        const { flowField } = await this.computeMultiChannelDetailed(inputs, config, sigmaC);
-        return flowField;
+        return await this.computeMultiChannelDetailed(inputs, config, sigmaC);
     }
     async computeMultiChannelDetailed(inputs, config = {}, sigmaC) {
         if (inputs.length === 0) {
@@ -3835,11 +3882,7 @@ class WebGLEdgeTangentFlowComputer extends BaseWebGLStrategy {
             deleteFramebuffer(gl, blurOutputFB);
             deleteFramebuffer(gl, tangentFB1);
             deleteFramebuffer(gl, tangentFB2);
-            return {
-                flowField: TangentFlowField.fromVec2Array(tangents, width, height),
-                magnitude: { data: magnitude, width, height },
-                anisotropy: { data: anisotropy, width, height },
-            };
+            return TangentFlowField.fromVec2Array(tangents, width, height, magnitude, anisotropy);
         });
     }
     /**
@@ -4016,18 +4059,10 @@ function drawQuad(gl, vao) {
  */
 class CpuEdgeTangentFlowComputer extends BaseCPUStrategy {
     async compute(input, config = {}, sigmaC) {
-        const { flowField } = await this.computeDetailed(input, config, sigmaC);
-        return flowField;
-    }
-    async computeMultiChannel(inputs, config = {}, sigmaC) {
-        const { flowField } = await this.computeMultiChannelDetailed(inputs, config, sigmaC);
-        return flowField;
-    }
-    async computeDetailed(input, config = {}, sigmaC) {
         const channelTensor = computeChannelTensor(input);
         return buildFlowField(channelTensor, input.width, input.height, config, sigmaC);
     }
-    async computeMultiChannelDetailed(inputs, config = {}, sigmaC) {
+    async computeMultiChannel(inputs, config = {}, sigmaC) {
         this.validateChannels(inputs);
         const { width, height } = inputs[0];
         const channelTensors = inputs.map(computeChannelTensor);
@@ -4051,6 +4086,11 @@ class CpuEdgeTangentFlowComputer extends BaseCPUStrategy {
  * refinement, given a (possibly channel-summed) structure tensor. This is
  * the single composition point used by both compute() and
  * computeMultiChannel() above.
+ *
+ * Magnitude and anisotropy are baked directly into the returned
+ * TangentFlowField rather than surfaced as separate sibling results —
+ * FlowField now carries its own confidence data (see interfaces/base.ts),
+ * so there's no separate "detailed" result type to build here anymore.
  */
 function buildFlowField(channelTensor, width, height, config, sigmaC) {
     const cfg = { ...DEFAULT_ETF_CONFIG, ...config };
@@ -4065,11 +4105,7 @@ function buildFlowField(channelTensor, width, height, config, sigmaC) {
     // from — not recomputed post-refine, since refine only perturbs
     // direction, not the tensor anisotropy reflects.
     const anisotropy = tensorAnisotropy(smoothedTensor, width * height);
-    return {
-        flowField: TangentFlowField.fromVec2Array(tangents, width, height),
-        magnitude: { data: channelTensor.magnitude, width, height },
-        anisotropy: { data: anisotropy, width, height },
-    };
+    return TangentFlowField.fromVec2Array(tangents, width, height, channelTensor.magnitude, anisotropy);
 }
 /**
  * (lambda1-lambda2)/(lambda1+lambda2) in [0,1]. 1 = coherent line
@@ -4365,17 +4401,16 @@ class EdgeTangentFlowComputer {
     dispose() {
         this.instance.dispose();
     }
+    /**
+     * Compute an Edge Tangent Flow. The returned FlowField carries its own
+     * magnitude/anisotropy (see interfaces/base.ts) — there is no separate
+     * "detailed" variant anymore.
+     */
     async compute(input, config = {}, sigmaC) {
         return this.callWithFallback(computer => computer.compute(input, config, sigmaC));
     }
-    async computeDetailed(input, config = {}, sigmaC) {
-        return this.callWithFallback(computer => computer.computeDetailed(input, config, sigmaC));
-    }
     async computeMultiChannel(inputs, config = {}, sigmaC) {
         return this.callWithFallback(computer => computer.computeMultiChannel(inputs, config, sigmaC));
-    }
-    async computeMultiChannelDetailed(inputs, config = {}, sigmaC) {
-        return this.callWithFallback(computer => computer.computeMultiChannelDetailed(inputs, config, sigmaC));
     }
     async callWithFallback(op) {
         let current = this.instance;
@@ -4414,6 +4449,100 @@ class EdgeTangentFlowComputer {
         }
         return null;
     }
+}
+
+/**
+ * ScalarField constructors and combinators.
+ *
+ * The type itself (`{ sample(i): number }`) lives in interfaces/base.ts
+ * alongside ChannelImage, since it's a core data shape used across the
+ * public API. This module is the equivalent of createChannelImage() for
+ * that type: the runtime helpers for building and composing fields.
+ *
+ * Composition (map/blend/scale) is free until sampled -- no intermediate
+ * buffer is allocated unless you call materialize(). This matters because
+ * DoGConfig's p/epsilon/phi are ScalarFields evaluated once per pixel
+ * inside processor.ts's hot loops; building a config like
+ * `ScalarField.blend(a, b, confidence)` doesn't cost anything up front.
+ */
+const ScalarField = {
+    /** A field that returns the same value everywhere. Replaces the old
+     *  bare `number` half of the `number | ChannelImage` union: every
+     *  literal default (e.g. p=20) becomes `ScalarField.constant(20)`. */
+    constant(value) {
+        return { sample: () => value };
+    },
+    /** Wrap an existing per-pixel buffer as a field. Replaces the old
+     *  `ChannelImage` half of the union. */
+    fromChannelImage(img) {
+        return { sample: (i) => img.data[i] };
+    },
+    /** Pointwise transform. */
+    map(field, fn) {
+        return { sample: (i) => fn(field.sample(i)) };
+    },
+    /** Linear interpolation per pixel: weight=1 -> fully `a`, weight=0 ->
+     *  fully `b`. This is the core operation behind confidence-weighting --
+     *  e.g. `blend(flowSmoothed, raw, anisotropy)` trusts the flow-smoothed
+     *  value only where the tangent direction is reliable. */
+    blend(a, b, weight) {
+        return {
+            sample: (i) => {
+                const w = weight.sample(i);
+                return w * a.sample(i) + (1 - w) * b.sample(i);
+            },
+        };
+    },
+    /** Pointwise multiply. */
+    scale(field, factor) {
+        return { sample: (i) => field.sample(i) * factor.sample(i) };
+    },
+    /** Force evaluation into a flat buffer -- needed when a downstream
+     *  consumer (e.g. a GPU backend that wants a real texture, not a
+     *  per-pixel JS callback) can't work with a lazy field directly. */
+    materialize(field, width, height) {
+        const out = createChannelImage(width, height);
+        const size = width * height;
+        for (let i = 0; i < size; i++)
+            out.data[i] = field.sample(i);
+        return out;
+    },
+};
+// The ScalarField *type* is declared in interfaces/base.ts (it's a core
+// data shape, alongside ChannelImage/FlowField); the local `interface
+// ScalarField extends BaseScalarField {}` above just re-surfaces it under
+// this module's own export table. Callers can do either
+//   import { ScalarField } from '.../interfaces/base.js'        // type only
+//   import { ScalarField } from '.../utils/scalar-field.js'     // type + helpers
+// from whichever module they're already pulling from.
+/**
+ * Bridge a FlowField's raw magnitude into a [0,1] ScalarField, normalized
+ * against the field's own maximum. Raw magnitude has no fixed scale (it
+ * depends on input contrast), so almost every consumer wants this rather
+ * than getMagnitude() directly.
+ *
+ * Note: this does one O(width*height) pass up front to find the max, then
+ * samples are O(1). If you need this for the same FlowField repeatedly,
+ * compute it once and reuse the returned field.
+ */
+function normalizedMagnitudeField(flow) {
+    const { width, height } = flow;
+    const size = width * height;
+    let max = 1e-6;
+    for (let i = 0; i < size; i++) {
+        max = Math.max(max, flow.getMagnitude(i % width, (i / width) | 0));
+    }
+    return {
+        sample: (i) => flow.getMagnitude(i % width, (i / width) | 0) / max,
+    };
+}
+/** Bridge a FlowField's per-pixel anisotropy into a ScalarField. Already
+ *  in [0,1], no normalization needed. */
+function anisotropyField(flow) {
+    const { width } = flow;
+    return {
+        sample: (i) => flow.getAnisotropy(i % width, (i / width) | 0),
+    };
 }
 
 /**
@@ -6340,34 +6469,39 @@ class FDoG {
     async process(input, overrides = {}) {
         const params = { ...this.config, ...overrides };
         const etfComputer = await EdgeTangentFlowComputer.create();
-        const { flowField, magnitude, anisotropy } = await etfComputer.computeDetailed(input, {
+        const flowField = await etfComputer.compute(input, {
             iterations: params.etfIterations ?? DEFAULT_ETF_CONFIG.iterations,
             kernelSize: Math.ceil(params.sigmaC * 2.45) * 2 + 1,
         }, params.sigmaC);
+        const weighting = resolveConfidenceWeighting(params.confidenceWeighting);
+        const needsWeightingFields = weighting.pByMagnitude || weighting.sigmaMBlend || weighting.sigmaABlend || weighting.epsilonMargin > 0;
+        const magnitude = needsWeightingFields ? normalizedMagnitudeField(flowField) : undefined;
+        const confidence = needsWeightingFields ? ScalarField.scale(anisotropyField(flowField), magnitude) : undefined;
         const gradientBlur = await GradientAlignedBlur.create(flowField);
+        console.log(params);
         // Only derive an adaptive p map if the developer opted in AND didn't
         // already hand us their own ChannelImage.
-        const p = params.pByMagnitude && typeof params.p === 'number'
-            ? scaleByMagnitude(magnitude, params.p)
+        const p = weighting.pByMagnitude && typeof params.p === 'number' && confidence
+            ? ScalarField.materialize(ScalarField.scale(ScalarField.constant(params.p), confidence), input.width, input.height)
             : params.p;
         const processor = new DoGProcessor(gradientBlur, { ...params, p });
         let sharpened = await processor.processNoThreshold(input);
         const flowBlur = await FlowGuidedBlur.create(flowField);
         if (params.sigmaM > 0) {
             const flowSmoothed = await flowBlur.blur(sharpened, params.sigmaM);
-            sharpened = params.weightFlowPassesByAnisotropy
-                ? blendByConfidence(flowSmoothed, sharpened, anisotropy)
+            sharpened = weighting.sigmaMBlend
+                ? blendByConfidence(flowSmoothed, sharpened, confidence)
                 : flowSmoothed;
         }
-        const epsilon = params.epsilonByConfidence && typeof params.epsilon === 'number'
-            ? computeEpsilonMap(anisotropy, magnitude, params.epsilon)
+        const epsilon = weighting.epsilonMargin > 0 && typeof params.epsilon === 'number'
+            ? ScalarField.materialize(ScalarField.map(confidence, c => params.epsilon + (1 - c) * weighting.epsilonMargin), input.width, input.height)
             : params.epsilon;
         let result = processor.applyThreshold(sharpened, epsilon, params.phi);
         processor.dispose();
         if (params.sigmaA > 0) {
             const aa = await flowBlur.blur(result, params.sigmaA);
-            result = params.weightFlowPassesByAnisotropy
-                ? blendByConfidence(aa, result, anisotropy)
+            result = weighting.sigmaABlend
+                ? blendByConfidence(aa, result, confidence)
                 : aa;
         }
         flowBlur.dispose();
@@ -6475,39 +6609,18 @@ class FDoG {
         this.config = { ...this.config, ...config };
     }
 }
-/** weight=1 trusts `a`, weight=0 trusts `b`. */
+/**
+ * Blend two already-materialized images by a confidence field.
+ * weight=1 trusts `a`, weight=0 trusts `b`.
+ *
+ * Unlike the p/epsilon adaptive maps (which stay lazy ScalarFields all
+ * the way to processor.ts), `a`/`b` here are real per-call blur outputs;
+ * there's no config-shaped ScalarField to hand off to, so this blends
+ * and materializes eagerly via ScalarField.blend()/materialize() rather
+ * than exposing another bespoke pixel loop.
+ */
 function blendByConfidence(a, b, confidence) {
-    const out = createChannelImage(a.width, a.height);
-    const size = a.width * a.height;
-    for (let i = 0; i < size; i++) {
-        const w = confidence.data[i];
-        out.data[i] = w * a.data[i] + (1 - w) * b.data[i];
-    }
-    return out;
-}
-/** Scale a base scalar by normalized magnitude. */
-function scaleByMagnitude(magnitude, base) {
-    const out = createChannelImage(magnitude.width, magnitude.height);
-    const size = magnitude.width * magnitude.height;
-    let maxMag = 1e-6;
-    for (let i = 0; i < size; i++)
-        maxMag = Math.max(maxMag, magnitude.data[i]);
-    for (let i = 0; i < size; i++)
-        out.data[i] = base * (magnitude.data[i] / maxMag);
-    return out;
-}
-/** Raise a base epsilon where anisotropy/magnitude confidence is low. */
-function computeEpsilonMap(anisotropy, magnitude, base, margin = 0.15) {
-    const out = createChannelImage(anisotropy.width, anisotropy.height);
-    const size = anisotropy.width * anisotropy.height;
-    let maxMag = 1e-6;
-    for (let i = 0; i < size; i++)
-        maxMag = Math.max(maxMag, magnitude.data[i]);
-    for (let i = 0; i < size; i++) {
-        const confidence = anisotropy.data[i] * (magnitude.data[i] / maxMag);
-        out.data[i] = base + (1 - confidence) * margin;
-    }
-    return out;
+    return ScalarField.materialize(ScalarField.blend(ScalarField.fromChannelImage(a), ScalarField.fromChannelImage(b), confidence), a.width, a.height);
 }
 /**
  * Convenience function for one-shot FDoG processing
@@ -6759,6 +6872,7 @@ var index$3 = /*#__PURE__*/Object.freeze({
     DEFAULT_FDOG_CONFIG: DEFAULT_FDOG_CONFIG,
     DEFAULT_HDOG_CONFIG: DEFAULT_HDOG_CONFIG,
     DOG_PARAM_RANGES: DOG_PARAM_RANGES,
+    FDOG_CONFIDENCE_WEIGHT_PARAM_RANGES: FDOG_CONFIDENCE_WEIGHT_PARAM_RANGES,
     FDOG_PARAM_RANGES: FDOG_PARAM_RANGES,
     FDOG_STYLE_PRESETS: FDOG_STYLE_PRESETS,
     FDoG: FDoG,

@@ -43,17 +43,16 @@ export class EdgeTangentFlowComputer {
     dispose() {
         this.instance.dispose();
     }
+    /**
+     * Compute an Edge Tangent Flow. The returned FlowField carries its own
+     * magnitude/anisotropy (see interfaces/base.ts) — there is no separate
+     * "detailed" variant anymore.
+     */
     async compute(input, config = {}, sigmaC) {
         return this.callWithFallback(computer => computer.compute(input, config, sigmaC));
     }
-    async computeDetailed(input, config = {}, sigmaC) {
-        return this.callWithFallback(computer => computer.computeDetailed(input, config, sigmaC));
-    }
     async computeMultiChannel(inputs, config = {}, sigmaC) {
         return this.callWithFallback(computer => computer.computeMultiChannel(inputs, config, sigmaC));
-    }
-    async computeMultiChannelDetailed(inputs, config = {}, sigmaC) {
-        return this.callWithFallback(computer => computer.computeMultiChannelDetailed(inputs, config, sigmaC));
     }
     async callWithFallback(op) {
         let current = this.instance;

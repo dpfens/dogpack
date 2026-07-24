@@ -30,7 +30,6 @@ import type {
   Gradients,
   ChannelTensor,
   ETFComputer,
-  ETFDetailedResult,
 } from '../interfaces/base.js';
 import { DEFAULT_ETF_CONFIG } from '../interfaces/base.js';
 import { normalizeVec2, dotVec2, generateGaussianKernel } from '../utils/index.js';
@@ -44,21 +43,11 @@ import { BaseCPUStrategy } from '../base.js';
  */
 export class CpuEdgeTangentFlowComputer extends BaseCPUStrategy implements ETFComputer {
   async compute(input: ChannelImage, config: Partial<ETFConfig> = {}, sigmaC?: number): Promise<FlowField> {
-    const { flowField } = await this.computeDetailed(input, config, sigmaC);
-    return flowField;
-  }
-
-  async computeMultiChannel(inputs: ChannelImage[], config: Partial<ETFConfig> = {}, sigmaC?: number): Promise<FlowField> {
-    const { flowField } = await this.computeMultiChannelDetailed(inputs, config, sigmaC);
-    return flowField;
-  }
-
-  async computeDetailed(input: ChannelImage, config: Partial<ETFConfig> = {}, sigmaC?: number): Promise<ETFDetailedResult> {
     const channelTensor = computeChannelTensor(input);
     return buildFlowField(channelTensor, input.width, input.height, config, sigmaC);
   }
 
-  async computeMultiChannelDetailed(inputs: ChannelImage[], config: Partial<ETFConfig> = {}, sigmaC?: number): Promise<ETFDetailedResult> {
+  async computeMultiChannel(inputs: ChannelImage[], config: Partial<ETFConfig> = {}, sigmaC?: number): Promise<FlowField> {
     this.validateChannels(inputs);
     const { width, height } = inputs[0];
     const channelTensors = inputs.map(computeChannelTensor);
@@ -84,6 +73,11 @@ export class CpuEdgeTangentFlowComputer extends BaseCPUStrategy implements ETFCo
  * refinement, given a (possibly channel-summed) structure tensor. This is
  * the single composition point used by both compute() and
  * computeMultiChannel() above.
+ *
+ * Magnitude and anisotropy are baked directly into the returned
+ * TangentFlowField rather than surfaced as separate sibling results —
+ * FlowField now carries its own confidence data (see interfaces/base.ts),
+ * so there's no separate "detailed" result type to build here anymore.
  */
 function buildFlowField(
   channelTensor: ChannelTensor,
@@ -91,7 +85,7 @@ function buildFlowField(
   height: number,
   config: Partial<ETFConfig>,
   sigmaC?: number
-): ETFDetailedResult {
+): FlowField {
   const cfg = { ...DEFAULT_ETF_CONFIG, ...config };
 
   const smoothSigma = sigmaC ?? (cfg.kernelSize / 2.45);
@@ -109,11 +103,7 @@ function buildFlowField(
   // direction, not the tensor anisotropy reflects.
   const anisotropy = tensorAnisotropy(smoothedTensor, width * height);
 
-  return {
-    flowField: TangentFlowField.fromVec2Array(tangents, width, height),
-    magnitude: { data: channelTensor.magnitude, width, height },
-    anisotropy: { data: anisotropy, width, height },
-  };
+  return TangentFlowField.fromVec2Array(tangents, width, height, channelTensor.magnitude, anisotropy);
 }
 
 /**

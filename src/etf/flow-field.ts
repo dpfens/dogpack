@@ -8,23 +8,43 @@ import { createChannelImage } from '../utils/index.js';
 export class TangentFlowField implements FlowField {
   // Flat, stride-2 (x, y) buffer — avoids allocating pixelCount JS
   // objects regardless of which backend produced the data.
+  //
+  // magnitude/anisotropy are flat, stride-1 (one value per pixel) buffers,
+  // both optional so that callers who genuinely have no confidence data
+  // (e.g. a hand-authored or interpolated flow field) can omit them rather
+  // than fabricate zeros; missing values read back as 0, which is the
+  // conservative "trust nothing" default for confidence-weighted consumers.
   private constructor(
     private readonly tangents: Float32Array,
     readonly width: number,
-    readonly height: number
+    readonly height: number,
+    private readonly magnitude?: Float32Array,
+    private readonly anisotropy?: Float32Array
   ) {}
 
-  static fromFloat32Array(tangents: Float32Array, width: number, height: number): TangentFlowField {
-    return new TangentFlowField(tangents, width, height);
+  static fromFloat32Array(
+    tangents: Float32Array,
+    width: number,
+    height: number,
+    magnitude?: Float32Array,
+    anisotropy?: Float32Array
+  ): TangentFlowField {
+    return new TangentFlowField(tangents, width, height, magnitude, anisotropy);
   }
 
-  static fromVec2Array(tangents: Vec2[], width: number, height: number): TangentFlowField {
+  static fromVec2Array(
+    tangents: Vec2[],
+    width: number,
+    height: number,
+    magnitude?: Float32Array,
+    anisotropy?: Float32Array
+  ): TangentFlowField {
     const flat = new Float32Array(tangents.length * 2);
     for (let i = 0; i < tangents.length; i++) {
       flat[i * 2] = tangents[i].x;
       flat[i * 2 + 1] = tangents[i].y;
     }
-    return new TangentFlowField(flat, width, height);
+    return new TangentFlowField(flat, width, height, magnitude, anisotropy);
   }
 
   getTangent(x: number, y: number): Vec2 {
@@ -36,6 +56,22 @@ export class TangentFlowField implements FlowField {
 
   getTangentArray(): Float32Array {
     return this.tangents.slice();
+  }
+
+  private clampedIndex(x: number, y: number): number {
+    const clampedX = Math.max(0, Math.min(this.width - 1, Math.round(x)));
+    const clampedY = Math.max(0, Math.min(this.height - 1, Math.round(y)));
+    return clampedY * this.width + clampedX;
+  }
+
+  getMagnitude(x: number, y: number): number {
+    if (!this.magnitude) return 0;
+    return this.magnitude[this.clampedIndex(x, y)];
+  }
+
+  getAnisotropy(x: number, y: number): number {
+    if (!this.anisotropy) return 0;
+    return this.anisotropy[this.clampedIndex(x, y)];
   }
 
   /**

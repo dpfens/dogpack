@@ -329,8 +329,7 @@ export class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy {
      * there's only one channel (see STRUCTURE_TENSOR_ACCUMULATE_SHADER).
      */
     async compute(input, config = {}, sigmaC) {
-        const { flowField } = await this.computeInternal([input], config, sigmaC);
-        return flowField;
+        return await this.computeInternal([input], config, sigmaC);
     }
     /**
      * Compute ETF jointly from several co-registered scalar channels (e.g.
@@ -339,15 +338,7 @@ export class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy {
      */
     async computeMultiChannel(inputs, config = {}, sigmaC) {
         this.validateChannels(inputs);
-        const { flowField } = await this.computeInternal(inputs, config, sigmaC);
-        return flowField;
-    }
-    async computeDetailed(input, config = {}, sigmaC) {
-        return this.computeInternal([input], config, sigmaC);
-    }
-    async computeMultiChannelDetailed(inputs, config = {}, sigmaC) {
-        this.validateChannels(inputs);
-        return this.computeInternal(inputs, config, sigmaC);
+        return await this.computeInternal(inputs, config, sigmaC);
     }
     /**
      * Release the cached WebGPU device + pipelines. Safe to call even if no
@@ -619,11 +610,7 @@ export class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy {
                     destroyBandBufferSet(bufs);
                 kernelBuf.destroy();
             }
-            return {
-                flowField: TangentFlowField.fromFloat32Array(tangents, width, height),
-                magnitude: { data: magnitude, width, height },
-                anisotropy: { data: anisotropy, width, height },
-            };
+            return TangentFlowField.fromFloat32Array(tangents, width, height, magnitude, anisotropy);
         });
     }
 }

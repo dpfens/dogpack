@@ -128,10 +128,30 @@ interface GradientAlignedBlurConfig {
     stepSize: number;
 }
 /**
- * Flow field representing edge tangent directions at each pixel
+ * Flow field representing edge tangent directions at each pixel, along
+ * with the structure-tensor-derived confidence data for that direction.
+ *
+ * magnitude and anisotropy are first-class here (not a separate
+ * "detailed" result) because every consumer of a FlowField benefits from
+ * knowing how much to trust it -- not just the callers who happened to
+ * ask for the detailed variant. See ETFComputer.compute() for how these
+ * are produced.
  */
 interface FlowField {
     getTangent(x: number, y: number): Vec2;
+    /**
+     * Structure-tensor trace magnitude, sqrt(E + G), at this pixel.
+     * Unnormalized -- scale depends on input contrast. Use
+     * utils/scalar-field.js's normalizedMagnitudeField() to get a [0,1]
+     * field normalized against this FlowField's own maximum.
+     */
+    getMagnitude(x: number, y: number): number;
+    /**
+     * (lambda1-lambda2)/(lambda1+lambda2) in [0,1] at this pixel. 1 =
+     * coherent line direction, 0 = isotropic (flat region, corner, or
+     * texture noise where local gradients disagree).
+     */
+    getAnisotropy(x: number, y: number): number;
     readonly width: number;
     readonly height: number;
 }
@@ -180,25 +200,6 @@ interface ETFConfig {
  */
 declare const DEFAULT_ETF_CONFIG: ETFConfig;
 /**
- * Result of a *Detailed ETF computation: the flow field plus its
- * underlying magnitude and anisotropy fields, exposed as ordinary
- * ChannelImages so they compose with the rest of the library's
- * scalar-field tooling — e.g. as a stroke-opacity or seed-density map via
- * the same adaptiveMap() pattern used for spatially-varying p/epsilon.
- */
-interface ETFDetailedResult {
-    flowField: FlowField;
-    /** sqrt(E + G) — the structure tensor's trace. Edge confidence. */
-    magnitude: ChannelImage;
-    /**
-     * (lambda1-lambda2)/(lambda1+lambda2) in [0,1], derived from the same
-     * (blurred) structure tensor as the flow field's eigenvectors. 1 =
-     * coherent line, 0 = isotropic/ambiguous (flat region, corner, or
-     * texture noise where local gradients disagree).
-     */
-    anisotropy: ChannelImage;
-}
-/**
  * Common interface implemented by every Edge Tangent Flow backend
  * (CPU, WebGL, WebGPU, ...).
  *
@@ -233,10 +234,6 @@ interface ETFComputer extends Disposable, BackendIdentifiable {
      * @param sigmaC Structure tensor smoothing sigma (optional override)
      */
     computeMultiChannel(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
-    /** Same as compute(), but also returns the per-pixel structure-tensor
-     *  magnitude instead of discarding it. */
-    computeDetailed(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number): Promise<ETFDetailedResult>;
-    computeMultiChannelDetailed(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<ETFDetailedResult>;
 }
 
 interface ThresholdStrategy {
@@ -430,27 +427,56 @@ interface FDoGConfig extends DoGConfig {
      */
     etfIterations?: number;
     /**
-     * If true and `p` is a plain number, scale it per-pixel by normalized
-     * ETF magnitude (weak-gradient pixels get less sharpening). Ignored if
-     * `p` is already a ChannelImage — an explicit map is never overridden.
-     * Only applies to process()/processDetailed() (the ETF is computed
-     * internally there). Default: false — preserves flat-`p` behavior.
+     * Enables confidence-weighted adjustments to p/epsilon/sigmaM/sigmaA,
+     * derived from the ETF's per-pixel anisotropy/magnitude (see
+     * utils/scalar-field.ts's flowConfidenceField()).
+     *
+     * Undefined (the default) means fully OFF: this changes output versus
+     * flat p/epsilon and costs an extra per-pixel pass on every call, so
+     * callers opt in explicitly rather than getting it silently applied --
+     * see FDoGConfidenceWeightingConfig for what each sub-option does and its
+     * own default once enabled.
+     *
+     * Pass `{}` to turn everything on at its defaults, or set individual
+     * fields to override just one piece; unset fields fall back to
+     * DEFAULT_CONFIDENCE_WEIGHTING_CONFIG the same way FDoGConfig itself
+     * falls back to DEFAULT_FDOG_CONFIG.
      */
-    pByMagnitude?: boolean;
+    confidenceWeighting?: Partial<FDoGConfidenceWeightingConfig>;
+}
+/**
+ * Sub-options for FDoGConfig.confidenceWeighting. Each field defaults to
+ * "on" once the parent `confidenceWeighting` object is present at all --
+ * the opt-in gate is having the object, not these individual flags.
+ */
+interface FDoGConfidenceWeightingConfig {
     /**
-     * If true and `epsilon` is a plain number, raise it per-pixel where
-     * anisotropy * magnitude confidence is low, suppressing spurious edges
-     * in flat/noisy regions. Ignored if `epsilon` is already a ChannelImage.
-     * Default: false.
+     * Margin added to a flat `epsilon` where flow confidence
+     * (anisotropy * normalized magnitude) is low, raising the threshold and
+     * suppressing spurious edges in flat/noisy regions. Ignored if
+     * `epsilon` is already a ChannelImage -- an explicit map is never
+     * overridden. Set to 0 to disable epsilon adaptation specifically while
+     * leaving the other confidence-weighted passes on (default: 0.15).
      */
-    epsilonByConfidence?: boolean;
+    epsilonMargin: number;
     /**
-     * If true, blend the sigmaM/sigmaA flow-aligned passes back toward
-     * their pre-blur input, weighted by anisotropy, instead of applying
-     * them uniformly. Only meaningful when the ETF's anisotropy field is
-     * available (i.e. via computeDetailed()). Default: false.
+     * Blend the sigmaM flow-aligned accumulation pass back toward its
+     * pre-blur input, weighted by anisotropy, instead of applying it
+     * uniformly (default: true).
      */
-    weightFlowPassesByAnisotropy?: boolean;
+    sigmaMBlend: boolean;
+    /**
+     * Blend the sigmaA anti-aliasing pass back toward its pre-blur input,
+     * weighted by anisotropy, instead of applying it uniformly
+     * (default: true).
+     */
+    sigmaABlend: boolean;
+    /**
+     * If `p` is a plain number, scale it per-pixel by normalized ETF
+     * magnitude (weak-gradient pixels get less sharpening). Ignored if `p`
+     * is already a ChannelImage (default: true).
+     */
+    pByMagnitude: boolean;
 }
 /**
  * Configuration for Adaptive Difference of Gaussians (ADoG)
@@ -618,6 +644,8 @@ declare const XDOG_PARAM_RANGES: Record<DogConfigParamType | XDogConfigParamType
  */
 type FDogConfigParamType = 'sigmaC' | 'sigmaM' | 'sigmaA';
 declare const FDOG_PARAM_RANGES: Record<DogConfigParamType | FDogConfigParamType, ParamRange>;
+type FDogConfidenceWeightConfigParamType = 'epsilonMargin';
+declare const FDOG_CONFIDENCE_WEIGHT_PARAM_RANGES: Record<FDogConfidenceWeightConfigParamType, ParamRange>;
 /**
  * ADoG parameter ranges.
  *
@@ -935,11 +963,14 @@ declare const index$4_DOG_PARAM_RANGES: typeof DOG_PARAM_RANGES;
 type index$4_DoGConfig = DoGConfig;
 type index$4_DoGImplementation = DoGImplementation;
 type index$4_DogConfigParamType = DogConfigParamType;
+declare const index$4_FDOG_CONFIDENCE_WEIGHT_PARAM_RANGES: typeof FDOG_CONFIDENCE_WEIGHT_PARAM_RANGES;
 declare const index$4_FDOG_PARAM_RANGES: typeof FDOG_PARAM_RANGES;
 declare const index$4_FDOG_STYLE_PRESETS: typeof FDOG_STYLE_PRESETS;
 type index$4_FDoG = FDoG;
 declare const index$4_FDoG: typeof FDoG;
+type index$4_FDoGConfidenceWeightingConfig = FDoGConfidenceWeightingConfig;
 type index$4_FDoGConfig = FDoGConfig;
+type index$4_FDogConfidenceWeightConfigParamType = FDogConfidenceWeightConfigParamType;
 type index$4_FDogConfigParamType = FDogConfigParamType;
 declare const index$4_HDOG_PARAM_RANGES: typeof HDOG_PARAM_RANGES;
 declare const index$4_HDOG_STYLE_PRESETS: typeof HDOG_STYLE_PRESETS;
@@ -960,8 +991,8 @@ declare const index$4_fdog: typeof fdog;
 declare const index$4_hdog: typeof hdog;
 declare const index$4_xdog: typeof xdog;
 declare namespace index$4 {
-  export { index$4_ADOG_PARAM_RANGES as ADOG_PARAM_RANGES, index$4_ADOG_STYLE_PRESETS as ADOG_STYLE_PRESETS, index$4_ADoG as ADoG, index$4_DEFAULT_ADOG_CONFIG as DEFAULT_ADOG_CONFIG, index$4_DEFAULT_DOG_CONFIG as DEFAULT_DOG_CONFIG, index$4_DEFAULT_FDOG_CONFIG as DEFAULT_FDOG_CONFIG, index$4_DEFAULT_HDOG_CONFIG as DEFAULT_HDOG_CONFIG, index$4_DOG_PARAM_RANGES as DOG_PARAM_RANGES, index$4_FDOG_PARAM_RANGES as FDOG_PARAM_RANGES, index$4_FDOG_STYLE_PRESETS as FDOG_STYLE_PRESETS, index$4_FDoG as FDoG, index$4_HDOG_PARAM_RANGES as HDOG_PARAM_RANGES, index$4_HDOG_STYLE_PRESETS as HDOG_STYLE_PRESETS, index$4_HDoG as HDoG, index$4_STYLE_PRESETS as STYLE_PRESETS, index$4_XDOG_PARAM_RANGES as XDOG_PARAM_RANGES, index$4_XDoG as XDoG, index$4_adog as adog, index$4_fdog as fdog, index$4_hdog as hdog, index$4_xdog as xdog };
-  export type { index$4_ADoGConfig as ADoGConfig, index$4_ADoGProcessingResult as ADoGProcessingResult, index$4_ADogConfigParamType as ADogConfigParamType, index$4_DoGConfig as DoGConfig, index$4_DoGImplementation as DoGImplementation, index$4_DogConfigParamType as DogConfigParamType, index$4_FDoGConfig as FDoGConfig, index$4_FDogConfigParamType as FDogConfigParamType, index$4_HDoGConfig as HDoGConfig, index$4_HDoGProcessingResult as HDoGProcessingResult, index$4_HDogConfigParamType as HDogConfigParamType, index$4_ParamRange as ParamRange, index$4_XDoGConfig as XDoGConfig, index$4_XDogConfigParamType as XDogConfigParamType };
+  export { index$4_ADOG_PARAM_RANGES as ADOG_PARAM_RANGES, index$4_ADOG_STYLE_PRESETS as ADOG_STYLE_PRESETS, index$4_ADoG as ADoG, index$4_DEFAULT_ADOG_CONFIG as DEFAULT_ADOG_CONFIG, index$4_DEFAULT_DOG_CONFIG as DEFAULT_DOG_CONFIG, index$4_DEFAULT_FDOG_CONFIG as DEFAULT_FDOG_CONFIG, index$4_DEFAULT_HDOG_CONFIG as DEFAULT_HDOG_CONFIG, index$4_DOG_PARAM_RANGES as DOG_PARAM_RANGES, index$4_FDOG_CONFIDENCE_WEIGHT_PARAM_RANGES as FDOG_CONFIDENCE_WEIGHT_PARAM_RANGES, index$4_FDOG_PARAM_RANGES as FDOG_PARAM_RANGES, index$4_FDOG_STYLE_PRESETS as FDOG_STYLE_PRESETS, index$4_FDoG as FDoG, index$4_HDOG_PARAM_RANGES as HDOG_PARAM_RANGES, index$4_HDOG_STYLE_PRESETS as HDOG_STYLE_PRESETS, index$4_HDoG as HDoG, index$4_STYLE_PRESETS as STYLE_PRESETS, index$4_XDOG_PARAM_RANGES as XDOG_PARAM_RANGES, index$4_XDoG as XDoG, index$4_adog as adog, index$4_fdog as fdog, index$4_hdog as hdog, index$4_xdog as xdog };
+  export type { index$4_ADoGConfig as ADoGConfig, index$4_ADoGProcessingResult as ADoGProcessingResult, index$4_ADogConfigParamType as ADogConfigParamType, index$4_DoGConfig as DoGConfig, index$4_DoGImplementation as DoGImplementation, index$4_DogConfigParamType as DogConfigParamType, index$4_FDoGConfidenceWeightingConfig as FDoGConfidenceWeightingConfig, index$4_FDoGConfig as FDoGConfig, index$4_FDogConfidenceWeightConfigParamType as FDogConfidenceWeightConfigParamType, index$4_FDogConfigParamType as FDogConfigParamType, index$4_HDoGConfig as HDoGConfig, index$4_HDoGProcessingResult as HDoGProcessingResult, index$4_HDogConfigParamType as HDogConfigParamType, index$4_ParamRange as ParamRange, index$4_XDoGConfig as XDoGConfig, index$4_XDogConfigParamType as XDogConfigParamType };
 }
 
 /**
@@ -1585,10 +1616,13 @@ declare class EdgeTangentFlowComputer implements ETFComputer {
      */
     get backend(): "webgpu" | "webgl" | "cpu";
     dispose(): void;
+    /**
+     * Compute an Edge Tangent Flow. The returned FlowField carries its own
+     * magnitude/anisotropy (see interfaces/base.ts) — there is no separate
+     * "detailed" variant anymore.
+     */
     compute(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
-    computeDetailed(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number): Promise<ETFDetailedResult>;
     computeMultiChannel(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
-    computeMultiChannelDetailed(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<ETFDetailedResult>;
     callWithFallback<T>(op: (computer: ETFComputer) => Promise<T>): Promise<T>;
     private demoteAndFindNext;
 }
@@ -3420,4 +3454,4 @@ declare namespace index {
 }
 
 export { DEFAULT_ETF_CONFIG, DoGProcessor, EdgeTangentFlowComputer, ThresholdModes, applyCustomThreshold, index$3 as blur, index$4 as dog, index as extensions, index$2 as preprocess, threshold, index$1 as utilities };
-export type { ADoGConfig, ADoGProcessingResult, ADogConfigParamType, AntiAliasingConfig, BackendOptions, BilateralFilterConfig, BlendFunction, BlurStrategy, ChannelImage, ColorRetentionConfig, ColorTransformFn, DoGConfig, DoGImplementation, DoGResult, DogConfigParamType, ETFConfig, ExtensionStrategy, FDoGConfig, FDogConfigParamType, FlowField, FlowGuidedBlurConfig, GradientAlignedBlurConfig, HDoGConfig, HDoGProcessingResult, HDogConfigParamType, HatchTexture, HatchingConfig, IsotropicBlurConfig, KuwaharaFilterConfig, LocalVarianceConfig, MaskTransformFn, MedianFilterConfig, MultiScaleConfig, MultiScaleLayer, NaturalMediaConfig, NaturalMediaStyle, ParamRange, PostProcessFn, Preprocessor, RGBImage$1 as RGBImage, ThresholdConfig, ThresholdStrategy, Vec2, XDoGConfig };
+export type { ADoGConfig, ADoGProcessingResult, ADogConfigParamType, AntiAliasingConfig, BackendOptions, BilateralFilterConfig, BlendFunction, BlurStrategy, ChannelImage, ColorRetentionConfig, ColorTransformFn, DoGConfig, DoGImplementation, DoGResult, DogConfigParamType, ETFConfig, ExtensionStrategy, FDoGConfidenceWeightingConfig, FDoGConfig, FDogConfidenceWeightConfigParamType, FDogConfigParamType, FlowField, FlowGuidedBlurConfig, GradientAlignedBlurConfig, HDoGConfig, HDoGProcessingResult, HDogConfigParamType, HatchTexture, HatchingConfig, IsotropicBlurConfig, KuwaharaFilterConfig, LocalVarianceConfig, MaskTransformFn, MedianFilterConfig, MultiScaleConfig, MultiScaleLayer, NaturalMediaConfig, NaturalMediaStyle, ParamRange, PostProcessFn, Preprocessor, RGBImage$1 as RGBImage, ThresholdConfig, ThresholdStrategy, Vec2, XDoGConfig };
