@@ -129,9 +129,11 @@ export * as threshold from './threshold.js'
 // Types
 export type {
   BlurStrategy,
-  LocalBaselineEpsilonOptions,
-  ToneAdaptiveEpsilonAutoOptions,
-  ToneAdaptiveEpsilonOptions,
+  LocalBaselineOptions,
+  ToneAdaptiveAutoOptions,
+  ToneAdaptiveOptions,
+  MagnitudeAdaptiveOptions,
+  VarianceAdaptiveOptions,
   Vec2,
   ChannelImage,
   RGBImage,
