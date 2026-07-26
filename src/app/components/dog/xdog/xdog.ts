@@ -85,7 +85,6 @@ export class XDogComponent extends DogPreviewableComponent<XDogConfig> {
         blurStrategy: this.buildBlurStrategyDescriptor(),
       }
     };
-
     this.config.set(xdogConfig);
   }
 

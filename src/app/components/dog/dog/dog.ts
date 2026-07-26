@@ -6,6 +6,7 @@ import {
   signal,
   effect,
   untracked,
+  inject,
 } from '@angular/core';
 import {
   ReactiveFormsModule,
@@ -13,16 +14,20 @@ import {
   FormControl,
   Validators,
 } from '@angular/forms';
-import { ParamRange, DogConfigParamType } from 'dogpack';
+import { ParamRange, DogConfigParamType, ChannelImage } from 'dogpack';
+import { parameterEstimation } from 'dogpack/preprocess';
 import { ThresholdStrategyDescriptor, ThresholdType, WireDoGConfig } from '../../../models/dog';
 import { ParamSliderComponent } from '../../ui/param-slider-component/param-slider-component';
+import { ImageCanvasComponent, ImageStatus } from '../../ui/image-canvas/image-canvas';
 import {
   DOG_PARAM_HINTS,
   THRESHOLD_STRATEGIES,
   HYSTERESIS_PARAM_HINTS,
   findThresholdStrategy,
   withRange,
-} from '../../content/pipeline-help-content'; // adjust path to wherever you place it
+} from '../../content/pipeline-help-content';
+import { luminanceToImageData } from 'dogpack/utils';
+import { DoGService } from '../../../services/dog/dog-service';
 
 const THRESHOLD_TYPE_TO_DESCRIPTOR_KIND: Record<ThresholdType, ThresholdStrategyDescriptor['kind']> = {
   Soft: 'soft',
@@ -36,18 +41,22 @@ type DogFormControls = {
   strategyKey: FormControl<ThresholdType>;
   highOffset: FormControl<number>;
   lowOffset: FormControl<number>;
+  contrastMargin: FormControl<number>;
 };
 
 @Component({
   selector: 'dog',
   standalone: true,
-  imports: [ReactiveFormsModule, ParamSliderComponent],
+  imports: [ReactiveFormsModule, ParamSliderComponent, ImageCanvasComponent],
   templateUrl: './dog.html',
 })
 export class DogComponent {
+  dog = inject(DoGService);
   ranges = input.required<Record<DogConfigParamType, ParamRange>>();
 
+  allowAutoEpsilon = input<boolean>(true);
   preset = input<Partial<WireDoGConfig> | null>(null);
+  sourceChannel = this.dog.workingImage;
   configChange = output<WireDoGConfig>();
 
   strategyOptions = THRESHOLD_STRATEGIES.map(({ key, label }) => ({ key, label }));
@@ -60,6 +69,16 @@ export class DogComponent {
 
   isHysteresis = computed(() => this.strategyValue() === 'Hysteresis');
 
+  epsilonAuto = signal(false);
+
+  /** Last computed auto-epsilon map (null until computed / when manual). */
+  private epsilonPreview = signal<ChannelImage | null>(null);
+  epsilonPreviewStatus = signal<ImageStatus>('idle');
+  epsilonPreviewImageData = computed(() => {
+    const img = this.epsilonPreview();
+    return img ? luminanceToImageData(img) : null;
+  });
+
   /** Description shown under the "Threshold strategy" <select>. */
   readonly strategyHint = computed(
     () => findThresholdStrategy(this.strategyValue())?.hint ?? ''
@@ -70,6 +89,17 @@ export class DogComponent {
    * lookup instead of going through hint(). */
   hysteresisHint(key: 'highOffset' | 'lowOffset'): string {
     return HYSTERESIS_PARAM_HINTS[key].hint;
+  }
+
+  /** contrastMargin isn't a ranges()-backed param (no ParamRange for it), so
+   * like hysteresisHint() it gets a static lookup instead of hint(). */
+  private readonly CONTRAST_MARGIN_HINT =
+    'Suppresses fine texture and noise while leaving strong edges alone, by scaling the required ' +
+    'deviation from the local baseline to local contrast instead of a flat margin. 0 disables it ' +
+    '(plain local-baseline epsilon); try 0.25-1.5 to start.';
+
+  contrastMarginHint(): string {
+    return this.CONTRAST_MARGIN_HINT;
   }
 
   constructor() {
@@ -91,15 +121,26 @@ export class DogComponent {
     }
   });
 
+  __epsilon_auto_sync__ = effect(() => {
+    const auto = this.epsilonAuto();
+    const src = this.sourceChannel();
+    untracked(() => {
+      if (auto) {
+        this.form.controls.epsilon.disable({ emitEvent: false });
+        this.form.controls.contrastMargin.enable({ emitEvent: false });
+        this.recomputeEpsilonAutoIfNeeded();
+      } else {
+        this.form.controls.epsilon.enable({ emitEvent: false });
+        this.form.controls.contrastMargin.disable({ emitEvent: false });
+        this.epsilonPreview.set(null);
+        this.epsilonPreviewStatus.set('idle');
+        this.emitIfValid();
+      }
+    });
+  });
+
   private initialEmitDone = false;
 
-  /**
-   * Applies the preset (if any) then, on this same first run, emits once
-   * so the parent immediately gets a valid config -- either the preset's
-   * values or, if no preset was given, the form's defaults. Only ever
-   * fires this initial emit once; later preset changes still just patch
-   * the form and wait for a user commit like everything else.
-   */
   __on_input = effect(() => {
     const p = this.preset();
     untracked(() => {
@@ -135,6 +176,10 @@ export class DogComponent {
         nonNullable: true,
         validators: [Validators.required, Validators.min(0)],
       }),
+      contrastMargin: new FormControl<number>(0, {
+        nonNullable: true,
+        validators: [Validators.required, Validators.min(0), Validators.max(5)],
+      }),
     });
   }
 
@@ -162,8 +207,12 @@ export class DogComponent {
   }
 
   hint(key: DogConfigParamType): string {
-  return withRange(DOG_PARAM_HINTS[key].hint, this.ranges()[key]);
-}
+    return withRange(DOG_PARAM_HINTS[key].hint, this.ranges()[key]);
+  }
+
+  onEpsilonAutoToggle(checked: boolean): void {
+    this.epsilonAuto.set(checked);
+  }
 
   /**
    * Builds a wire-safe descriptor, NOT a live ThresholdStrategy instance --
@@ -188,19 +237,59 @@ export class DogComponent {
    * thumb is released or its number field is blurred, a hysteresis
    * offset field is blurred, or the threshold strategy is changed.
    * Applies the config immediately -- there's no separate Apply step.
+   *
+   * If epsilon is in auto mode, sigma is the only committed value that
+   * could have changed the estimate (k/p/phi/threshold don't feed
+   * localBaselineEstimate), so this also re-triggers it. Recomputing on
+   * every commit rather than on every live drag tick keeps a full-image
+   * blur off the hot path while still tracking sigma tightly enough.
    */
   onCommit(): void {
     this.emitIfValid();
+    this.recomputeEpsilonAutoIfNeeded();
+  }
+
+  private epsilonComputeToken = 0;
+
+  private recomputeEpsilonAutoIfNeeded(): void {
+    if (!this.epsilonAuto()) return;
+
+    const src = this.sourceChannel();
+    if (!src) {
+      this.epsilonPreview.set(null);
+      this.epsilonPreviewStatus.set('idle');
+      return;
+    }
+
+    const sigma = this.form.controls.sigma.value;
+    const contrastMargin = this.form.controls.contrastMargin.value;
+    const token = ++this.epsilonComputeToken;
+    this.epsilonPreviewStatus.set('loading');
+
+    parameterEstimation.epsilon.localBaselineEstimate(src, { sigma, contrastMargin })
+      .then((result) => {
+        if (token !== this.epsilonComputeToken) return;
+        this.epsilonPreview.set(result);
+        this.epsilonPreviewStatus.set('ready');
+        this.emitIfValid();
+      })
+      .catch(() => {
+        if (token !== this.epsilonComputeToken) return;
+        this.epsilonPreview.set(null);
+        this.epsilonPreviewStatus.set('error');
+      });
   }
 
   private emitIfValid(): void {
     if (this.form.invalid) return;
+    if (this.epsilonAuto() && !this.epsilonPreview()) return;
+
     const v = this.form.getRawValue();
     this.configChange.emit({
       sigma: v.sigma,
       k: v.k,
       p: v.p,
-      epsilon: v.epsilon,
+      epsilon: this.epsilonAuto() ? this.epsilonPreview()! : v.epsilon,
       phi: v.phi,
       thresholdStrategy: this.buildThresholdStrategyDescriptor(this.form),
     });

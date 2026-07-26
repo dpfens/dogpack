@@ -26,7 +26,8 @@
   <dog
     [ranges]="paramRanges"
     [preset]="preset() ?? selectedPreset()"
-    (configChange)="onConfig($event)" />
+    (configChange)="onConfig($event)"
+    [allowAutoEpsilon]="false" />
 
   <div class="mb-3">
     <label class="form-label">τ (minimum contrast sensitivity)</label>
