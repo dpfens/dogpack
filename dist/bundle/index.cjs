@@ -6902,157 +6902,338 @@ var index$3 = /*#__PURE__*/Object.freeze({
 });
 
 /**
- * Epsilon parameter estimation
+ * Shared per-pixel parameter estimation techniques, used by epsilon.ts,
+ * p.ts, and phi.ts to build spatially-varying ChannelImage maps for any of
+ * XDoG/FDoG/ADoG's `p`/`epsilon`/`phi` config fields (all typed
+ * `number | ChannelImage` -- see DoGConfig in ../../interfaces/dog.js).
  *
- * XDoG/FDoG/ADoG all threshold their (continuous) sharpened response against a
- * single scalar `epsilon`. That's fine when the image's tone is roughly uniform,
- * but a fixed epsilon under-serves one extreme or the other on high-dynamic-range
- * input: an epsilon tuned to hold onto shadow detail tends to flood highlights
- * with noise, and vice versa.
+ * Four techniques, each keyed to a different signal:
  *
- * Why epsilon needs to track local tone at all (confirmed against processor.ts):
- * `computeSharpening()` implements Eq. 7, S(x) = (1+p)*blur1(x) - p*blur2(x). In
- * any roughly flat neighborhood blur1(x) ≈ blur2(x) ≈ that neighborhood's local
- * brightness, so S(x) itself sits near the local tone there -- it's not centered
- * on some fixed midpoint. `applyThreshold()` (via `ThresholdModes.soft`) then does
- * `value >= epsilon -> white, else soft-thresholded toward black`. A flat epsilon
- * tuned for midtones will sit *below* S(x) everywhere in a bright region (crushing
- * it to white with no edges surviving) and *above* S(x) everywhere in a dark one
- * (crushing it to black). For epsilon to threshold something meaningful in both
- * places, it has to move with local tone the same way S(x) does: lower in dark
- * neighborhoods, higher in light ones. That's the ordering this module defaults to.
+ *   - toneAdaptiveEstimate: interpolate between a "dark" and "light" value
+ *     over blurred local tone. Principled for epsilon (S(x) collapses to
+ *     local tone in flat regions, per Eq. 7 -- see epsilon.ts). For p/phi
+ *     it's available but only as a stylistic option; neither has an
+ *     equation tying it to brightness.
  *
- * This mirrors the paper's own fix for an analogous problem in ADoG -- Eq. (5)
- * makes the contrast-sensitivity parameter rho(x) a tanh-shaped function of local
- * tone I(x) instead of a constant. `toneAdaptiveEstimate` applies that same shape
- * to epsilon: blur the input first to get a smooth "local area brightness" reading
- * (rather than a noisy per-pixel one), then interpolate between a dark-region
- * epsilon and a light-region epsilon using that curve.
+ *   - localBaselineEstimate: track a blurred local baseline of the input
+ *     directly (+ optional offset/variance margin). Principled for
+ *     epsilon specifically -- it's a direct read of the quantity epsilon
+ *     is thresholded against, not just a plausible curve.
  *
- * Each function returns a ChannelImage the same size as the input, suitable for
- * wrapping with `ScalarField.fromChannelImage()` and passing as the `epsilon`
- * override to any of the DoG implementations (see usage examples at the bottom).
+ *   - magnitudeAdaptiveEstimate: interpolate over local gradient
+ *     magnitude. Principled for p -- p multiplies the edge term D(x) =
+ *     blur1(x) - blur2(x), which is ~0 in flat regions regardless of
+ *     brightness and grows only where there's real gradient structure.
+ *
+ *   - varianceAdaptiveEstimate: interpolate over local variance.
+ *     Principled for phi -- hard-vs-soft threshold steepness plausibly
+ *     tracks "is there already texture/detail here," independent of tone.
+ *
+ * See each parameter file's own module comment for which technique(s) are
+ * actually motivated for that parameter -- this file just holds the
+ * mechanics.
  */
-/**
- * Estimate a spatially-varying epsilon ChannelImage from local image tone.
- *
- * epsilon(x) = epsilonDark + (epsilonLight - epsilonDark) * tanh(s * localTone(x))
- *
- * Note tanh(s) doesn't quite reach 1 (e.g. tanh(2) ≈ 0.964), so the lightest
- * areas land close to, but not exactly at, epsilonLight -- same approximation
- * the paper accepts for rho(x) in Eq. (5), and generally not worth correcting
- * for since epsilonDark/epsilonLight are empirically tuned anyway.
- */
-async function toneAdaptiveEstimate(input, options) {
-    const { epsilonDark, epsilonLight, localitySigma = 8, s = 2 } = options;
-    const blurStrategy = options.blurStrategy ?? (await IsotropicBlur.create({ kernelSizeMultiplier: 4 }));
-    const ownsBlurStrategy = !options.blurStrategy;
+async function resolveBlur(provided) {
+    if (provided)
+        return { blur: provided, owns: false };
+    return { blur: await IsotropicBlur.create({ kernelSizeMultiplier: 4 }), owns: true };
+}
+/** value(x) = low + (high - low) * tanh(s * localTone(x)) */
+async function toneAdaptiveEstimate$3(input, options) {
+    const { low, high, localitySigma = 8, s = 2 } = options;
+    const { blur, owns } = await resolveBlur(options.blurStrategy);
     try {
-        const localTone = await blurStrategy.blur(input, localitySigma);
-        const epsilon = createChannelImage$1(input.width, input.height);
-        for (let i = 0; i < epsilon.data.length; i++) {
-            const w = Math.tanh(s * localTone.data[i]); // 0 (dark) -> ~1 (light)
-            epsilon.data[i] = epsilonDark + (epsilonLight - epsilonDark) * w;
+        const localTone = await blur.blur(input, localitySigma);
+        const output = createChannelImage$1(input.width, input.height);
+        for (let i = 0; i < output.data.length; i++) {
+            output.data[i] = low + (high - low) * Math.tanh(s * localTone.data[i]);
         }
-        return epsilon;
+        return output;
     }
     finally {
-        if (ownsBlurStrategy)
-            blurStrategy.dispose();
+        if (owns)
+            blur.dispose();
     }
 }
-/**
- * Convenience wrapper: derive epsilonDark/epsilonLight from a single center
- * value + spread instead of picking both endpoints by hand.
- */
-async function toneAdaptiveEstimateAuto(input, options) {
-    const { center, spread, denserInDark = true, ...rest } = options;
-    const epsilonDark = denserInDark ? center - spread : center + spread;
-    const epsilonLight = denserInDark ? center + spread : center - spread;
-    return toneAdaptiveEstimate(input, { ...rest, epsilonDark, epsilonLight });
+/** Convenience: derive low/high from a center + spread instead of picking both by hand. */
+async function toneAdaptiveEstimateAuto$3(input, options) {
+    const { center, spread, higherInLight = true, ...rest } = options;
+    const low = higherInLight ? center - spread : center + spread;
+    const high = higherInLight ? center + spread : center - spread;
+    return toneAdaptiveEstimate$3(input, { ...rest, low, high });
 }
-/**
- * Estimate epsilon directly as the local baseline of the sharpened response,
- * instead of interpolating between two hand-picked epsilonDark/epsilonLight
- * constants. Since S(x) ≈ local tone in flat regions (Eq. 7, see module
- * comment), blurring the input at the DoG's own `sigma` is a direct estimate
- * of that baseline -- this is `toneAdaptiveEstimate` with the tanh shaping
- * and two free endpoints removed, in favor of just tracking the quantity
- * epsilon is actually being compared against. Prefer this one unless you
- * specifically want the tanh curve's asymmetric dark/light control (e.g. for
- * a stylized look rather than a technically-motivated one).
- */
-async function localBaselineEstimate(input, options) {
+/** value(x) = blur(input, sigma)(x) + offset [+ contrastMargin * localStdDev(x)] */
+async function localBaselineEstimate$1(input, options) {
     const { sigma, offset = 0, contrastMargin = 0 } = options;
-    const blurStrategy = options.blurStrategy ?? (await IsotropicBlur.create({ kernelSizeMultiplier: 4 }));
-    const ownsBlurStrategy = !options.blurStrategy;
+    const { blur, owns } = await resolveBlur(options.blurStrategy);
     try {
-        const baseline = await blurStrategy.blur(input, sigma);
-        const epsilon = createChannelImage$1(input.width, input.height);
+        const baseline = await blur.blur(input, sigma);
+        const output = createChannelImage$1(input.width, input.height);
         if (contrastMargin > 0) {
             const squared = createChannelImage$1(input.width, input.height);
             for (let i = 0; i < input.data.length; i++)
                 squared.data[i] = input.data[i] * input.data[i];
-            const meanSquared = await blurStrategy.blur(squared, sigma);
-            for (let i = 0; i < epsilon.data.length; i++) {
+            const meanSquared = await blur.blur(squared, sigma);
+            for (let i = 0; i < output.data.length; i++) {
                 const variance = Math.max(0, meanSquared.data[i] - baseline.data[i] ** 2);
-                epsilon.data[i] = baseline.data[i] + offset + contrastMargin * Math.sqrt(variance);
+                output.data[i] = baseline.data[i] + offset + contrastMargin * Math.sqrt(variance);
             }
         }
         else {
-            for (let i = 0; i < epsilon.data.length; i++) {
-                epsilon.data[i] = baseline.data[i] + offset;
+            for (let i = 0; i < output.data.length; i++) {
+                output.data[i] = baseline.data[i] + offset;
             }
         }
-        return epsilon;
+        return output;
     }
     finally {
-        if (ownsBlurStrategy)
-            blurStrategy.dispose();
+        if (owns)
+            blur.dispose();
     }
 }
+function normalizeToUnit(field, gamma) {
+    let max = 0;
+    for (let i = 0; i < field.data.length; i++)
+        if (field.data[i] > max)
+            max = field.data[i];
+    const output = createChannelImage$1(field.width, field.height);
+    if (max <= 0)
+        return output;
+    for (let i = 0; i < output.data.length; i++) {
+        const n = field.data[i] / max;
+        output.data[i] = gamma === 1 ? n : Math.pow(n, gamma);
+    }
+    return output;
+}
+function gradientMagnitude(input) {
+    const { width, height, data } = input;
+    const output = createChannelImage$1(width, height);
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const xm = Math.max(x - 1, 0), xp = Math.min(x + 1, width - 1);
+            const ym = Math.max(y - 1, 0), yp = Math.min(y + 1, height - 1);
+            const ix = (data[y * width + xp] - data[y * width + xm]) / (xp - xm || 1);
+            const iy = (data[yp * width + x] - data[ym * width + x]) / (yp - ym || 1);
+            output.data[y * width + x] = Math.sqrt(ix * ix + iy * iy);
+        }
+    }
+    return output;
+}
+/** value(x) = low + (high - low) * normalizedGradientMagnitude(x)^gamma */
+async function magnitudeAdaptiveEstimate$1(input, options) {
+    const { low, high, smoothingSigma = 1, gamma = 1 } = options;
+    let magnitude = gradientMagnitude(input);
+    if (smoothingSigma > 0) {
+        const { blur, owns } = await resolveBlur(options.blurStrategy);
+        try {
+            magnitude = await blur.blur(magnitude, smoothingSigma);
+        }
+        finally {
+            if (owns)
+                blur.dispose();
+        }
+    }
+    const normalized = normalizeToUnit(magnitude, gamma);
+    const output = createChannelImage$1(input.width, input.height);
+    for (let i = 0; i < output.data.length; i++) {
+        output.data[i] = low + (high - low) * normalized.data[i];
+    }
+    return output;
+}
+/** value(x) = low + (high - low) * normalizedLocalVariance(x)^gamma */
+async function varianceAdaptiveEstimate$1(input, options) {
+    const { low, high, sigma, gamma = 1 } = options;
+    const { blur, owns } = await resolveBlur(options.blurStrategy);
+    try {
+        const baseline = await blur.blur(input, sigma);
+        const squared = createChannelImage$1(input.width, input.height);
+        for (let i = 0; i < input.data.length; i++)
+            squared.data[i] = input.data[i] * input.data[i];
+        const meanSquared = await blur.blur(squared, sigma);
+        const variance = createChannelImage$1(input.width, input.height);
+        for (let i = 0; i < variance.data.length; i++) {
+            variance.data[i] = Math.max(0, meanSquared.data[i] - baseline.data[i] ** 2);
+        }
+        const normalized = normalizeToUnit(variance, gamma);
+        const output = createChannelImage$1(input.width, input.height);
+        for (let i = 0; i < output.data.length; i++) {
+            output.data[i] = low + (high - low) * normalized.data[i];
+        }
+        return output;
+    }
+    finally {
+        if (owns)
+            blur.dispose();
+    }
+}
+
 /**
- * Usage (recommended default -- tracks the DoG's own blur directly):
+ * Epsilon parameter estimation
+ *
+ * XDoG/FDoG/ADoG threshold their continuous sharpened response against a
+ * scalar `epsilon`. A fixed epsilon under-serves one tone extreme or the
+ * other on high-dynamic-range input.
+ *
+ * Why epsilon should track local tone (from processor.ts's Eq. 7):
+ * S(x) = (1+p)*blur1(x) - p*blur2(x). In flat regions blur1(x) ≈ blur2(x)
+ * ≈ local brightness, so S(x) itself sits near local tone there. A flat
+ * epsilon tuned for midtones crushes bright regions to white and dark
+ * regions to black. For epsilon to threshold something meaningful
+ * everywhere, it has to move with local tone -- lower in dark
+ * neighborhoods, higher in light ones.
+ *
+ * Both `toneAdaptiveEstimate` and `localBaselineEstimate` below are
+ * principled for epsilon specifically: tone tracking approximates S(x),
+ * and local-baseline tracking reads it more directly. See shared.ts for
+ * the mechanics, and p.ts/phi.ts for why a *different* signal (not tone)
+ * is the principled choice for those parameters instead.
+ */
+async function toneAdaptiveEstimate$2(input, options) {
+    const { epsilonDark, epsilonLight, ...rest } = options;
+    return toneAdaptiveEstimate$3(input, { ...rest, low: epsilonDark, high: epsilonLight });
+}
+async function toneAdaptiveEstimateAuto$2(input, options) {
+    const { denserInDark = true, ...rest } = options;
+    return toneAdaptiveEstimateAuto$3(input, { ...rest, higherInLight: denserInDark });
+}
+/**
+ * Recommended default: epsilon as the local baseline of the sharpened
+ * response. `sigma` should track the DoG's own sigma (this is what
+ * `computeSharpening()` actually produces in flat regions).
+ */
+async function localBaselineEstimate(input, options) {
+    return localBaselineEstimate$1(input, options);
+}
+/**
+ * Usage:
  *
  *   import { XDoG } from '../../implementations/xdog.js';
  *   import { ScalarField } from '../../utils/scalar-field.js';
  *   import { localBaselineEstimate } from './epsilon.js';
  *
- *   const sigma = 1.4;
- *   const epsilonMap = await localBaselineEstimate(input, { sigma });
- *
- *   const xdog = new XDoG({ sigma, k: 1.6, phi: 10 });
- *   const result = await xdog.process(input, {
+ *   const epsilonMap = await localBaselineEstimate(input, { sigma: 1.4 });
+ *   const result = await new XDoG({ sigma: 1.4, k: 1.6, phi: 10 }).process(input, {
  *     epsilon: ScalarField.fromChannelImage(epsilonMap),
  *   });
- *
- * Usage (tanh-shaped, for hand-tuned dark/light control instead):
- *
- *   import { ADoG } from '../../implementations/adog.js';
- *   import { toneAdaptiveEstimateAuto } from './epsilon.js';
- *
- *   const center = await ADoG.estimateEpsilon(input); // reuse existing global estimator
- *   const epsilonMap = await toneAdaptiveEstimateAuto(input, {
- *     center,
- *     spread: center * 0.15,
- *     localitySigma: 12,
- *   });
- *
- * Works the same way for FDoG/ADoG: `DoGConfig`'s p/epsilon/phi are
- * ScalarFields internally (see ../../utils/scalar-field.ts), so any of them
- * accept a wrapped ChannelImage like this one as a config override.
  */
 
 var epsilon = /*#__PURE__*/Object.freeze({
     __proto__: null,
     localBaselineEstimate: localBaselineEstimate,
+    toneAdaptiveEstimate: toneAdaptiveEstimate$2,
+    toneAdaptiveEstimateAuto: toneAdaptiveEstimateAuto$2
+});
+
+/**
+ * p (sharpening strength) parameter estimation
+ *
+ * p multiplies the edge term in Eq. 7: S(x) = blur1(x) + p*D(x), where
+ * D(x) = blur1(x) - blur2(x). D(x) is ~0 in flat regions regardless of
+ * brightness, and grows only where there's real gradient structure. So a
+ * spatially-varying p should track *gradient magnitude*, not tone --
+ * `magnitudeAdaptiveEstimate` below is the principled default.
+ *
+ * `toneAdaptiveEstimate`/`toneAdaptiveEstimateAuto` are also exposed, but
+ * unlike epsilon.ts's use of the same technique, they're NOT derived from
+ * anything -- there's no equation tying p to brightness. Use only if you
+ * deliberately want a brightness-driven look and know that's the choice
+ * you're making.
+ *
+ * If using FDoG with an ETF already computed, prefer its
+ * `confidenceWeighting.pByMagnitude` (../../interfaces/dog.js) instead --
+ * same idea, smoothed/refined magnitude rather than a raw gradient.
+ */
+/** Recommended default. p(x) = pWeak + (pStrong - pWeak) * normalizedGradientMagnitude(x)^gamma */
+async function magnitudeAdaptiveEstimate(input, options) {
+    const { pWeak, pStrong, ...rest } = options;
+    return magnitudeAdaptiveEstimate$1(input, { ...rest, low: pWeak, high: pStrong });
+}
+/** Stylistic only -- NOT derived from Eq. 7. See module comment. */
+async function toneAdaptiveEstimate$1(input, options) {
+    const { pDark, pLight, ...rest } = options;
+    return toneAdaptiveEstimate$3(input, { ...rest, low: pDark, high: pLight });
+}
+/** Stylistic only -- NOT derived from Eq. 7. See module comment. */
+async function toneAdaptiveEstimateAuto$1(input, options) {
+    return toneAdaptiveEstimateAuto$3(input, options);
+}
+/**
+ * Usage:
+ *
+ *   import { XDoG } from '../../implementations/xdog.js';
+ *   import { ScalarField } from '../../utils/scalar-field.js';
+ *   import { magnitudeAdaptiveEstimate } from './p.js';
+ *
+ *   const pMap = await magnitudeAdaptiveEstimate(input, { pWeak: 5, pStrong: 40 });
+ *   const result = await new XDoG({ sigma: 1.4, k: 1.6, epsilon: 0.78 }).process(input, {
+ *     p: ScalarField.fromChannelImage(pMap),
+ *   });
+ */
+
+var p = /*#__PURE__*/Object.freeze({
+    __proto__: null,
+    magnitudeAdaptiveEstimate: magnitudeAdaptiveEstimate,
+    toneAdaptiveEstimate: toneAdaptiveEstimate$1,
+    toneAdaptiveEstimateAuto: toneAdaptiveEstimateAuto$1
+});
+
+/**
+ * phi (soft-threshold steepness) parameter estimation
+ *
+ * phi controls tanh steepness of the soft threshold (low phi = gradual
+ * pencil shading, high phi = near step function). No equation ties it to
+ * brightness, but local variance is a plausible signal: a neighborhood
+ * that already has real detail is a reasonable candidate for hard edges;
+ * a flat neighborhood, for soft shading -- independent of tone.
+ * `varianceAdaptiveEstimate` below is the principled default.
+ *
+ * `toneAdaptiveEstimate`/`toneAdaptiveEstimateAuto` are exposed as a
+ * labeled stylistic option only (same caveat as p.ts) -- not derived from
+ * anything.
+ *
+ * Note: `HardThresholdStrategy` (ADoG/FDoG's default) ignores `phi`
+ * entirely -- a spatially-varying phi only matters under
+ * `SoftThresholdStrategy`.
+ */
+/** Recommended default. phi(x) = phiSoft + (phiHard - phiSoft) * normalizedVariance(x)^gamma */
+async function varianceAdaptiveEstimate(input, options) {
+    const { phiSoft, phiHard, ...rest } = options;
+    return varianceAdaptiveEstimate$1(input, { ...rest, low: phiSoft, high: phiHard });
+}
+/** Stylistic only -- not derived from anything. See module comment. */
+async function toneAdaptiveEstimate(input, options) {
+    const { phiDark, phiLight, ...rest } = options;
+    return toneAdaptiveEstimate$3(input, { ...rest, low: phiDark, high: phiLight });
+}
+/** Stylistic only -- not derived from anything. See module comment. */
+async function toneAdaptiveEstimateAuto(input, options) {
+    return toneAdaptiveEstimateAuto$3(input, options);
+}
+/**
+ * Usage:
+ *
+ *   import { XDoG } from '../../implementations/xdog.js';
+ *   import { ScalarField } from '../../utils/scalar-field.js';
+ *   import { varianceAdaptiveEstimate } from './phi.js';
+ *
+ *   const phiMap = await varianceAdaptiveEstimate(input, { sigma: 3, phiSoft: 0.01, phiHard: 50 });
+ *   const result = await new XDoG({ sigma: 1.4, k: 1.6, epsilon: 0.78 }).process(input, {
+ *     phi: ScalarField.fromChannelImage(phiMap),
+ *   });
+ */
+
+var phi = /*#__PURE__*/Object.freeze({
+    __proto__: null,
     toneAdaptiveEstimate: toneAdaptiveEstimate,
-    toneAdaptiveEstimateAuto: toneAdaptiveEstimateAuto
+    toneAdaptiveEstimateAuto: toneAdaptiveEstimateAuto,
+    varianceAdaptiveEstimate: varianceAdaptiveEstimate
 });
 
 var index$2 = /*#__PURE__*/Object.freeze({
     __proto__: null,
-    epsilon: epsilon
+    epsilon: epsilon,
+    p: p,
+    phi: phi
 });
 
 /**

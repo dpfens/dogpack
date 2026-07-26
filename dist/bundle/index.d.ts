@@ -235,99 +235,47 @@ interface ETFComputer extends Disposable, BackendIdentifiable {
      */
     computeMultiChannel(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
 }
-interface ToneAdaptiveEpsilonOptions {
-    /**
-     * Epsilon to use where the local area is darkest (local tone -> 0).
-     */
-    epsilonDark: number;
-    /**
-     * Epsilon to use where the local area is lightest (local tone -> 1).
-     */
-    epsilonLight: number;
-    /**
-     * Gaussian sigma used to blur the input before reading its tone. This is
-     * what makes it a *local area* reading rather than a noisy per-pixel one --
-     * bigger sigma means tone is averaged over a broader neighborhood. Should
-     * generally be larger than the DoG's own sigmaC/sigmaS (which operate at
-     * edge scale) so this is describing the surrounding region, not the edge
-     * itself.
-     * Default: 8
-     */
+interface ToneAdaptiveOptions {
+    /** Value to use where the local area is darkest (local tone -> 0). */
+    low: number;
+    /** Value to use where the local area is lightest (local tone -> 1). */
+    high: number;
+    /** Blur sigma for the local tone reading. Default: 8 */
     localitySigma?: number;
-    /**
-     * Steepness of the tanh transition between epsilonDark and epsilonLight,
-     * mirroring the paper's `s` parameter in Eq. (5)/(6) (default there is 2).
-     * Higher values sharpen the transition around the midtones; lower values
-     * spread it out more gradually across the whole tone range.
-     * Default: 2
-     */
+    /** tanh steepness (paper's `s` in Eq. 5/6). Default: 2 */
     s?: number;
-    /**
-     * Reuse an existing blur strategy (e.g. one already created elsewhere in
-     * your pipeline) instead of spinning up a fresh IsotropicBlur. If omitted,
-     * one is created and disposed internally.
-     */
     blurStrategy?: BlurStrategy;
 }
-interface ToneAdaptiveEpsilonAutoOptions extends Omit<ToneAdaptiveEpsilonOptions, 'epsilonDark' | 'epsilonLight'> {
-    /**
-     * Center epsilon to build the dark/light band around -- e.g. the output of
-     * `ADoG.estimateEpsilon(input)`, or whatever flat epsilon you're already
-     * using today.
-     */
+interface ToneAdaptiveAutoOptions extends Omit<ToneAdaptiveOptions, 'low' | 'high'> {
     center: number;
-    /**
-     * Half-width of the [epsilonDark, epsilonLight] band around `center`.
-     * Start small (e.g. 5-10% of `center`) and increase until dark/light
-     * regions both look right; too large will just push one extreme toward
-     * losing all detail.
-     */
     spread: number;
-    /**
-     * If true (default), dark areas get `center - spread` and light areas get
-     * `center + spread` -- i.e. epsilon increases with local tone, the same
-     * direction the sharpened response itself moves in (see the module-level
-     * comment above, grounded in processor.ts's Eq. 7 + soft-threshold logic).
-     * Only flip this if you've changed the pipeline in a way that inverts that
-     * relationship (e.g. an unusually large `p`, or a custom ThresholdStrategy)
-     * and have confirmed the output actually looks better.
-     */
-    denserInDark?: boolean;
+    /** If true (default), dark -> center - spread, light -> center + spread. */
+    higherInLight?: boolean;
 }
-interface LocalBaselineEpsilonOptions {
-    /**
-     * Blur sigma used to estimate the local baseline. For this to track what
-     * `computeSharpening()` actually produces in flat regions, this should be
-     * close to the DoG's own `sigma` (blur1's scale) -- not `sigma * k`, and
-     * not an unrelated "how big is a neighborhood" value picked independently
-     * of the DoG config you're pairing it with.
-     */
+interface LocalBaselineOptions {
     sigma: number;
-    /**
-     * Flat offset applied on top of the local baseline. Positive -> stricter
-     * everywhere (more of each neighborhood crushes to black); negative ->
-     * looser everywhere (more crushes to white). Start at 0 and nudge from
-     * there; plays the same role as `ADoG.estimateEpsilon`'s `biasOffset`.
-     * Default: 0
-     */
+    /** Flat offset on top of the baseline. Default: 0 */
     offset?: number;
-    /**
-     * Multiplier on local response variability (stddev of the input, at the
-     * same `sigma`), added on top of `baseline + offset`. Suppresses fine
-     * texture/noise while leaving strong edges alone, by scaling the required
-     * deviation from baseline to local variance instead of applying the same
-     * flat margin everywhere.
-     *
-     * Range: 0.25-1.5 recommended. Hard min 0 (negative values loosen the
-     * threshold where variance is highest, the opposite of the intent). Hard
-     * max ~5 (soft ceiling -- beyond this the added margin typically exceeds
-     * the sharpened response's dynamic range and starts crushing genuine
-     * edges to black, not just texture; exact point depends on `sigma`/`p`).
-     *
-     * Default: 0 (original behavior -- no contrast-based suppression)
-     */
+    /** Variance-scaled margin on top of baseline + offset. Default: 0 */
     contrastMargin?: number;
     blurStrategy?: BlurStrategy;
+}
+interface FieldAdaptiveOptions {
+    /** Value at the weakest/flattest end of the field. */
+    low: number;
+    /** Value at the field's own strongest point (normalized against its own max). */
+    high: number;
+    /** Exponent applied after normalizing. >1 favors only the strongest responses; <1 spreads out. Default: 1 */
+    gamma?: number;
+    blurStrategy?: BlurStrategy;
+}
+interface MagnitudeAdaptiveOptions extends FieldAdaptiveOptions {
+    /** Smooths the raw gradient magnitude before normalizing. Set 0 to skip. Default: 1 */
+    smoothingSigma?: number;
+}
+interface VarianceAdaptiveOptions extends FieldAdaptiveOptions {
+    /** Neighborhood size used to compute local variance. */
+    sigma: number;
 }
 
 interface ThresholdStrategy {
@@ -1724,80 +1672,141 @@ declare class EdgeTangentFlowComputer implements ETFComputer {
 /**
  * Epsilon parameter estimation
  *
- * XDoG/FDoG/ADoG all threshold their (continuous) sharpened response against a
- * single scalar `epsilon`. That's fine when the image's tone is roughly uniform,
- * but a fixed epsilon under-serves one extreme or the other on high-dynamic-range
- * input: an epsilon tuned to hold onto shadow detail tends to flood highlights
- * with noise, and vice versa.
+ * XDoG/FDoG/ADoG threshold their continuous sharpened response against a
+ * scalar `epsilon`. A fixed epsilon under-serves one tone extreme or the
+ * other on high-dynamic-range input.
  *
- * Why epsilon needs to track local tone at all (confirmed against processor.ts):
- * `computeSharpening()` implements Eq. 7, S(x) = (1+p)*blur1(x) - p*blur2(x). In
- * any roughly flat neighborhood blur1(x) ≈ blur2(x) ≈ that neighborhood's local
- * brightness, so S(x) itself sits near the local tone there -- it's not centered
- * on some fixed midpoint. `applyThreshold()` (via `ThresholdModes.soft`) then does
- * `value >= epsilon -> white, else soft-thresholded toward black`. A flat epsilon
- * tuned for midtones will sit *below* S(x) everywhere in a bright region (crushing
- * it to white with no edges surviving) and *above* S(x) everywhere in a dark one
- * (crushing it to black). For epsilon to threshold something meaningful in both
- * places, it has to move with local tone the same way S(x) does: lower in dark
- * neighborhoods, higher in light ones. That's the ordering this module defaults to.
+ * Why epsilon should track local tone (from processor.ts's Eq. 7):
+ * S(x) = (1+p)*blur1(x) - p*blur2(x). In flat regions blur1(x) ≈ blur2(x)
+ * ≈ local brightness, so S(x) itself sits near local tone there. A flat
+ * epsilon tuned for midtones crushes bright regions to white and dark
+ * regions to black. For epsilon to threshold something meaningful
+ * everywhere, it has to move with local tone -- lower in dark
+ * neighborhoods, higher in light ones.
  *
- * This mirrors the paper's own fix for an analogous problem in ADoG -- Eq. (5)
- * makes the contrast-sensitivity parameter rho(x) a tanh-shaped function of local
- * tone I(x) instead of a constant. `toneAdaptiveEstimate` applies that same shape
- * to epsilon: blur the input first to get a smooth "local area brightness" reading
- * (rather than a noisy per-pixel one), then interpolate between a dark-region
- * epsilon and a light-region epsilon using that curve.
- *
- * Each function returns a ChannelImage the same size as the input, suitable for
- * wrapping with `ScalarField.fromChannelImage()` and passing as the `epsilon`
- * override to any of the DoG implementations (see usage examples at the bottom).
+ * Both `toneAdaptiveEstimate` and `localBaselineEstimate` below are
+ * principled for epsilon specifically: tone tracking approximates S(x),
+ * and local-baseline tracking reads it more directly. See shared.ts for
+ * the mechanics, and p.ts/phi.ts for why a *different* signal (not tone)
+ * is the principled choice for those parameters instead.
  */
 
+declare function toneAdaptiveEstimate$2(input: ChannelImage, options: Omit<ToneAdaptiveOptions, 'low' | 'high'> & {
+    epsilonDark: number;
+    epsilonLight: number;
+}): Promise<ChannelImage>;
+declare function toneAdaptiveEstimateAuto$2(input: ChannelImage, options: Omit<ToneAdaptiveAutoOptions, 'higherInLight'> & {
+    denserInDark?: boolean;
+}): Promise<ChannelImage>;
 /**
- * Estimate a spatially-varying epsilon ChannelImage from local image tone.
- *
- * epsilon(x) = epsilonDark + (epsilonLight - epsilonDark) * tanh(s * localTone(x))
- *
- * Note tanh(s) doesn't quite reach 1 (e.g. tanh(2) ≈ 0.964), so the lightest
- * areas land close to, but not exactly at, epsilonLight -- same approximation
- * the paper accepts for rho(x) in Eq. (5), and generally not worth correcting
- * for since epsilonDark/epsilonLight are empirically tuned anyway.
+ * Recommended default: epsilon as the local baseline of the sharpened
+ * response. `sigma` should track the DoG's own sigma (this is what
+ * `computeSharpening()` actually produces in flat regions).
  */
-declare function toneAdaptiveEstimate(input: ChannelImage, options: ToneAdaptiveEpsilonOptions): Promise<ChannelImage>;
-/**
- * Convenience wrapper: derive epsilonDark/epsilonLight from a single center
- * value + spread instead of picking both endpoints by hand.
- */
-declare function toneAdaptiveEstimateAuto(input: ChannelImage, options: ToneAdaptiveEpsilonAutoOptions): Promise<ChannelImage>;
-/**
- * Estimate epsilon directly as the local baseline of the sharpened response,
- * instead of interpolating between two hand-picked epsilonDark/epsilonLight
- * constants. Since S(x) ≈ local tone in flat regions (Eq. 7, see module
- * comment), blurring the input at the DoG's own `sigma` is a direct estimate
- * of that baseline -- this is `toneAdaptiveEstimate` with the tanh shaping
- * and two free endpoints removed, in favor of just tracking the quantity
- * epsilon is actually being compared against. Prefer this one unless you
- * specifically want the tanh curve's asymmetric dark/light control (e.g. for
- * a stylized look rather than a technically-motivated one).
- */
-declare function localBaselineEstimate(input: ChannelImage, options: LocalBaselineEpsilonOptions): Promise<ChannelImage>;
+declare function localBaselineEstimate(input: ChannelImage, options: LocalBaselineOptions): Promise<ChannelImage>;
 
 declare const epsilon_localBaselineEstimate: typeof localBaselineEstimate;
-declare const epsilon_toneAdaptiveEstimate: typeof toneAdaptiveEstimate;
-declare const epsilon_toneAdaptiveEstimateAuto: typeof toneAdaptiveEstimateAuto;
 declare namespace epsilon {
   export {
     epsilon_localBaselineEstimate as localBaselineEstimate,
-    epsilon_toneAdaptiveEstimate as toneAdaptiveEstimate,
-    epsilon_toneAdaptiveEstimateAuto as toneAdaptiveEstimateAuto,
+    toneAdaptiveEstimate$2 as toneAdaptiveEstimate,
+    toneAdaptiveEstimateAuto$2 as toneAdaptiveEstimateAuto,
+  };
+}
+
+/**
+ * p (sharpening strength) parameter estimation
+ *
+ * p multiplies the edge term in Eq. 7: S(x) = blur1(x) + p*D(x), where
+ * D(x) = blur1(x) - blur2(x). D(x) is ~0 in flat regions regardless of
+ * brightness, and grows only where there's real gradient structure. So a
+ * spatially-varying p should track *gradient magnitude*, not tone --
+ * `magnitudeAdaptiveEstimate` below is the principled default.
+ *
+ * `toneAdaptiveEstimate`/`toneAdaptiveEstimateAuto` are also exposed, but
+ * unlike epsilon.ts's use of the same technique, they're NOT derived from
+ * anything -- there's no equation tying p to brightness. Use only if you
+ * deliberately want a brightness-driven look and know that's the choice
+ * you're making.
+ *
+ * If using FDoG with an ETF already computed, prefer its
+ * `confidenceWeighting.pByMagnitude` (../../interfaces/dog.js) instead --
+ * same idea, smoothed/refined magnitude rather than a raw gradient.
+ */
+
+/** Recommended default. p(x) = pWeak + (pStrong - pWeak) * normalizedGradientMagnitude(x)^gamma */
+declare function magnitudeAdaptiveEstimate(input: ChannelImage, options: Omit<MagnitudeAdaptiveOptions, 'low' | 'high'> & {
+    pWeak: number;
+    pStrong: number;
+}): Promise<ChannelImage>;
+/** Stylistic only -- NOT derived from Eq. 7. See module comment. */
+declare function toneAdaptiveEstimate$1(input: ChannelImage, options: Omit<ToneAdaptiveOptions, 'low' | 'high'> & {
+    pDark: number;
+    pLight: number;
+}): Promise<ChannelImage>;
+/** Stylistic only -- NOT derived from Eq. 7. See module comment. */
+declare function toneAdaptiveEstimateAuto$1(input: ChannelImage, options: ToneAdaptiveAutoOptions): Promise<ChannelImage>;
+
+declare const p_magnitudeAdaptiveEstimate: typeof magnitudeAdaptiveEstimate;
+declare namespace p {
+  export {
+    p_magnitudeAdaptiveEstimate as magnitudeAdaptiveEstimate,
+    toneAdaptiveEstimate$1 as toneAdaptiveEstimate,
+    toneAdaptiveEstimateAuto$1 as toneAdaptiveEstimateAuto,
+  };
+}
+
+/**
+ * phi (soft-threshold steepness) parameter estimation
+ *
+ * phi controls tanh steepness of the soft threshold (low phi = gradual
+ * pencil shading, high phi = near step function). No equation ties it to
+ * brightness, but local variance is a plausible signal: a neighborhood
+ * that already has real detail is a reasonable candidate for hard edges;
+ * a flat neighborhood, for soft shading -- independent of tone.
+ * `varianceAdaptiveEstimate` below is the principled default.
+ *
+ * `toneAdaptiveEstimate`/`toneAdaptiveEstimateAuto` are exposed as a
+ * labeled stylistic option only (same caveat as p.ts) -- not derived from
+ * anything.
+ *
+ * Note: `HardThresholdStrategy` (ADoG/FDoG's default) ignores `phi`
+ * entirely -- a spatially-varying phi only matters under
+ * `SoftThresholdStrategy`.
+ */
+
+/** Recommended default. phi(x) = phiSoft + (phiHard - phiSoft) * normalizedVariance(x)^gamma */
+declare function varianceAdaptiveEstimate(input: ChannelImage, options: Omit<VarianceAdaptiveOptions, 'low' | 'high'> & {
+    phiSoft: number;
+    phiHard: number;
+}): Promise<ChannelImage>;
+/** Stylistic only -- not derived from anything. See module comment. */
+declare function toneAdaptiveEstimate(input: ChannelImage, options: Omit<ToneAdaptiveOptions, 'low' | 'high'> & {
+    phiDark: number;
+    phiLight: number;
+}): Promise<ChannelImage>;
+/** Stylistic only -- not derived from anything. See module comment. */
+declare function toneAdaptiveEstimateAuto(input: ChannelImage, options: ToneAdaptiveAutoOptions): Promise<ChannelImage>;
+
+declare const phi_toneAdaptiveEstimate: typeof toneAdaptiveEstimate;
+declare const phi_toneAdaptiveEstimateAuto: typeof toneAdaptiveEstimateAuto;
+declare const phi_varianceAdaptiveEstimate: typeof varianceAdaptiveEstimate;
+declare namespace phi {
+  export {
+    phi_toneAdaptiveEstimate as toneAdaptiveEstimate,
+    phi_toneAdaptiveEstimateAuto as toneAdaptiveEstimateAuto,
+    phi_varianceAdaptiveEstimate as varianceAdaptiveEstimate,
   };
 }
 
 declare const index$3_epsilon: typeof epsilon;
+declare const index$3_p: typeof p;
+declare const index$3_phi: typeof phi;
 declare namespace index$3 {
   export {
     index$3_epsilon as epsilon,
+    index$3_p as p,
+    index$3_phi as phi,
   };
 }
 
@@ -3543,4 +3552,4 @@ declare namespace index {
 }
 
 export { DEFAULT_ETF_CONFIG, DoGProcessor, EdgeTangentFlowComputer, ThresholdModes, applyCustomThreshold, index$4 as blur, index$5 as dog, index as extensions, index$2 as preprocess, threshold, index$1 as utilities };
-export type { ADoGConfig, ADoGProcessingResult, ADogConfigParamType, AntiAliasingConfig, BackendOptions, BilateralFilterConfig, BlendFunction, BlurStrategy, ChannelImage, ColorRetentionConfig, ColorTransformFn, DoGConfig, DoGImplementation, DoGResult, DogConfigParamType, ETFConfig, ExtensionStrategy, FDoGConfidenceWeightingConfig, FDoGConfig, FDogConfidenceWeightConfigParamType, FDogConfigParamType, FlowField, FlowGuidedBlurConfig, GradientAlignedBlurConfig, HDoGConfig, HDoGProcessingResult, HDogConfigParamType, HatchTexture, HatchingConfig, IsotropicBlurConfig, KuwaharaFilterConfig, LocalBaselineEpsilonOptions, LocalVarianceConfig, MaskTransformFn, MedianFilterConfig, MultiScaleConfig, MultiScaleLayer, NaturalMediaConfig, NaturalMediaStyle, ParamRange, PostProcessFn, Preprocessor, RGBImage$1 as RGBImage, ThresholdConfig, ThresholdStrategy, ToneAdaptiveEpsilonAutoOptions, ToneAdaptiveEpsilonOptions, Vec2, XDoGConfig };
+export type { ADoGConfig, ADoGProcessingResult, ADogConfigParamType, AntiAliasingConfig, BackendOptions, BilateralFilterConfig, BlendFunction, BlurStrategy, ChannelImage, ColorRetentionConfig, ColorTransformFn, DoGConfig, DoGImplementation, DoGResult, DogConfigParamType, ETFConfig, ExtensionStrategy, FDoGConfidenceWeightingConfig, FDoGConfig, FDogConfidenceWeightConfigParamType, FDogConfigParamType, FlowField, FlowGuidedBlurConfig, GradientAlignedBlurConfig, HDoGConfig, HDoGProcessingResult, HDogConfigParamType, HatchTexture, HatchingConfig, IsotropicBlurConfig, KuwaharaFilterConfig, LocalBaselineOptions, LocalVarianceConfig, MagnitudeAdaptiveOptions, MaskTransformFn, MedianFilterConfig, MultiScaleConfig, MultiScaleLayer, NaturalMediaConfig, NaturalMediaStyle, ParamRange, PostProcessFn, Preprocessor, RGBImage$1 as RGBImage, ThresholdConfig, ThresholdStrategy, ToneAdaptiveAutoOptions, ToneAdaptiveOptions, VarianceAdaptiveOptions, Vec2, XDoGConfig };

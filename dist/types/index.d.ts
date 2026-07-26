@@ -91,7 +91,7 @@ export * as preprocess from './preprocess/index.js';
 export type { LocalVarianceConfig, BackendOptions } from './preprocess/index.js';
 export type { ThresholdConfig, ThresholdStrategy } from './threshold.js';
 export * as threshold from './threshold.js';
-export type { BlurStrategy, LocalBaselineEpsilonOptions, ToneAdaptiveEpsilonAutoOptions, ToneAdaptiveEpsilonOptions, Vec2, ChannelImage, RGBImage, FlowField, ETFConfig, BilateralFilterConfig, GradientAlignedBlurConfig, MedianFilterConfig, KuwaharaFilterConfig, Preprocessor } from './interfaces/base.js';
+export type { BlurStrategy, LocalBaselineOptions, ToneAdaptiveAutoOptions, ToneAdaptiveOptions, MagnitudeAdaptiveOptions, VarianceAdaptiveOptions, Vec2, ChannelImage, RGBImage, FlowField, ETFConfig, BilateralFilterConfig, GradientAlignedBlurConfig, MedianFilterConfig, KuwaharaFilterConfig, Preprocessor } from './interfaces/base.js';
 export { DEFAULT_ETF_CONFIG } from './interfaces/base.js';
 export * as utilities from './utils/index.js';
 export * as extensions from './extensions/index.js';
