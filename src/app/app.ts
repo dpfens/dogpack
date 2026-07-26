@@ -242,7 +242,7 @@ export class AppComponent implements OnInit {
         },
         {
           "question": "What's the difference between a \"DoG \" node and a \"layer\" node?",
-          "answer": "A config node (DogConfigNode) is an XDoG, FDoG, ADoG, or HDoG configuration with its parameters. A layer node is a container that groups multiple nodes (configs or other layers) together with a name and a blend mode, so you can nest arbitrarily (e.g., a layer blending two sub-layers, each of which blends two configs)."
+          "answer": "A DoG node is a single XDoG/FDoG/ADoG/HDoG config, the smallest building block. A layer is a container that groups multiple nodes (configs or other layers) under a name and blend mode. Since layers can hold other layers, you can nest arbitrarily, for example a layer blending two sub-layers, each blending two configs."
         },
         {
           "question": "Why would I nest layers instead of just adding more configs to one layer?",
