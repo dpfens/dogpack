@@ -97,15 +97,27 @@ export async function localBaselineEstimate(
   input: ChannelImage,
   options: LocalBaselineEpsilonOptions
 ): Promise<ChannelImage> {
-  const { sigma, offset = 0 } = options;
+  const { sigma, offset = 0, contrastMargin = 0 } = options;
   const blurStrategy = options.blurStrategy ?? (await IsotropicBlur.create({ kernelSizeMultiplier: 4 }));
   const ownsBlurStrategy = !options.blurStrategy;
 
   try {
     const baseline = await blurStrategy.blur(input, sigma);
     const epsilon = createChannelImage(input.width, input.height);
-    for (let i = 0; i < epsilon.data.length; i++) {
-      epsilon.data[i] = baseline.data[i] + offset;
+
+    if (contrastMargin > 0) {
+      const squared = createChannelImage(input.width, input.height);
+      for (let i = 0; i < input.data.length; i++) squared.data[i] = input.data[i] * input.data[i];
+      const meanSquared = await blurStrategy.blur(squared, sigma);
+
+      for (let i = 0; i < epsilon.data.length; i++) {
+        const variance = Math.max(0, meanSquared.data[i] - baseline.data[i] ** 2);
+        epsilon.data[i] = baseline.data[i] + offset + contrastMargin * Math.sqrt(variance);
+      }
+    } else {
+      for (let i = 0; i < epsilon.data.length; i++) {
+        epsilon.data[i] = baseline.data[i] + offset;
+      }
     }
     return epsilon;
   } finally {
