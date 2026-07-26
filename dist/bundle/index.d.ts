@@ -311,6 +311,22 @@ interface LocalBaselineEpsilonOptions {
      * Default: 0
      */
     offset?: number;
+    /**
+     * Multiplier on local response variability (stddev of the input, at the
+     * same `sigma`), added on top of `baseline + offset`. Suppresses fine
+     * texture/noise while leaving strong edges alone, by scaling the required
+     * deviation from baseline to local variance instead of applying the same
+     * flat margin everywhere.
+     *
+     * Range: 0.25-1.5 recommended. Hard min 0 (negative values loosen the
+     * threshold where variance is highest, the opposite of the intent). Hard
+     * max ~5 (soft ceiling -- beyond this the added margin typically exceeds
+     * the sharpened response's dynamic range and starts crushing genuine
+     * edges to black, not just texture; exact point depends on `sigma`/`p`).
+     *
+     * Default: 0 (original behavior -- no contrast-based suppression)
+     */
+    contrastMargin?: number;
     blurStrategy?: BlurStrategy;
 }
 
