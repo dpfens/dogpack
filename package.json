@@ -19,7 +19,7 @@
     "@angular/router": "^22.0.0",
     "@popperjs/core": "^2.11.8",
     "bootstrap": "^5.3.8",
-    "dogpack": "git+https://github.com/dpfens/dogpack.git#v0.1.2",
+    "dogpack": "git+https://github.com/dpfens/dogpack.git#v0.1.3",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0"
   },

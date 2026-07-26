@@ -42,6 +42,12 @@ type DogFormControls = {
   highOffset: FormControl<number>;
   lowOffset: FormControl<number>;
   contrastMargin: FormControl<number>;
+  pWeak: FormControl<number>;
+  pStrong: FormControl<number>;
+  pSmoothingSigma: FormControl<number>;
+  phiSoft: FormControl<number>;
+  phiHard: FormControl<number>;
+  phiSigma: FormControl<number>;
 };
 
 @Component({
@@ -55,6 +61,8 @@ export class DogComponent {
   ranges = input.required<Record<DogConfigParamType, ParamRange>>();
 
   allowAutoEpsilon = input<boolean>(true);
+  allowAutoP = input<boolean>(true);
+  allowAutoPhi = input<boolean>(true);
   preset = input<Partial<WireDoGConfig> | null>(null);
   sourceChannel = this.dog.workingImage;
   configChange = output<WireDoGConfig>();
@@ -70,12 +78,30 @@ export class DogComponent {
   isHysteresis = computed(() => this.strategyValue() === 'Hysteresis');
 
   epsilonAuto = signal(false);
+  pAuto = signal(false);
+  phiAuto = signal(false);
 
   /** Last computed auto-epsilon map (null until computed / when manual). */
   private epsilonPreview = signal<ChannelImage | null>(null);
   epsilonPreviewStatus = signal<ImageStatus>('idle');
   epsilonPreviewImageData = computed(() => {
     const img = this.epsilonPreview();
+    return img ? luminanceToImageData(img) : null;
+  });
+
+  /** Last computed auto-p map (null until computed / when manual). */
+  private pPreview = signal<ChannelImage | null>(null);
+  pPreviewStatus = signal<ImageStatus>('idle');
+  pPreviewImageData = computed(() => {
+    const img = this.pPreview();
+    return img ? luminanceToImageData(img) : null;
+  });
+
+  /** Last computed auto-phi map (null until computed / when manual). */
+  private phiPreview = signal<ChannelImage | null>(null);
+  phiPreviewStatus = signal<ImageStatus>('idle');
+  phiPreviewImageData = computed(() => {
+    const img = this.phiPreview();
     return img ? luminanceToImageData(img) : null;
   });
 
@@ -102,6 +128,24 @@ export class DogComponent {
     return this.CONTRAST_MARGIN_HINT;
   }
 
+  /** Same rationale as contrastMarginHint(): no ParamRange backs this control. */
+  private readonly P_SMOOTHING_SIGMA_HINT =
+    'Blurs the raw gradient magnitude before normalizing, so p tracks real edge structure instead ' +
+    'of single-pixel noise. 0 disables smoothing and uses the raw magnitude.';
+
+  pSmoothingSigmaHint(): string {
+    return this.P_SMOOTHING_SIGMA_HINT;
+  }
+
+  /** Same rationale as contrastMarginHint(): no ParamRange backs this control. */
+  private readonly PHI_SIGMA_HINT =
+    'Neighborhood size for the local-variance read that drives phi -- larger values look at a ' +
+    'wider area to decide whether a region already has detail worth a harder threshold.';
+
+  phiSigmaHint(): string {
+    return this.PHI_SIGMA_HINT;
+  }
+
   constructor() {
     this.form.controls.strategyKey.valueChanges.subscribe((v) =>
       this.strategyValue.set(v)
@@ -119,6 +163,28 @@ export class DogComponent {
       ]);
       c.updateValueAndValidity({ emitEvent: false });
     }
+
+    // pWeak/pStrong are just the endpoints of the same underlying p
+    // quantity, so they share its range's bounds.
+    for (const c of [this.form.controls.pWeak, this.form.controls.pStrong]) {
+      c.setValidators([
+        Validators.required,
+        Validators.min(r.p.hardMin),
+        Validators.max(r.p.hardMax),
+      ]);
+      c.updateValueAndValidity({ emitEvent: false });
+    }
+
+    // phiHard shares phi's full range -- it's meant to reach genuinely
+    // steep, near-binary thresholds. phiSoft does NOT: it gets its own
+    // (much narrower) static bounds in buildForm(), see the comment
+    // there for the derivation.
+    this.form.controls.phiHard.setValidators([
+      Validators.required,
+      Validators.min(r.phi.hardMin),
+      Validators.max(r.phi.hardMax),
+    ]);
+    this.form.controls.phiHard.updateValueAndValidity({ emitEvent: false });
   });
 
   __epsilon_auto_sync__ = effect(() => {
@@ -134,6 +200,50 @@ export class DogComponent {
         this.form.controls.contrastMargin.disable({ emitEvent: false });
         this.epsilonPreview.set(null);
         this.epsilonPreviewStatus.set('idle');
+        this.emitIfValid();
+      }
+    });
+  });
+
+  __p_auto_sync__ = effect(() => {
+    const auto = this.pAuto();
+    const src = this.sourceChannel();
+    untracked(() => {
+      if (auto) {
+        this.form.controls.p.disable({ emitEvent: false });
+        this.form.controls.pWeak.enable({ emitEvent: false });
+        this.form.controls.pStrong.enable({ emitEvent: false });
+        this.form.controls.pSmoothingSigma.enable({ emitEvent: false });
+        this.recomputePAutoIfNeeded();
+      } else {
+        this.form.controls.p.enable({ emitEvent: false });
+        this.form.controls.pWeak.disable({ emitEvent: false });
+        this.form.controls.pStrong.disable({ emitEvent: false });
+        this.form.controls.pSmoothingSigma.disable({ emitEvent: false });
+        this.pPreview.set(null);
+        this.pPreviewStatus.set('idle');
+        this.emitIfValid();
+      }
+    });
+  });
+
+  __phi_auto_sync__ = effect(() => {
+    const auto = this.phiAuto();
+    const src = this.sourceChannel();
+    untracked(() => {
+      if (auto) {
+        this.form.controls.phi.disable({ emitEvent: false });
+        this.form.controls.phiSoft.enable({ emitEvent: false });
+        this.form.controls.phiHard.enable({ emitEvent: false });
+        this.form.controls.phiSigma.enable({ emitEvent: false });
+        this.recomputePhiAutoIfNeeded();
+      } else {
+        this.form.controls.phi.enable({ emitEvent: false });
+        this.form.controls.phiSoft.disable({ emitEvent: false });
+        this.form.controls.phiHard.disable({ emitEvent: false });
+        this.form.controls.phiSigma.disable({ emitEvent: false });
+        this.phiPreview.set(null);
+        this.phiPreviewStatus.set('idle');
         this.emitIfValid();
       }
     });
@@ -180,6 +290,29 @@ export class DogComponent {
         nonNullable: true,
         validators: [Validators.required, Validators.min(0), Validators.max(5)],
       }),
+      pWeak: num(5),
+      pStrong: num(40),
+      pSmoothingSigma: new FormControl<number>(1, {
+        nonNullable: true,
+        validators: [Validators.required, Validators.min(0), Validators.max(20)],
+      }),
+      // phiSoft's useful range is much narrower than phi's full range:
+      // the soft threshold is 1 + tanh(phi * (u - epsilon)), u/epsilon
+      // are both normalized to [0,1] so |u - epsilon| <= 1, and tanh
+      // saturates (>99.5%) past |z| = 3. So phi = 3 already saturates
+      // even the most extreme pixel deviation -- there's no more "soft"
+      // behavior to dial in above that. 5 gives headroom off that edge;
+      // 10 is a hard cap for manual override, well past the point where
+      // anything changes visually.
+      phiSoft: new FormControl<number>(0.01, {
+        nonNullable: true,
+        validators: [Validators.required, Validators.min(0), Validators.max(10)],
+      }),
+      phiHard: num(50),
+      phiSigma: new FormControl<number>(3, {
+        nonNullable: true,
+        validators: [Validators.required, Validators.min(0.1), Validators.max(50)],
+      }),
     });
   }
 
@@ -214,6 +347,14 @@ export class DogComponent {
     this.epsilonAuto.set(checked);
   }
 
+  onPAutoToggle(checked: boolean): void {
+    this.pAuto.set(checked);
+  }
+
+  onPhiAutoToggle(checked: boolean): void {
+    this.phiAuto.set(checked);
+  }
+
   /**
    * Builds a wire-safe descriptor, NOT a live ThresholdStrategy instance --
    * this crosses to the worker eventually via configChange -> the parent's
@@ -238,15 +379,19 @@ export class DogComponent {
    * offset field is blurred, or the threshold strategy is changed.
    * Applies the config immediately -- there's no separate Apply step.
    *
-   * If epsilon is in auto mode, sigma is the only committed value that
-   * could have changed the estimate (k/p/phi/threshold don't feed
-   * localBaselineEstimate), so this also re-triggers it. Recomputing on
-   * every commit rather than on every live drag tick keeps a full-image
-   * blur off the hot path while still tracking sigma tightly enough.
+   * Each auto-estimate (epsilon/p/phi) is only recomputed if it's
+   * currently in auto mode -- recomputeXAutoIfNeeded() no-ops otherwise --
+   * and only depends on that parameter's own inputs (epsilon: sigma +
+   * contrastMargin; p: pWeak/pStrong/pSmoothingSigma; phi:
+   * phiSoft/phiHard/phiSigma), so calling all three here is cheap and
+   * keeps a full-image recompute off the hot path while still tracking
+   * every committed change.
    */
   onCommit(): void {
     this.emitIfValid();
     this.recomputeEpsilonAutoIfNeeded();
+    this.recomputePAutoIfNeeded();
+    this.recomputePhiAutoIfNeeded();
   }
 
   private epsilonComputeToken = 0;
@@ -280,17 +425,83 @@ export class DogComponent {
       });
   }
 
+  private pComputeToken = 0;
+
+  private recomputePAutoIfNeeded(): void {
+    if (!this.pAuto()) return;
+
+    const src = this.sourceChannel();
+    if (!src) {
+      this.pPreview.set(null);
+      this.pPreviewStatus.set('idle');
+      return;
+    }
+
+    const pWeak = this.form.controls.pWeak.value;
+    const pStrong = this.form.controls.pStrong.value;
+    const smoothingSigma = this.form.controls.pSmoothingSigma.value;
+    const token = ++this.pComputeToken;
+    this.pPreviewStatus.set('loading');
+
+    parameterEstimation.p.magnitudeAdaptiveEstimate(src, { pWeak, pStrong, smoothingSigma })
+      .then((result) => {
+        if (token !== this.pComputeToken) return;
+        this.pPreview.set(result);
+        this.pPreviewStatus.set('ready');
+        this.emitIfValid();
+      })
+      .catch(() => {
+        if (token !== this.pComputeToken) return;
+        this.pPreview.set(null);
+        this.pPreviewStatus.set('error');
+      });
+  }
+
+  private phiComputeToken = 0;
+
+  private recomputePhiAutoIfNeeded(): void {
+    if (!this.phiAuto()) return;
+
+    const src = this.sourceChannel();
+    if (!src) {
+      this.phiPreview.set(null);
+      this.phiPreviewStatus.set('idle');
+      return;
+    }
+
+    const sigma = this.form.controls.phiSigma.value;
+    const phiSoft = this.form.controls.phiSoft.value;
+    const phiHard = this.form.controls.phiHard.value;
+    const token = ++this.phiComputeToken;
+    this.phiPreviewStatus.set('loading');
+
+    parameterEstimation.phi.varianceAdaptiveEstimate(src, { sigma, phiSoft, phiHard })
+      .then((result) => {
+        if (token !== this.phiComputeToken) return;
+        this.phiPreview.set(result);
+        this.phiPreviewStatus.set('ready');
+        this.emitIfValid();
+      })
+      .catch(() => {
+        if (token !== this.phiComputeToken) return;
+        this.phiPreview.set(null);
+        this.phiPreviewStatus.set('error');
+      });
+  }
+
   private emitIfValid(): void {
     if (this.form.invalid) return;
     if (this.epsilonAuto() && !this.epsilonPreview()) return;
+    if (this.pAuto() && !this.pPreview()) return;
+    if (this.phiAuto() && !this.phiPreview()) return;
 
     const v = this.form.getRawValue();
     this.configChange.emit({
       sigma: v.sigma,
       k: v.k,
-      p: v.p,
+      p: this.pAuto() ? this.pPreview()! : v.p,
       epsilon: this.epsilonAuto() ? this.epsilonPreview()! : v.epsilon,
-      phi: v.phi,
+      phi: this.phiAuto() ? this.phiPreview()! : v.phi,
       thresholdStrategy: this.buildThresholdStrategyDescriptor(this.form),
     });
   }

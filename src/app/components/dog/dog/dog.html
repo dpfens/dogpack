@@ -29,16 +29,86 @@
     </div>
 
     <div class="mb-3">
-      <label class="form-label">p (sharpening strength)</label>
-      <param-slider
-        [sliderMin]="recMin('p')"
-        [sliderMax]="recMax('p')"
-        [hardMin]="ranges().p.hardMin"
-        [hardMax]="ranges().p.hardMax"
-        [step]="ranges().p.step"
-        [formControl]="form.controls.p"
-        (committed)="onCommit()" />
-      <div class="form-text">{{ hint('p') }}</div>
+      <label class="form-label d-flex align-items-center justify-content-between">
+        <span>p (sharpening strength)</span>
+        @if(allowAutoP()) {
+          <span class="form-check form-switch mb-0">
+            <input
+              class="form-check-input"
+              type="checkbox"
+              role="switch"
+              id="pAutoToggle"
+              [checked]="pAuto()"
+              (change)="onPAutoToggle($any($event.target).checked)" />
+            <label class="form-check-label small" for="pAutoToggle">Vary across image</label>
+          </span>
+        }
+      </label>
+
+      @if (!pAuto()) {
+        <param-slider
+          [sliderMin]="recMin('p')"
+          [sliderMax]="recMax('p')"
+          [hardMin]="ranges().p.hardMin"
+          [hardMax]="ranges().p.hardMax"
+          [step]="ranges().p.step"
+          [formControl]="form.controls.p"
+          (committed)="onCommit()" />
+        <div class="form-text">{{ hint('p') }}</div>
+      } @else {
+        <div class="mt-1">
+          @if (!sourceChannel()) {
+            <div class="form-text text-warning">Load an image to compute the estimate.</div>
+          } @else {
+            <div class="mb-2">
+              <label class="form-label small mb-1">p in weak/flat regions</label>
+              <param-slider
+                [sliderMin]="recMin('p')"
+                [sliderMax]="recMax('p')"
+                [hardMin]="ranges().p.hardMin"
+                [hardMax]="ranges().p.hardMax"
+                [step]="ranges().p.step"
+                [formControl]="form.controls.pWeak"
+                (committed)="onCommit()" />
+            </div>
+            <div class="mb-2">
+              <label class="form-label small mb-1">p in strong-edge regions</label>
+              <param-slider
+                [sliderMin]="recMin('p')"
+                [sliderMax]="recMax('p')"
+                [hardMin]="ranges().p.hardMin"
+                [hardMax]="ranges().p.hardMax"
+                [step]="ranges().p.step"
+                [formControl]="form.controls.pStrong"
+                (committed)="onCommit()" />
+              <div class="form-text">{{ hint('p') }}</div>
+            </div>
+            <div class="mb-2">
+              <label class="form-label small mb-1">Magnitude smoothing sigma</label>
+              <param-slider
+                [sliderMin]="0"
+                [sliderMax]="5"
+                [hardMin]="0"
+                [hardMax]="20"
+                [step]="0.1"
+                [formControl]="form.controls.pSmoothingSigma"
+                (committed)="onCommit()" />
+              <div class="form-text">{{ pSmoothingSigmaHint() }}</div>
+            </div>
+            <div style="height: 160px;">
+              <app-image-canvas
+                [imageData]="pPreviewImageData()"
+                [status]="pPreviewStatus()"
+                [zoomEnabled]="true"
+                [downloadEnabled]="false"
+                fit="contain" />
+            </div>
+            <div class="form-text">
+              Gradient-magnitude p estimate, recomputed on commit.
+            </div>
+          }
+        </div>
+      }
     </div>
 
     <div class="mb-3">
@@ -53,7 +123,7 @@
               id="epsilonAutoToggle"
               [checked]="epsilonAuto()"
               (change)="onEpsilonAutoToggle($any($event.target).checked)" />
-            <label class="form-check-label small" for="epsilonAutoToggle">Estimate from image</label>
+            <label class="form-check-label small" for="epsilonAutoToggle">Vary across image</label>
           </span>
         }
       </label>
@@ -102,16 +172,91 @@
     </div>
 
     <div class="mb-3">
-      <label class="form-label">phi (threshold sharpness)</label>
-      <param-slider
-        [sliderMin]="recMin('phi')"
-        [sliderMax]="recMax('phi')"
-        [hardMin]="ranges().phi.hardMin"
-        [hardMax]="ranges().phi.hardMax"
-        [step]="ranges().phi.step"
-        [formControl]="form.controls.phi"
-        (committed)="onCommit()" />
-      <div class="form-text">{{ hint('phi') }}</div>
+      <label class="form-label d-flex align-items-center justify-content-between">
+        <span>phi (threshold sharpness)</span>
+        @if(allowAutoPhi()) {
+          <span class="form-check form-switch mb-0">
+            <input
+              class="form-check-input"
+              type="checkbox"
+              role="switch"
+              id="phiAutoToggle"
+              [checked]="phiAuto()"
+              (change)="onPhiAutoToggle($any($event.target).checked)" />
+            <label class="form-check-label small" for="phiAutoToggle">Vary across image</label>
+          </span>
+        }
+      </label>
+
+      @if (!phiAuto()) {
+        <param-slider
+          [sliderMin]="recMin('phi')"
+          [sliderMax]="recMax('phi')"
+          [hardMin]="ranges().phi.hardMin"
+          [hardMax]="ranges().phi.hardMax"
+          [step]="ranges().phi.step"
+          [formControl]="form.controls.phi"
+          (committed)="onCommit()" />
+        <div class="form-text">{{ hint('phi') }}</div>
+      } @else {
+        <div class="mt-1">
+          @if (!sourceChannel()) {
+            <div class="form-text text-warning">Load an image to compute the estimate.</div>
+          } @else {
+            <div class="mb-2">
+              <label class="form-label small mb-1">phi in flat/textureless regions</label>
+              <param-slider
+                [sliderMin]="0"
+                [sliderMax]="5"
+                [hardMin]="0"
+                [hardMax]="10"
+                [step]="0.05"
+                [formControl]="form.controls.phiSoft"
+                (committed)="onCommit()" />
+              <div class="form-text">
+                tanh saturates by phi &asymp; 3 at the widest possible deviation from epsilon, so the
+                "soft" end of the range lives well below phi's full scale -- values above ~5 look
+                indistinguishable from a hard threshold here.
+              </div>
+            </div>
+            <div class="mb-2">
+              <label class="form-label small mb-1">phi in already-detailed regions</label>
+              <param-slider
+                [sliderMin]="recMin('phi')"
+                [sliderMax]="recMax('phi')"
+                [hardMin]="ranges().phi.hardMin"
+                [hardMax]="ranges().phi.hardMax"
+                [step]="ranges().phi.step"
+                [formControl]="form.controls.phiHard"
+                (committed)="onCommit()" />
+              <div class="form-text">{{ hint('phi') }}</div>
+            </div>
+            <div class="mb-2">
+              <label class="form-label small mb-1">Variance neighborhood sigma</label>
+              <param-slider
+                [sliderMin]="0.5"
+                [sliderMax]="10"
+                [hardMin]="0.1"
+                [hardMax]="50"
+                [step]="0.1"
+                [formControl]="form.controls.phiSigma"
+                (committed)="onCommit()" />
+              <div class="form-text">{{ phiSigmaHint() }}</div>
+            </div>
+            <div style="height: 160px;">
+              <app-image-canvas
+                [imageData]="phiPreviewImageData()"
+                [status]="phiPreviewStatus()"
+                [zoomEnabled]="true"
+                [downloadEnabled]="false"
+                fit="contain" />
+            </div>
+            <div class="form-text">
+              Local-variance phi estimate, recomputed on commit.
+            </div>
+          }
+        </div>
+      }
     </div>
 
     <div class="mb-3">
