@@ -18,11 +18,11 @@
  * gradient of a multi-image", CVGIP 33, 1986), matching the CPU backend:
  * per-channel structure tensors are summed (not the resulting tangents),
  * and a single eigendecomposition is performed on the combined tensor.
- * On the GPU this means: for each input channel, run the gradient +
- * structure-tensor passes and *accumulate* (read-modify-write add) into
- * one shared tensor buffer, rather than overwriting it — see
- * STRUCTURE_TENSOR_ACCUMULATE_SHADER. Everything from the Gaussian blur
- * pass onward is unchanged regardless of channel count, so compute() is
+ * On the GPU this means: for each input channel, run the fused
+ * gradient/structure-tensor pass and *accumulate* (read-modify-write add)
+ * into one shared tensor buffer, rather than overwriting it — see
+ * GRADIENT_STRUCTURE_TENSOR_SHADER. Everything from the Gaussian blur pass
+ * onward is unchanged regardless of channel count, so compute() is
  * implemented as computeMultiChannel() called with a single-element array.
  *
  * This module has no knowledge of color spaces — it only ever sees
@@ -38,8 +38,8 @@
  * tiling.
  *
  * computeInternal() splits the image into horizontal row bands and runs
- * the full pipeline (gradient -> tensor accumulate -> finalize -> blur ->
- * extract -> refine) once per band, on band-sized buffers, instead of
+ * the full pipeline (gradient+tensor-accumulate (fused) -> blur -> extract
+ * -> refine) once per band, on band-sized buffers, instead of
  * allocating whole-image buffers. Peak GPU memory is therefore bounded by
  * a fixed, tunable budget (bandMemoryBudgetBytes) rather than by image
  * resolution — see planBandLayout() for the memory math and the
@@ -70,9 +70,7 @@ import {
 import { TangentFlowField } from './flow-field.js';
 import { BaseWebGPUStrategy } from '../base.js';
 import COMMON_WGSL_SOURCE from './shaders/webgpu/common.wgsl.js'
-import RAW_GRADIENT_SOURCE from './shaders/webgpu/gradient.wgsl.js'
-import RAW_STRUCTURE_TENSOR_ACCUMULATE_SOURCE from './shaders/webgpu/structure_tensor_accumulate.wgsl.js'
-import RAW_FINALIZE_MAGNITUDE_SOURCE from './shaders/webgpu/finalize_magnitude.wgsl.js'
+import RAW_GRADIENT_STRUCTURE_TENSOR_SOURCE from './shaders/webgpu/gradient_structure_tensor.wgsl.js'
 import RAW_GAUSSIAN_BLUR_SOURCE from './shaders/webgpu/gaussian_blur.wgsl.js'
 import RAW_GAUSSIAN_BLUR_TILED_SOURCE from './shaders/webgpu/gaussian_blur_tiled.wgsl.js'
 import RAW_TANGENT_EXTRACT_SOURCE from './shaders/webgpu/tangent_extract.wgsl.js'
@@ -145,13 +143,11 @@ const MIN_BAND_ROWS = 64;
  */
 interface WebGPUResources {
   device: GPUDevice;
-  gradientPipeline: GPUComputePipeline;
-  /** Accumulates a channel's structure tensor into a shared buffer
-   *  (Di Zenzo sum) rather than overwriting it — see shader source. */
-  structureTensorAccumulatePipeline: GPUComputePipeline;
-  /** Re-derives the magnitude field from the (possibly channel-summed)
-   *  tensor's trace, once, after all channels have been accumulated. */
-  finalizeMagnitudePipeline: GPUComputePipeline;
+  /** Fused Sobel-gradient + structure-tensor pass. Accumulates a
+   *  channel's structure tensor into a shared buffer (Di Zenzo sum)
+   *  rather than overwriting it — see shader source. Magnitude is derived
+   *  from the accumulated trace later, inside tangentExtractPipeline. */
+  gradientStructureTensorPipeline: GPUComputePipeline;
   blurHPipeline: GPUComputePipeline;
   blurVPipeline: GPUComputePipeline;
   /** Shared-memory-tiled variants, used when radius <= TILE_RADIUS_CAP. */
@@ -184,7 +180,6 @@ interface WebGPUResources {
 interface BandBufferSet {
   /** One scalar f32 buffer per input channel. */
   channelInputBufs: GPUBuffer[];
-  gradientScratchBuf: GPUBuffer;
   tensorAccumBuf: GPUBuffer;
   blurTempBuf: GPUBuffer;
   blurOutputBuf: GPUBuffer;
@@ -197,29 +192,24 @@ interface BandBufferSet {
 
 // ============== WGSL Shader Sources ==============
 
-const GRADIENT_SHADER = COMMON_WGSL_SOURCE + RAW_GRADIENT_SOURCE;
-
-// Computes one channel's structure tensor and *accumulates* it into
-// accumBuf (Di Zenzo multichannel summation) instead of overwriting it.
-// accumBuf must be zero before the first channel's pass each band — see
-// the encoder.clearBuffer() call in computeInternal(), which replaces the
-// "freshly-created buffers are zero" guarantee the single-shot version
-// used to rely on (band buffers are now allocated once and reused).
+// Computes one channel's Sobel gradient and *accumulates* its structure
+// tensor contribution into accumBuf (Di Zenzo multichannel summation)
+// instead of overwriting it — fused into a single pass since nothing
+// downstream ever consumes the raw gradient on its own (it used to be
+// materialized into its own full-image buffer purely so this pass could
+// read it back one dispatch later). accumBuf must be zero before the
+// first channel's pass each band — see the encoder.clearBuffer() call in
+// computeInternal(), which replaces the "freshly-created buffers are
+// zero" guarantee the single-shot version used to rely on (band buffers
+// are now allocated once and reused).
 //
 // .w (magnitude) is deliberately left untouched here. Summing each
 // channel's individual sqrt(e+g) would be wrong, since sqrt is nonlinear:
 // sum(sqrt(e_k + g_k)) != sqrt(sum(e_k) + sum(g_k)). Only the latter is
-// the Di Zenzo-consistent combined gradient magnitude, so it's computed
-// once from the final accumulated trace in FINALIZE_MAGNITUDE_SHADER
-// instead.
-const STRUCTURE_TENSOR_ACCUMULATE_SHADER = COMMON_WGSL_SOURCE + RAW_STRUCTURE_TENSOR_ACCUMULATE_SOURCE;
-
-// Runs once per band, after every channel's structure tensor has been
-// accumulated. Re-derives magnitude from the combined tensor's trace:
-// sqrt(E + G). For a single channel this equals sqrt(gx^2 + gy^2) ==
-// hypot(gx, gy), so compute() (a single-channel computeMultiChannel()
-// call) sees identical behavior to before this pass existed.
-const FINALIZE_MAGNITUDE_SHADER = COMMON_WGSL_SOURCE + RAW_FINALIZE_MAGNITUDE_SOURCE;
+// the Di Zenzo-consistent combined gradient magnitude, so it's derived
+// once from the final accumulated trace directly inside
+// TANGENT_EXTRACT_SHADER instead of a separate finalize pass.
+const GRADIENT_STRUCTURE_TENSOR_SHADER = COMMON_WGSL_SOURCE + RAW_GRADIENT_STRUCTURE_TENSOR_SOURCE;
 
 // Both blur directions live in the same module — WGSL allows multiple
 // @compute entry points per shader module, so this replaces the WebGL
@@ -394,9 +384,7 @@ export class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy implements
 
       const resources: WebGPUResources = {
         device,
-        gradientPipeline: makePipeline(GRADIENT_SHADER),
-        structureTensorAccumulatePipeline: makePipeline(STRUCTURE_TENSOR_ACCUMULATE_SHADER),
-        finalizeMagnitudePipeline: makePipeline(FINALIZE_MAGNITUDE_SHADER),
+        gradientStructureTensorPipeline: makePipeline(GRADIENT_STRUCTURE_TENSOR_SHADER),
         blurHPipeline,
         blurVPipeline,
         blurHTiledPipeline,
@@ -429,7 +417,7 @@ export class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy implements
    * Compute ETF from a single scalar channel using WebGPU compute shaders.
    * Implemented as computeMultiChannel() with a single-element array — the
    * per-channel accumulate pass degenerates to a plain assignment when
-   * there's only one channel (see STRUCTURE_TENSOR_ACCUMULATE_SHADER).
+   * there's only one channel (see GRADIENT_STRUCTURE_TENSOR_SHADER).
    */
   async compute(input: ChannelImage, config: Partial<ETFConfig> = {}, sigmaC?: number): Promise<FlowField> {
     return await this.computeInternal([input], config, sigmaC);
@@ -466,8 +454,8 @@ export class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy implements
    * Shared implementation behind compute() and computeMultiChannel().
    *
    * Splits the image into horizontal row bands and runs the full
-   * gradient -> tensor-accumulate -> finalize -> blur -> extract ->
-   * refine pipeline once per band, on two round-robin, reused,
+   * gradient+tensor-accumulate (fused) -> blur -> extract -> refine
+   * pipeline once per band, on two round-robin, reused,
    * band-sized buffer sets ("slots") — see the module-level doc comment
    * for why this bounds memory and how the double-buffering keeps the
    * GPU fed. Buffer allocation, band-size planning, and the halo math
@@ -594,57 +582,27 @@ export class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy implements
           // each band's per-channel accumulation loop.
           encoder.clearBuffer(bufs.tensorAccumBuf);
 
-          // Steps 1-2: per channel, gradient then accumulate into tensorAccumBuf.
+          // Step 1: per channel, fused gradient + structure-tensor-accumulate
+          // directly into tensorAccumBuf. (Magnitude is no longer finalized
+          // here as a separate pass — tangent_extract derives it from the
+          // accumulated trace once, after blurring.)
           for (let k = 0; k < channelCount; k++) {
-            {
-              const bindGroup = device.createBindGroup({
-                layout: res.gradientPipeline.getBindGroupLayout(0),
-                entries: [
-                  { binding: 0, resource: { buffer: params } },
-                  { binding: 1, resource: { buffer: bufs.channelInputBufs[k] } },
-                  { binding: 2, resource: { buffer: bufs.gradientScratchBuf } },
-                ],
-              });
-              const pass = encoder.beginComputePass();
-              pass.setPipeline(res.gradientPipeline);
-              pass.setBindGroup(0, bindGroup);
-              pass.dispatchWorkgroups(dispatchX, dispatchY);
-              pass.end();
-            }
-            {
-              const bindGroup = device.createBindGroup({
-                layout: res.structureTensorAccumulatePipeline.getBindGroupLayout(0),
-                entries: [
-                  { binding: 0, resource: { buffer: params } },
-                  { binding: 1, resource: { buffer: bufs.gradientScratchBuf } },
-                  { binding: 2, resource: { buffer: bufs.tensorAccumBuf } },
-                ],
-              });
-              const pass = encoder.beginComputePass();
-              pass.setPipeline(res.structureTensorAccumulatePipeline);
-              pass.setBindGroup(0, bindGroup);
-              pass.dispatchWorkgroups(dispatchX, dispatchY);
-              pass.end();
-            }
-          }
-
-          // Step 3: finalize magnitude from the combined trace.
-          {
             const bindGroup = device.createBindGroup({
-              layout: res.finalizeMagnitudePipeline.getBindGroupLayout(0),
+              layout: res.gradientStructureTensorPipeline.getBindGroupLayout(0),
               entries: [
                 { binding: 0, resource: { buffer: params } },
-                { binding: 1, resource: { buffer: bufs.tensorAccumBuf } },
+                { binding: 1, resource: { buffer: bufs.channelInputBufs[k] } },
+                { binding: 2, resource: { buffer: bufs.tensorAccumBuf } },
               ],
             });
             const pass = encoder.beginComputePass();
-            pass.setPipeline(res.finalizeMagnitudePipeline);
+            pass.setPipeline(res.gradientStructureTensorPipeline);
             pass.setBindGroup(0, bindGroup);
             pass.dispatchWorkgroups(dispatchX, dispatchY);
             pass.end();
           }
 
-          // Step 4: Gaussian blur the structure tensor (horizontal then vertical).
+          // Step 2: Gaussian blur the structure tensor (horizontal then vertical).
           {
             const useTiledBlur = radius <= TILE_RADIUS_CAP;
             const blurHPipe = useTiledBlur ? res.blurHTiledPipeline : res.blurHPipeline;
@@ -681,7 +639,7 @@ export class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy implements
             passV.end();
           }
 
-          // Step 5: extract initial tangent field.
+          // Step 3: extract initial tangent field.
           {
             const bindGroup = device.createBindGroup({
               layout: res.tangentExtractPipeline.getBindGroupLayout(0),
@@ -698,7 +656,7 @@ export class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy implements
             pass.end();
           }
 
-          // Step 6: refine tangent field iteratively (ping-pong between buffers).
+          // Step 4: refine tangent field iteratively (ping-pong between buffers).
           let readBuf = bufs.tangentBuf1;
           let writeBuf = bufs.tangentBuf2;
           for (let i = 0; i < cfg.iterations; i++) {
@@ -824,11 +782,13 @@ function generateGaussianKernel(sigma: number, size: number): Float32Array {
  * many bands that means for the image, given a per-slot memory budget.
  *
  * Every intermediate that scales with band height is a whole-band
- * vec4<f32> buffer (16 bytes/pixel): tensorAccum, gradientScratch,
- * blurTemp, blurOutput, tangentBuf1, tangentBuf2 (6 of them), plus one
- * scalar f32 input buffer per channel (4 bytes/pixel), plus one vec4
- * staging buffer for readback (16 bytes/pixel). `bandRows` is chosen so
- * that (bandRows + 2*halo) rows of all of those together fit under
+ * vec4<f32> buffer (16 bytes/pixel): tensorAccum, blurTemp, blurOutput,
+ * tangentBuf1, tangentBuf2 (5 of them — gradientScratch was folded into
+ * tensorAccum when the gradient and structure-tensor-accumulate passes
+ * were fused into one shader, so it no longer needs its own buffer),
+ * plus one scalar f32 input buffer per channel (4 bytes/pixel), plus one
+ * vec4 staging buffer for readback (16 bytes/pixel). `bandRows` is chosen
+ * so that (bandRows + 2*halo) rows of all of those together fit under
  * budgetBytes, floored at MIN_BAND_ROWS so a large halo can't produce a
  * degenerate (zero/negative) band — in that edge case the actual
  * footprint may exceed budgetBytes; see the thrown error below for the
@@ -842,7 +802,7 @@ function planBandLayout(
   limits: Pick<GPUSupportedLimits, 'maxStorageBufferBindingSize' | 'maxBufferSize'>,
   budgetBytes: number
 ): { bandRows: number; numBands: number } {
-  const bytesPerRow = width * (6 * 16 + channelCount * 4 + 16);
+  const bytesPerRow = width * (5 * 16 + channelCount * 4 + 16);
 
   let bandRows = Math.floor(budgetBytes / bytesPerRow) - 2 * halo;
   bandRows = Math.max(MIN_BAND_ROWS, bandRows);
@@ -888,7 +848,6 @@ function createBandBufferSet(
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
       })
     ),
-    gradientScratchBuf: createEmptyVec4Buffer(device, pixelCount),
     tensorAccumBuf: createEmptyVec4Buffer(device, pixelCount),
     blurTempBuf: createEmptyVec4Buffer(device, pixelCount),
     blurOutputBuf: createEmptyVec4Buffer(device, pixelCount),
@@ -903,7 +862,6 @@ function createBandBufferSet(
 
 function destroyBandBufferSet(set: BandBufferSet): void {
   for (const buf of set.channelInputBufs) buf.destroy();
-  set.gradientScratchBuf.destroy();
   set.tensorAccumBuf.destroy();
   set.blurTempBuf.destroy();
   set.blurOutputBuf.destroy();
