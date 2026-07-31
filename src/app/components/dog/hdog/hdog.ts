@@ -16,6 +16,7 @@ import { DogModelProvider, HDogConfig, HDogPresetConfig, WireHDoGConfig } from '
 import { DoGService } from '../../../services/dog/dog-service';
 import { HDOG_EXTRA_PARAM_HINTS, withRange } from '../../content/pipeline-help-content';
 import { ApplicationAnalyticsService } from '../../../services/analytics/application-analytics.service';
+import { presetFromLibrary } from '../../../utilities/dog';
 
 @Component({
   selector: 'hdog',
@@ -109,8 +110,9 @@ export class HDogComponent implements DogModelProvider<HDogConfig> {
   }
 
   selectPreset(name: string): void {
-    this.selectedPreset.set(HDOG_STYLE_PRESETS[name] ?? null);
-    if (name) this.analytics.trackDogPresetSelected('hdog', name);
+    const preset = HDOG_STYLE_PRESETS[name];
+    this.selectedPreset.set(preset ? presetFromLibrary<HDogPresetConfig>(preset) : null);
+    if (name) this.analytics.trackDogPresetSelected('xdog', name);
   }
 
   toModel(): HDogConfig {

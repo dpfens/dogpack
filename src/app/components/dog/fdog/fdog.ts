@@ -16,6 +16,7 @@ import { FDogConfig, FDogPreset, WireDoGConfig, WireFDoGConfig } from '../../../
 import { DogPreviewableComponent } from '../base';
 import { DogFocusLabel } from '../../../services/dog/dog-service';
 import { FDOG_EXTRA_PARAM_HINTS, withRange } from '../../content/pipeline-help-content';
+import { presetFromLibrary } from '../../../utilities/dog';
 
 @Component({
   selector: 'fdog',
@@ -177,7 +178,8 @@ export class FDogComponent extends DogPreviewableComponent<FDogConfig> {
   }
 
   selectPreset(name: string): void {
-    this.selectedPreset.set(FDOG_STYLE_PRESETS[name] ?? null);
+    const preset = FDOG_STYLE_PRESETS[name];
+    this.selectedPreset.set(preset ? presetFromLibrary<FDogPreset>(preset) : null);
     if (name) this.analytics.trackDogPresetSelected('fdog', name);
   }
 

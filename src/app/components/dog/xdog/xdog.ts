@@ -7,6 +7,7 @@ import { ParamSliderComponent } from "../../ui/param-slider-component/param-slid
 import { DogPreviewableComponent } from '../base';
 import { DogFocusLabel } from '../../../services/dog/dog-service';
 import { XDOG_EXTRA_PARAM_HINTS, BLUR_STRATEGY_HINTS, withRange } from '../../content/pipeline-help-content';
+import { presetFromLibrary } from '../../../utilities/dog';
 
 type BlurType = 'Isotropic';
 
@@ -89,7 +90,8 @@ export class XDogComponent extends DogPreviewableComponent<XDogConfig> {
   }
 
   selectPreset(name: string): void {
-    this.selectedPreset.set(STYLE_PRESETS[name] ?? null);
+    const preset = STYLE_PRESETS[name];
+    this.selectedPreset.set(preset ? presetFromLibrary<XDogPreset>(preset) : null);
     if (name) this.analytics.trackDogPresetSelected('xdog', name);
   }
 

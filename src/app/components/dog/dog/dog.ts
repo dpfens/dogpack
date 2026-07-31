@@ -499,9 +499,15 @@ export class DogComponent {
     this.configChange.emit({
       sigma: v.sigma,
       k: v.k,
-      p: this.pAuto() ? this.pPreview()! : v.p,
-      epsilon: this.epsilonAuto() ? this.epsilonPreview()! : v.epsilon,
-      phi: this.phiAuto() ? this.phiPreview()! : v.phi,
+      p: this.pAuto()
+        ? { mode: 'auto', weak: v.pWeak, strong: v.pStrong, smoothingSigma: v.pSmoothingSigma }
+        : v.p,
+      epsilon: this.epsilonAuto()
+        ? { mode: 'auto', sigma: v.sigma, contrastMargin: v.contrastMargin }
+        : v.epsilon,
+      phi: this.phiAuto()
+        ? { mode: 'auto', soft: v.phiSoft, hard: v.phiHard, sigma: v.phiSigma }
+        : v.phi,
       thresholdStrategy: this.buildThresholdStrategyDescriptor(this.form),
     });
   }

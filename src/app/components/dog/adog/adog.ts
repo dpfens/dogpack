@@ -14,6 +14,7 @@ import { WireDoGConfig, ADogConfig, ADogPreset, WireADoGConfig, ThresholdStrateg
 import { DogPreviewableComponent } from '../base';
 import { DogFocusLabel } from '../../../services/dog/dog-service';
 import { ADOG_EXTRA_PARAM_HINTS, withRange } from '../../content/pipeline-help-content';
+import { presetFromLibrary } from '../../../utilities/dog';
 
 type ThresholdType = 'Soft' | 'Hard';
 
@@ -100,7 +101,8 @@ export class ADogComponent extends DogPreviewableComponent<ADogConfig> {
   }
 
   selectPreset(name: string): void {
-    this.selectedPreset.set(ADOG_STYLE_PRESETS[name] ?? null);
+    const preset = ADOG_STYLE_PRESETS[name];
+    this.selectedPreset.set(preset ? presetFromLibrary<ADogPreset>(preset) : null);
     if (name) this.analytics.trackDogPresetSelected('adog', name);
   }
 

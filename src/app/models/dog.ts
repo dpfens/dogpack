@@ -19,23 +19,48 @@ export type ThresholdStrategyDescriptor =
 /** Replace the keys present in `Overrides` on `T`; leave everything else untouched. */
 type WithWireOverrides<T, Overrides> = Omit<T, keyof Overrides> & Overrides;
 
+export interface AutoP {
+  readonly mode: 'auto';
+  weak: number;
+  strong: number;
+  smoothingSigma: number;
+}
+export interface AutoEpsilon {
+  readonly mode: 'auto';
+  sigma: number;
+  contrastMargin: number;
+}
+export interface AutoPhi {
+  readonly mode: 'auto';
+  soft: number;
+  hard: number;
+  sigma: number;
+}
+
+
+type AutoDoGOverrides = {
+  thresholdStrategy: ThresholdStrategyDescriptor;
+  p: number | AutoP;
+  epsilon: number | AutoEpsilon;
+  phi: number | AutoPhi;
+};
+
+
 /**
  * Wire-safe version of the base DoGConfig that DogComponent emits. Every
  * XDoG/ADoG config ultimately spreads this in, so thresholdStrategy needs
  * fixing up here once, rather than at each derived Wire*Config.
  */
-export type WireDoGConfig = WithWireOverrides<DoGConfig, { thresholdStrategy: ThresholdStrategyDescriptor }>;
+export type WireDoGConfig = WithWireOverrides<DoGConfig, AutoDoGOverrides>;
 
 export type WireXDoGConfig = WithWireOverrides<
   XDoGConfig,
-  { blurStrategy?: BlurStrategyDescriptor; thresholdStrategy: ThresholdStrategyDescriptor }
+  AutoDoGOverrides & { blurStrategy?: BlurStrategyDescriptor }
 >;
-export type WireADoGConfig = WithWireOverrides<ADoGConfig, { thresholdStrategy: ThresholdStrategyDescriptor }>;
-// FDoGConfig also carries a live thresholdStrategy (FDoG's DoGProcessor
-// needs one, same as XDoG/ADoG) -- this was wrongly left as a plain alias
-// earlier. Only blurStrategy is genuinely FDoG-internal (ETF-derived,
-// never user-supplied), so that's the only field NOT overridden here.
-export type WireFDoGConfig = WithWireOverrides<FDoGConfig, { thresholdStrategy: ThresholdStrategyDescriptor }>;
+export type WireADoGConfig = WithWireOverrides<ADoGConfig, AutoDoGOverrides>;
+// (unchanged reasoning from before: FDoG's DoGProcessor also needs a live
+// thresholdStrategy/p/epsilon/phi, only blurStrategy is FDoG-internal)
+export type WireFDoGConfig = WithWireOverrides<FDoGConfig, AutoDoGOverrides>;
 
 export type WireHDoGConfig = WithWireOverrides<
   HDoGConfig,
@@ -80,7 +105,11 @@ export type DogNode = DogLayer | DogConfigNode;
  * optional extra) and down into DogComponent's Partial<DoGConfig> preset
  * input (which has it as an optional field that's fine to omit).
  */
-type PresetShape<T> = Partial<Omit<T, 'blurStrategy' | 'thresholdStrategy'>>;
+type PresetShape<T> = Partial<Omit<T, 'blurStrategy' | 'thresholdStrategy' | 'p' | 'epsilon' | 'phi'>> & {
+  p?: number;
+  epsilon?: number;
+  phi?: number;
+};
 export type XDogPreset = PresetShape<WireXDoGConfig>;
 export type ADogPreset = PresetShape<WireADoGConfig>;
 export type FDogPreset = PresetShape<WireFDoGConfig>;
@@ -111,7 +140,9 @@ export interface DogProcessingContext {
 
 export interface DogExecutionLeaf {
   readonly kind: "dog";
-  implementation: DoGImplementation;
+  /** Raw, unresolved config — construction is deferred to execute time,
+   *  once the leaf's actual input image is known (see dog.ts service). */
+  readonly implementation: DoGImplementation;
 }
 
 export type DogExecutionNode = DogExecutionLayer | DogExecutionLeaf;
