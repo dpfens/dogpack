@@ -410,7 +410,9 @@ export class WebGPUFlowGuidedBlur extends BaseWebGPUStrategy {
         const flowPipeline = device.createComputePipeline({
             layout: pipelineLayout,
             compute: {
-                module: device.createShaderModule({ code: FLOW_BLUR_SHADER_SOURCE_WEBGPU }),
+                module: device.createShaderModule({
+                    code: FLOW_BLUR_SHADER_SOURCE_WEBGPU,
+                }),
                 entryPoint: 'main',
             },
         });
@@ -532,10 +534,6 @@ export class WebGPUFlowGuidedBlur extends BaseWebGPUStrategy {
             this.currentKernelSize = kernelSize;
         }
         device.queue.writeBuffer(this.kernelBuffer, 0, new Float32Array(kernel));
-        // Per-call resources: input texture, params buffer, and the tile-sized
-        // output/readback buffers. Allocated fresh and destroyed in `finally`
-        // so concurrent blur() calls on this instance never share mutable
-        // per-call state (mirrors WebGPUGradientAlignedBlur in webgpu.ts).
         const inputTexture = device.createTexture({
             size: [width, height],
             format: 'r32float',

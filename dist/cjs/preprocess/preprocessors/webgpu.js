@@ -259,9 +259,6 @@ class GPUBilateralFilter extends base_js_1.BaseWebGPUStrategy {
                 pass.dispatchWorkgroups(workgroupCount(width), workgroupCount(rows));
                 pass.end();
                 device.queue.submit([encoder.finish()]);
-                // Wait for this chunk before queuing the next one, so the driver
-                // never has more than one chunk's worth of work pending at once.
-                await device.queue.onSubmittedWorkDone();
             }
             const resultData = await readFloat32Buffer(device, outputBuffer, width * height);
             uniformBuffer.destroy();

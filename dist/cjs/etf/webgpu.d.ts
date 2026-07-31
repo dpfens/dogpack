@@ -18,11 +18,11 @@
  * gradient of a multi-image", CVGIP 33, 1986), matching the CPU backend:
  * per-channel structure tensors are summed (not the resulting tangents),
  * and a single eigendecomposition is performed on the combined tensor.
- * On the GPU this means: for each input channel, run the gradient +
- * structure-tensor passes and *accumulate* (read-modify-write add) into
- * one shared tensor buffer, rather than overwriting it — see
- * STRUCTURE_TENSOR_ACCUMULATE_SHADER. Everything from the Gaussian blur
- * pass onward is unchanged regardless of channel count, so compute() is
+ * On the GPU this means: for each input channel, run the fused
+ * gradient/structure-tensor pass and *accumulate* (read-modify-write add)
+ * into one shared tensor buffer, rather than overwriting it — see
+ * GRADIENT_STRUCTURE_TENSOR_SHADER. Everything from the Gaussian blur pass
+ * onward is unchanged regardless of channel count, so compute() is
  * implemented as computeMultiChannel() called with a single-element array.
  *
  * This module has no knowledge of color spaces — it only ever sees
@@ -38,8 +38,8 @@
  * tiling.
  *
  * computeInternal() splits the image into horizontal row bands and runs
- * the full pipeline (gradient -> tensor accumulate -> finalize -> blur ->
- * extract -> refine) once per band, on band-sized buffers, instead of
+ * the full pipeline (gradient+tensor-accumulate (fused) -> blur -> extract
+ * -> refine) once per band, on band-sized buffers, instead of
  * allocating whole-image buffers. Peak GPU memory is therefore bounded by
  * a fixed, tunable budget (bandMemoryBudgetBytes) rather than by image
  * resolution — see planBandLayout() for the memory math and the
@@ -103,7 +103,7 @@ export declare class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy im
      * Compute ETF from a single scalar channel using WebGPU compute shaders.
      * Implemented as computeMultiChannel() with a single-element array — the
      * per-channel accumulate pass degenerates to a plain assignment when
-     * there's only one channel (see STRUCTURE_TENSOR_ACCUMULATE_SHADER).
+     * there's only one channel (see GRADIENT_STRUCTURE_TENSOR_SHADER).
      */
     compute(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
     /**
@@ -125,8 +125,8 @@ export declare class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy im
      * Shared implementation behind compute() and computeMultiChannel().
      *
      * Splits the image into horizontal row bands and runs the full
-     * gradient -> tensor-accumulate -> finalize -> blur -> extract ->
-     * refine pipeline once per band, on two round-robin, reused,
+     * gradient+tensor-accumulate (fused) -> blur -> extract -> refine
+     * pipeline once per band, on two round-robin, reused,
      * band-sized buffer sets ("slots") — see the module-level doc comment
      * for why this bounds memory and how the double-buffering keeps the
      * GPU fed. Buffer allocation, band-size planning, and the halo math

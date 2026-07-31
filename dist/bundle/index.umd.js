@@ -1238,7 +1238,7 @@
     // AUTO-GENERATED FILE — DO NOT EDIT.
     // Source: shaders/vertex-shader.wgsl
     // Regenerate with `npm run build:shaders`.
-    const source$F = `/**
+    const source$D = `/**
  * Vertex shader for WebGL2 - simple fullscreen quad
  */
 #version 300 es
@@ -1255,7 +1255,7 @@ void main() {
     // AUTO-GENERATED FILE — DO NOT EDIT.
     // Source: blur/shaders/isotropic/webgl-horizontal-blur.glsl
     // Regenerate with `npm run build:shaders`.
-    const source$E = `/**
+    const source$C = `/**
  * Fragment shader for horizontal Gaussian blur pass (WebGL2)
  */
 #version 300 es
@@ -1288,7 +1288,7 @@ void main() {
     // AUTO-GENERATED FILE — DO NOT EDIT.
     // Source: blur/shaders/isotropic/webgl-vertical-blur.glsl
     // Regenerate with `npm run build:shaders`.
-    const source$D = `/**
+    const source$B = `/**
  * Fragment shader for vertical Gaussian blur pass (WebGL2)
  */
 #version 300 es
@@ -1321,7 +1321,7 @@ void main() {
     // AUTO-GENERATED FILE — DO NOT EDIT.
     // Source: blur/shaders/isotropic/webgpu-horizontal-blur.wgsl
     // Regenerate with `npm run build:shaders`.
-    const source$C = `struct Params {
+    const source$A = `struct Params {
   width: u32,
   height: u32,
   kernelSize: u32,
@@ -1365,7 +1365,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // AUTO-GENERATED FILE — DO NOT EDIT.
     // Source: blur/shaders/isotropic/webgpu-vertical-blur.wgsl
     // Regenerate with `npm run build:shaders`.
-    const source$B = `struct Params {
+    const source$z = `struct Params {
   width: u32,
   height: u32,
   kernelSize: u32,
@@ -1564,8 +1564,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             const texCoordBuffer = gl.createBuffer();
             gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
             gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW);
-            const horizontalBlurProgram = createProgram$4(gl, source$F, source$E);
-            const verticalBlurProgram = createProgram$4(gl, source$F, source$D);
+            const horizontalBlurProgram = createProgram$4(gl, source$D, source$C);
+            const verticalBlurProgram = createProgram$4(gl, source$D, source$B);
             this.resources = {
                 gl,
                 canvas,
@@ -1725,14 +1725,14 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             const horizontalPipeline = device.createComputePipeline({
                 layout: pipelineLayout,
                 compute: {
-                    module: device.createShaderModule({ code: source$C }),
+                    module: device.createShaderModule({ code: source$A }),
                     entryPoint: 'main',
                 },
             });
             const verticalPipeline = device.createComputePipeline({
                 layout: pipelineLayout,
                 compute: {
-                    module: device.createShaderModule({ code: source$B }),
+                    module: device.createShaderModule({ code: source$z }),
                     entryPoint: 'main',
                 },
             });
@@ -2237,7 +2237,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // AUTO-GENERATED FILE — DO NOT EDIT.
     // Source: etf/shaders/webgpu/common.wgsl
     // Regenerate with `npm run build:shaders`.
-    const source$A = `// common.wgsl
+    const source$y = `// common.wgsl
 // Pipeline-overridable — real value supplied via
 // GPUComputePipelineDescriptor.compute.constants (see makePipeline() in
 // webgpu.ts). Declared once here since it's shared by every shader module.
@@ -2257,11 +2257,34 @@ fn clampIdx(x: i32, y: i32, w: i32, h: i32) -> u32 {
 }`;
 
     // AUTO-GENERATED FILE — DO NOT EDIT.
-    // Source: etf/shaders/webgpu/gradient.wgsl
+    // Source: etf/shaders/webgpu/gradient_structure_tensor.wgsl
     // Regenerate with `npm run build:shaders`.
-    const source$z = `@group(0) @binding(0) var<uniform> params: Params;
+    const source$x = `// Fused Sobel gradient + structure-tensor accumulation.
+//
+// Replaces the old gradient.wgsl -> structure_tensor_accumulate.wgsl pair.
+// Nothing downstream ever consumed the raw gradient (gx, gy) on its own —
+// the only thing that read gradBuf was the tensor-accumulate pass, which
+// immediately squared/multiplied it away — so materializing it as a
+// separate full-image vec4<f32> buffer was a full extra write + read of
+// image-sized data (and a whole dispatch) for no benefit. This shader
+// computes the Sobel gradient and folds it directly into the running
+// structure-tensor sum in one pass.
+//
+// Still an *accumulate* (read-modify-write add), exactly like the old
+// structure_tensor_accumulate.wgsl: for Di Zenzo multichannel summation,
+// this is dispatched once per input channel with accumBuf zeroed first
+// (see encoder.clearBuffer() in webgpu.ts), and each channel's E/F/G is
+// summed in rather than overwriting.
+//
+// .w (magnitude) is deliberately left untouched here, for the same reason
+// as before: summing each channel's own sqrt(e+g) would be wrong since
+// sqrt is nonlinear. Magnitude is now derived directly from the final
+// accumulated trace inside tangent_extract.wgsl instead of a separate
+// finalize-magnitude pass.
+
+@group(0) @binding(0) var<uniform> params: Params;
 @group(0) @binding(1) var<storage, read> inputBuf: array<f32>;
-@group(0) @binding(2) var<storage, read_write> outputBuf: array<vec4<f32>>;
+@group(0) @binding(2) var<storage, read_write> accumBuf: array<vec4<f32>>;
 
 @compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -2284,59 +2307,15 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let gx = -p00 + p20 - 2.0 * p01 + 2.0 * p21 - p02 + p22;
   let gy = -p00 - 2.0 * p10 - p20 + p02 + 2.0 * p12 + p22;
 
-  // R=gx, G=gy — B/A unused downstream (magnitude is re-derived from the
-  // structure tensor's trace after channel accumulation, not carried
-  // through from here; see FINALIZE_MAGNITUDE_SHADER).
-  outputBuf[u32(y * w + x)] = vec4<f32>(gx, gy, 0.0, 1.0);
-}`;
-
-    // AUTO-GENERATED FILE — DO NOT EDIT.
-    // Source: etf/shaders/webgpu/structure_tensor_accumulate.wgsl
-    // Regenerate with `npm run build:shaders`.
-    const source$y = `@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> gradBuf: array<vec4<f32>>;
-@group(0) @binding(2) var<storage, read_write> accumBuf: array<vec4<f32>>;
-
-@compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let w = i32(params.width);
-  let h = i32(params.height);
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= w || y >= h) { return; }
-
-  let idx = u32(y * w + x);
-  let grad = gradBuf[idx];
-  let gx = grad.x;
-  let gy = grad.y;
-
   // Structure tensor: E=gx^2, F=gx*gy, G=gy^2
   let e = gx * gx;
   let f = gx * gy;
   let g = gy * gy;
 
-  accumBuf[idx] = accumBuf[idx] + vec4<f32>(e, f, g, 0.0);
-}`;
-
-    // AUTO-GENERATED FILE — DO NOT EDIT.
-    // Source: etf/shaders/webgpu/finalize_magnitude.wgsl
-    // Regenerate with `npm run build:shaders`.
-    const source$x = `@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read_write> tensorBuf: array<vec4<f32>>;
-
-@compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let w = i32(params.width);
-  let h = i32(params.height);
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= w || y >= h) { return; }
-
   let idx = u32(y * w + x);
-  let t = tensorBuf[idx];
-  let mag = sqrt(max(t.x + t.z, 0.0));
-  tensorBuf[idx] = vec4<f32>(t.x, t.y, t.z, mag);
-}`;
+  accumBuf[idx] = accumBuf[idx] + vec4<f32>(e, f, g, 0.0);
+}
+`;
 
     // AUTO-GENERATED FILE — DO NOT EDIT.
     // Source: etf/shaders/webgpu/gaussian_blur.wgsl
@@ -2516,7 +2495,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let e = tensor.x;
   let f = tensor.y;
   let g = tensor.z;
-  let mag = tensor.w;
+  // .w is unused: the upstream gradient/structure-tensor pass no longer
+  // precomputes magnitude in a separate finalize pass. It's derived
+  // directly from the trace below instead — sqrt(E+G) == hypot(gx, gy)
+  // for the single-channel case, and is the Di Zenzo-consistent combined
+  // magnitude for the multichannel case (see gradient_structure_tensor.wgsl).
+  let trace = e + g;
+  let mag = sqrt(max(trace, 0.0));
 
   // Eigenvector for smallest eigenvalue
   let diff = e - g;
@@ -2539,8 +2524,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   }
 
   // Anisotropy: (lambda1-lambda2)/(lambda1+lambda2) = disc/trace. \`disc\`
-  // is already computed above for the eigenvector; trace = e+g.
-  let trace = e + g;
+  // is already computed above for the eigenvector; \`trace\` above for mag.
   let anisotropy = select(0.0, disc / trace, trace > 1e-8);
 
   // R=tx, G=ty, B=magnitude (for refinement weighting), A=anisotropy
@@ -2653,11 +2637,11 @@ fn main(
      * gradient of a multi-image", CVGIP 33, 1986), matching the CPU backend:
      * per-channel structure tensors are summed (not the resulting tangents),
      * and a single eigendecomposition is performed on the combined tensor.
-     * On the GPU this means: for each input channel, run the gradient +
-     * structure-tensor passes and *accumulate* (read-modify-write add) into
-     * one shared tensor buffer, rather than overwriting it — see
-     * STRUCTURE_TENSOR_ACCUMULATE_SHADER. Everything from the Gaussian blur
-     * pass onward is unchanged regardless of channel count, so compute() is
+     * On the GPU this means: for each input channel, run the fused
+     * gradient/structure-tensor pass and *accumulate* (read-modify-write add)
+     * into one shared tensor buffer, rather than overwriting it — see
+     * GRADIENT_STRUCTURE_TENSOR_SHADER. Everything from the Gaussian blur pass
+     * onward is unchanged regardless of channel count, so compute() is
      * implemented as computeMultiChannel() called with a single-element array.
      *
      * This module has no knowledge of color spaces — it only ever sees
@@ -2673,8 +2657,8 @@ fn main(
      * tiling.
      *
      * computeInternal() splits the image into horizontal row bands and runs
-     * the full pipeline (gradient -> tensor accumulate -> finalize -> blur ->
-     * extract -> refine) once per band, on band-sized buffers, instead of
+     * the full pipeline (gradient+tensor-accumulate (fused) -> blur -> extract
+     * -> refine) once per band, on band-sized buffers, instead of
      * allocating whole-image buffers. Peak GPU memory is therefore bounded by
      * a fixed, tunable budget (bandMemoryBudgetBytes) rather than by image
      * resolution — see planBandLayout() for the memory math and the
@@ -2745,31 +2729,28 @@ fn main(
      */
     const MIN_BAND_ROWS = 64;
     // ============== WGSL Shader Sources ==============
-    const GRADIENT_SHADER = source$A + source$z;
-    // Computes one channel's structure tensor and *accumulates* it into
-    // accumBuf (Di Zenzo multichannel summation) instead of overwriting it.
-    // accumBuf must be zero before the first channel's pass each band — see
-    // the encoder.clearBuffer() call in computeInternal(), which replaces the
-    // "freshly-created buffers are zero" guarantee the single-shot version
-    // used to rely on (band buffers are now allocated once and reused).
+    // Computes one channel's Sobel gradient and *accumulates* its structure
+    // tensor contribution into accumBuf (Di Zenzo multichannel summation)
+    // instead of overwriting it — fused into a single pass since nothing
+    // downstream ever consumes the raw gradient on its own (it used to be
+    // materialized into its own full-image buffer purely so this pass could
+    // read it back one dispatch later). accumBuf must be zero before the
+    // first channel's pass each band — see the encoder.clearBuffer() call in
+    // computeInternal(), which replaces the "freshly-created buffers are
+    // zero" guarantee the single-shot version used to rely on (band buffers
+    // are now allocated once and reused).
     //
     // .w (magnitude) is deliberately left untouched here. Summing each
     // channel's individual sqrt(e+g) would be wrong, since sqrt is nonlinear:
     // sum(sqrt(e_k + g_k)) != sqrt(sum(e_k) + sum(g_k)). Only the latter is
-    // the Di Zenzo-consistent combined gradient magnitude, so it's computed
-    // once from the final accumulated trace in FINALIZE_MAGNITUDE_SHADER
-    // instead.
-    const STRUCTURE_TENSOR_ACCUMULATE_SHADER = source$A + source$y;
-    // Runs once per band, after every channel's structure tensor has been
-    // accumulated. Re-derives magnitude from the combined tensor's trace:
-    // sqrt(E + G). For a single channel this equals sqrt(gx^2 + gy^2) ==
-    // hypot(gx, gy), so compute() (a single-channel computeMultiChannel()
-    // call) sees identical behavior to before this pass existed.
-    const FINALIZE_MAGNITUDE_SHADER = source$A + source$x;
+    // the Di Zenzo-consistent combined gradient magnitude, so it's derived
+    // once from the final accumulated trace directly inside
+    // TANGENT_EXTRACT_SHADER instead of a separate finalize pass.
+    const GRADIENT_STRUCTURE_TENSOR_SHADER = source$y + source$x;
     // Both blur directions live in the same module — WGSL allows multiple
     // @compute entry points per shader module, so this replaces the WebGL
     // version's two separate H/V programs with one module and two pipelines.
-    const GAUSSIAN_BLUR_SHADER = source$A + source$w;
+    const GAUSSIAN_BLUR_SHADER = source$y + source$w;
     // Tiled counterpart to GAUSSIAN_BLUR_SHADER, used when radius <=
     // TILE_RADIUS_CAP (see that constant's comment for the sizing rationale).
     // Each workgroup loads its input footprint into workgroup-shared memory
@@ -2777,15 +2758,15 @@ fn main(
     // re-issuing up to `kernelSize` independent global storage-buffer reads —
     // the redundant-read pattern the untiled version has, since neighboring
     // threads' kernel windows overlap almost entirely.
-    const GAUSSIAN_BLUR_TILED_SHADER = source$A + source$v;
-    const TANGENT_EXTRACT_SHADER = source$A + source$u;
+    const GAUSSIAN_BLUR_TILED_SHADER = source$y + source$v;
+    const TANGENT_EXTRACT_SHADER = source$y + source$u;
     // Unlike the blur radius, the refine neighborhood is a fixed 5x5 (radius
     // 2) — so the tile size is a compile-time constant with no data-dependent
     // cap/fallback needed, unlike GAUSSIAN_BLUR_TILED_SHADER above. Every
     // invocation in the untiled version re-read the same 5x5=25 neighbors its
     // neighbors were also reading independently from global storage; here
     // each workgroup loads its (WORKGROUP_SIZE+4)^2 footprint once instead.
-    const TANGENT_REFINE_SHADER = source$A + source$t;
+    const TANGENT_REFINE_SHADER = source$y + source$t;
     /**
      * WebGPU-accelerated ETFComputer. Device/pipeline resources are cached
      * statically (shared across every instance) since acquiring a GPUDevice
@@ -2919,9 +2900,7 @@ fn main(
                 });
                 const resources = {
                     device,
-                    gradientPipeline: makePipeline(GRADIENT_SHADER),
-                    structureTensorAccumulatePipeline: makePipeline(STRUCTURE_TENSOR_ACCUMULATE_SHADER),
-                    finalizeMagnitudePipeline: makePipeline(FINALIZE_MAGNITUDE_SHADER),
+                    gradientStructureTensorPipeline: makePipeline(GRADIENT_STRUCTURE_TENSOR_SHADER),
                     blurHPipeline,
                     blurVPipeline,
                     blurHTiledPipeline,
@@ -2950,7 +2929,7 @@ fn main(
          * Compute ETF from a single scalar channel using WebGPU compute shaders.
          * Implemented as computeMultiChannel() with a single-element array — the
          * per-channel accumulate pass degenerates to a plain assignment when
-         * there's only one channel (see STRUCTURE_TENSOR_ACCUMULATE_SHADER).
+         * there's only one channel (see GRADIENT_STRUCTURE_TENSOR_SHADER).
          */
         async compute(input, config = {}, sigmaC) {
             return await this.computeInternal([input], config, sigmaC);
@@ -2984,8 +2963,8 @@ fn main(
          * Shared implementation behind compute() and computeMultiChannel().
          *
          * Splits the image into horizontal row bands and runs the full
-         * gradient -> tensor-accumulate -> finalize -> blur -> extract ->
-         * refine pipeline once per band, on two round-robin, reused,
+         * gradient+tensor-accumulate (fused) -> blur -> extract -> refine
+         * pipeline once per band, on two round-robin, reused,
          * band-sized buffer sets ("slots") — see the module-level doc comment
          * for why this bounds memory and how the double-buffering keeps the
          * GPU fed. Buffer allocation, band-size planning, and the halo math
@@ -3084,55 +3063,26 @@ fn main(
                         // guaranteed zero), so it has to be explicitly re-zeroed before
                         // each band's per-channel accumulation loop.
                         encoder.clearBuffer(bufs.tensorAccumBuf);
-                        // Steps 1-2: per channel, gradient then accumulate into tensorAccumBuf.
+                        // Step 1: per channel, fused gradient + structure-tensor-accumulate
+                        // directly into tensorAccumBuf. (Magnitude is no longer finalized
+                        // here as a separate pass — tangent_extract derives it from the
+                        // accumulated trace once, after blurring.)
                         for (let k = 0; k < channelCount; k++) {
-                            {
-                                const bindGroup = device.createBindGroup({
-                                    layout: res.gradientPipeline.getBindGroupLayout(0),
-                                    entries: [
-                                        { binding: 0, resource: { buffer: params } },
-                                        { binding: 1, resource: { buffer: bufs.channelInputBufs[k] } },
-                                        { binding: 2, resource: { buffer: bufs.gradientScratchBuf } },
-                                    ],
-                                });
-                                const pass = encoder.beginComputePass();
-                                pass.setPipeline(res.gradientPipeline);
-                                pass.setBindGroup(0, bindGroup);
-                                pass.dispatchWorkgroups(dispatchX, dispatchY);
-                                pass.end();
-                            }
-                            {
-                                const bindGroup = device.createBindGroup({
-                                    layout: res.structureTensorAccumulatePipeline.getBindGroupLayout(0),
-                                    entries: [
-                                        { binding: 0, resource: { buffer: params } },
-                                        { binding: 1, resource: { buffer: bufs.gradientScratchBuf } },
-                                        { binding: 2, resource: { buffer: bufs.tensorAccumBuf } },
-                                    ],
-                                });
-                                const pass = encoder.beginComputePass();
-                                pass.setPipeline(res.structureTensorAccumulatePipeline);
-                                pass.setBindGroup(0, bindGroup);
-                                pass.dispatchWorkgroups(dispatchX, dispatchY);
-                                pass.end();
-                            }
-                        }
-                        // Step 3: finalize magnitude from the combined trace.
-                        {
                             const bindGroup = device.createBindGroup({
-                                layout: res.finalizeMagnitudePipeline.getBindGroupLayout(0),
+                                layout: res.gradientStructureTensorPipeline.getBindGroupLayout(0),
                                 entries: [
                                     { binding: 0, resource: { buffer: params } },
-                                    { binding: 1, resource: { buffer: bufs.tensorAccumBuf } },
+                                    { binding: 1, resource: { buffer: bufs.channelInputBufs[k] } },
+                                    { binding: 2, resource: { buffer: bufs.tensorAccumBuf } },
                                 ],
                             });
                             const pass = encoder.beginComputePass();
-                            pass.setPipeline(res.finalizeMagnitudePipeline);
+                            pass.setPipeline(res.gradientStructureTensorPipeline);
                             pass.setBindGroup(0, bindGroup);
                             pass.dispatchWorkgroups(dispatchX, dispatchY);
                             pass.end();
                         }
-                        // Step 4: Gaussian blur the structure tensor (horizontal then vertical).
+                        // Step 2: Gaussian blur the structure tensor (horizontal then vertical).
                         {
                             const useTiledBlur = radius <= TILE_RADIUS_CAP;
                             const blurHPipe = useTiledBlur ? res.blurHTiledPipeline : res.blurHPipeline;
@@ -3166,7 +3116,7 @@ fn main(
                             passV.dispatchWorkgroups(dispatchX, dispatchY);
                             passV.end();
                         }
-                        // Step 5: extract initial tangent field.
+                        // Step 3: extract initial tangent field.
                         {
                             const bindGroup = device.createBindGroup({
                                 layout: res.tangentExtractPipeline.getBindGroupLayout(0),
@@ -3182,7 +3132,7 @@ fn main(
                             pass.dispatchWorkgroups(dispatchX, dispatchY);
                             pass.end();
                         }
-                        // Step 6: refine tangent field iteratively (ping-pong between buffers).
+                        // Step 4: refine tangent field iteratively (ping-pong between buffers).
                         let readBuf = bufs.tangentBuf1;
                         let writeBuf = bufs.tangentBuf2;
                         for (let i = 0; i < cfg.iterations; i++) {
@@ -3282,18 +3232,20 @@ fn main(
      * many bands that means for the image, given a per-slot memory budget.
      *
      * Every intermediate that scales with band height is a whole-band
-     * vec4<f32> buffer (16 bytes/pixel): tensorAccum, gradientScratch,
-     * blurTemp, blurOutput, tangentBuf1, tangentBuf2 (6 of them), plus one
-     * scalar f32 input buffer per channel (4 bytes/pixel), plus one vec4
-     * staging buffer for readback (16 bytes/pixel). `bandRows` is chosen so
-     * that (bandRows + 2*halo) rows of all of those together fit under
+     * vec4<f32> buffer (16 bytes/pixel): tensorAccum, blurTemp, blurOutput,
+     * tangentBuf1, tangentBuf2 (5 of them — gradientScratch was folded into
+     * tensorAccum when the gradient and structure-tensor-accumulate passes
+     * were fused into one shader, so it no longer needs its own buffer),
+     * plus one scalar f32 input buffer per channel (4 bytes/pixel), plus one
+     * vec4 staging buffer for readback (16 bytes/pixel). `bandRows` is chosen
+     * so that (bandRows + 2*halo) rows of all of those together fit under
      * budgetBytes, floored at MIN_BAND_ROWS so a large halo can't produce a
      * degenerate (zero/negative) band — in that edge case the actual
      * footprint may exceed budgetBytes; see the thrown error below for the
      * case where it can't be made to fit even at the floor.
      */
     function planBandLayout(width, height, channelCount, halo, limits, budgetBytes) {
-        const bytesPerRow = width * (6 * 16 + channelCount * 4 + 16);
+        const bytesPerRow = width * (5 * 16 + channelCount * 4 + 16);
         let bandRows = Math.floor(budgetBytes / bytesPerRow) - 2 * halo;
         bandRows = Math.max(MIN_BAND_ROWS, bandRows);
         bandRows = Math.min(bandRows, height);
@@ -3325,7 +3277,6 @@ fn main(
                 size: alignTo4(pixelCount * 4),
                 usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
             })),
-            gradientScratchBuf: createEmptyVec4Buffer(device, pixelCount),
             tensorAccumBuf: createEmptyVec4Buffer(device, pixelCount),
             blurTempBuf: createEmptyVec4Buffer(device, pixelCount),
             blurOutputBuf: createEmptyVec4Buffer(device, pixelCount),
@@ -3340,7 +3291,6 @@ fn main(
     function destroyBandBufferSet(set) {
         for (const buf of set.channelInputBufs)
             buf.destroy();
-        set.gradientScratchBuf.destroy();
         set.tensorAccumBuf.destroy();
         set.blurTempBuf.destroy();
         set.blurOutputBuf.destroy();
@@ -6073,7 +6023,9 @@ struct Params {
             const flowPipeline = device.createComputePipeline({
                 layout: pipelineLayout,
                 compute: {
-                    module: device.createShaderModule({ code: source$f }),
+                    module: device.createShaderModule({
+                        code: source$f,
+                    }),
                     entryPoint: 'main',
                 },
             });
@@ -6195,10 +6147,6 @@ struct Params {
                 this.currentKernelSize = kernelSize;
             }
             device.queue.writeBuffer(this.kernelBuffer, 0, new Float32Array(kernel));
-            // Per-call resources: input texture, params buffer, and the tile-sized
-            // output/readback buffers. Allocated fresh and destroyed in `finally`
-            // so concurrent blur() calls on this instance never share mutable
-            // per-call state (mirrors WebGPUGradientAlignedBlur in webgpu.ts).
             const inputTexture = device.createTexture({
                 size: [width, height],
                 format: 'r32float',
@@ -9300,9 +9248,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
                     pass.dispatchWorkgroups(workgroupCount(width), workgroupCount(rows));
                     pass.end();
                     device.queue.submit([encoder.finish()]);
-                    // Wait for this chunk before queuing the next one, so the driver
-                    // never has more than one chunk's worth of work pending at once.
-                    await device.queue.onSubmittedWorkDone();
                 }
                 const resultData = await readFloat32Buffer(device, outputBuffer, width * height);
                 uniformBuffer.destroy();

@@ -20,7 +20,13 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let e = tensor.x;
   let f = tensor.y;
   let g = tensor.z;
-  let mag = tensor.w;
+  // .w is unused: the upstream gradient/structure-tensor pass no longer
+  // precomputes magnitude in a separate finalize pass. It's derived
+  // directly from the trace below instead — sqrt(E+G) == hypot(gx, gy)
+  // for the single-channel case, and is the Di Zenzo-consistent combined
+  // magnitude for the multichannel case (see gradient_structure_tensor.wgsl).
+  let trace = e + g;
+  let mag = sqrt(max(trace, 0.0));
 
   // Eigenvector for smallest eigenvalue
   let diff = e - g;
@@ -43,8 +49,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   }
 
   // Anisotropy: (lambda1-lambda2)/(lambda1+lambda2) = disc/trace. \`disc\`
-  // is already computed above for the eigenvector; trace = e+g.
-  let trace = e + g;
+  // is already computed above for the eigenvector; \`trace\` above for mag.
   let anisotropy = select(0.0, disc / trace, trace > 1e-8);
 
   // R=tx, G=ty, B=magnitude (for refinement weighting), A=anisotropy
