@@ -3,7 +3,7 @@ import { DOCUMENT } from '@angular/common';
 import { Meta, Title } from '@angular/platform-browser';
 
 import { WorkbenchComponent } from './components/ui/workbench/workbench';
-import { SourceImageService } from './services/source-image/source-image-service';
+import { SourceMediaService } from './services/source-media/source-media-service';
 import { ApplicationAnalyticsService } from './services/analytics/application-analytics.service';
 import { GoogleAnalyticsService } from './services/analytics/google-analytics.service';
 
@@ -28,7 +28,7 @@ const APP_OG_IMAGE: string | null = null;
   styleUrl: './app.scss',
 })
 export class AppComponent implements OnInit {
-  private readonly sourceImageService = inject(SourceImageService);
+  private readonly sourceMediaService = inject(SourceMediaService);
   private readonly analytics = inject(ApplicationAnalyticsService);
   private readonly googleAnalytics = inject(GoogleAnalyticsService);
   private readonly titleService = inject(Title);
@@ -36,8 +36,8 @@ export class AppComponent implements OnInit {
   private readonly document = inject(DOCUMENT);
 
   /** null = show the landing/ornamentation; set = show the workbench. */
-  readonly sourceImage = this.sourceImageService.image;
-  readonly error = this.sourceImageService.error;
+  readonly sourceMedia = this.sourceMediaService.media;
+  readonly error = this.sourceMediaService.error;
 
   /** Purely local UI state for the dropzone hover style - doesn't belong in the service. */
   readonly isDragging = signal(false);
@@ -156,7 +156,7 @@ export class AppComponent implements OnInit {
     this.isDragging.set(false);
     const file = event.dataTransfer?.files?.[0];
     if (file) {
-      this.sourceImageService.loadFile(file);
+      this.sourceMediaService.loadFile(file);
       this.analytics.trackImageUploaded(file.size, 'drop');
     }
   }
@@ -165,7 +165,7 @@ export class AppComponent implements OnInit {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
     if (file) {
-      this.sourceImageService.loadFile(file);
+      this.sourceMediaService.loadFile(file);
       this.analytics.trackImageUploaded(file.size, 'browse');
     }
     // Allow re-selecting the same file later.
@@ -174,7 +174,7 @@ export class AppComponent implements OnInit {
 
   /** Drop back to the landing screen and pick a different image. */
   reset(): void {
-    this.sourceImageService.reset();
+    this.sourceMediaService.reset();
   }
 
   readonly faqs = [

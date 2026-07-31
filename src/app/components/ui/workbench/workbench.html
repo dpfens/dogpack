@@ -4,9 +4,14 @@
       <div class="card drop-shadow">
         <div class="card-header d-flex align-items-center justify-content-between">
           <span>Preview</span>
-          @if (activeLabelText(); as label) {
-            <span class="badge text-bg-secondary">{{ label }}</span>
-          }
+          <div class="d-flex align-items-center gap-2">
+            @if (isVideo()) {
+              <span class="badge text-bg-info">Video · first frame</span>
+            }
+            @if (activeLabelText(); as label) {
+              <span class="badge text-bg-secondary">{{ label }}</span>
+            }
+          </div>
         </div>
         <div class="card-body p-2" style="height: min(50vh, 600px);">
           <app-image-canvas
@@ -22,28 +27,87 @@
 
     <!-- Preprocessing: recomputes eagerly and claims focus on every change. -->
     <div class="col-12 col-lg-7">
-      <app-preprocessing-component [image]="sourceImage()" />
+      @if (sourceImage(); as image) {
+        <app-preprocessing-component #preprocessing [image]="image" />
 
-      <!-- The pipeline builder. Its own runPreview() runs its FULL composed
-           model (itself plus every nested layer/leaf) and reports through
-           DoGService, same as every leaf's own Preview button does. -->
-      <div class="card drop-shadow mt-3">
-        <div class="card-header d-flex align-items-center justify-content-between sticky-top bg-body"
-            style="top: 0; z-index: 1020;">
-          <span>Pipeline</span>
-          <button type="button" class="btn btn-primary btn-sm" [disabled]="rootLayer.previewPending()" (click)="rootLayer.runPreview()">
-            @if (rootLayer.previewPending()) {
-              <i class="btl bt-gear bt-spin bt-lg me-1" role="status"></i>
-            } @else {
-              <i class="btl bt-play bt-lg me-1" role="status"></i>
+        <!-- The pipeline builder. Its own runPreview() runs its FULL composed
+             model (itself plus every nested layer/leaf) and reports through
+             DoGService, same as every leaf's own Preview button does.
+
+             For video sources, this still only ever previews against the
+             single representative frame above - the "Export video" panel
+             below is what actually runs the pipeline over every frame.
+
+             Disabled during export: dogService's working-image slot is
+             shared mutable state, and running an interactive preview at the
+             same time as a per-frame batch export would race on it. -->
+        <div class="card drop-shadow mt-3">
+          <div class="card-header d-flex align-items-center justify-content-between sticky-top bg-body"
+              style="top: 0; z-index: 1020;">
+            <span>Pipeline</span>
+            <button type="button" class="btn btn-primary btn-sm"
+                    [disabled]="rootLayer.previewPending() || videoExportState() === 'running'"
+                    (click)="rootLayer.runPreview()">
+              @if (rootLayer.previewPending()) {
+                <i class="btl bt-gear bt-spin bt-lg me-1" role="status"></i>
+              } @else {
+                <i class="btl bt-play bt-lg me-1" role="status"></i>
+              }
+              Run
+            </button>
+          </div>
+          <div class="card-body">
+            <dog-layer #rootLayer />
+          </div>
+        </div>
+      } @else if (isVideo()) {
+        <div class="card drop-shadow">
+          <div class="card-body d-flex align-items-center justify-content-center text-secondary" style="height: 200px;">
+            <i class="btl bt-gear bt-spin bt-lg me-2"></i> Reading first frame…
+          </div>
+        </div>
+      }
+
+      @if (isVideo()) {
+        <div class="card drop-shadow mt-3">
+          <div class="card-header d-flex align-items-center justify-content-between">
+            <span>Export video</span>
+            <button type="button" class="btn btn-primary btn-sm"
+                    [disabled]="!sourceImage() || videoExportState() === 'running'"
+                    (click)="exportVideo()">
+              @if (videoExportState() === 'running') {
+                <i class="btl bt-gear bt-spin bt-lg me-1" role="status"></i> Processing…
+              } @else {
+                <i class="btl bt-play bt-lg me-1" role="status"></i> Run on full video
+              }
+            </button>
+          </div>
+          <div class="card-body">
+            <p class="text-secondary small mb-2">
+              Tune the pipeline above against the first frame, then run it
+              over every frame in the clip. Audio is carried over unchanged.
+            </p>
+
+            @if (videoExportState() === 'running') {
+              <div class="progress" role="progressbar"
+                  [attr.aria-valuenow]="videoExportProgress() * 100" aria-valuemin="0" aria-valuemax="100">
+                <div class="progress-bar" [style.width.%]="videoExportProgress() * 100"></div>
+              </div>
             }
-            Run
-          </button>
+
+            @if (videoExportState() === 'error' && videoExportError(); as message) {
+              <div class="alert alert-danger mb-0">{{ message }}</div>
+            }
+
+            @if (videoExportState() === 'done' && videoResultUrl(); as url) {
+              <video [src]="url" controls class="w-100 rounded mb-2"></video>
+              <a class="btn btn-outline-primary btn-sm" [href]="url" download="dogpack-result.mp4">
+                <i class="btl bt-download bt-lg me-1"></i> Download video
+              </a>
+            }
+          </div>
         </div>
-        <div class="card-body">
-          <dog-layer #rootLayer />
-        </div>
-      </div>
+      }
     </div>
   </div>
 </div>

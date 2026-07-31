@@ -20,6 +20,7 @@
     "@popperjs/core": "^2.11.8",
     "bootstrap": "^5.3.8",
     "dogpack": "git+https://github.com/dpfens/dogpack.git#v0.1.4",
+    "mediabunny": "^1.52.1",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0"
   },
