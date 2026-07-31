@@ -476,7 +476,6 @@ export class WebGLFlowGuidedBlur extends BaseWebGLStrategy implements BlurStrate
   }
 }
 
-
 /**
  * Configuration for WebGPU blur
  */
@@ -752,11 +751,6 @@ export class WebGPUFlowGuidedBlur extends BaseWebGPUStrategy implements BlurStra
       this.currentKernelSize = kernelSize;
     }
     device.queue.writeBuffer(this.kernelBuffer!, 0, new Float32Array(kernel));
-    
-    // Per-call resources: input texture, params buffer, and the tile-sized
-    // output/readback buffers. Allocated fresh and destroyed in `finally`
-    // so concurrent blur() calls on this instance never share mutable
-    // per-call state (mirrors WebGPUGradientAlignedBlur in webgpu.ts).
     const inputTexture = device.createTexture({
       size: [width, height],
       format: 'r32float',
