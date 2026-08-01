@@ -168,12 +168,18 @@ export class WorkbenchComponent {
    * once per frame during a batch export would spam the preview panel with
    * intermediate frames while the user's looking at something else.
    *
-   * Note: `dogService`'s working-image slot is shared, mutable state - the
-   * same slot PreprocessingComponent's own effect writes to. Editing the
-   * pipeline (or its preprocessing steps) while an export is running can
-   * race with this loop; the "Run" button below is disabled during export
-   * for that reason, but there's currently nothing stopping someone from
-   * still editing the preprocessing step list mid-export.
+   * Note: this passes its per-frame channel image straight into
+   * `dogService.run()` rather than through `dogService.setWorkingImage()`,
+   * so it never touches the shared `workingImage` slot that
+   * PreprocessingComponent's own effect (and every interactive "Run"/
+   * Preview button) reads and writes. That means this loop no longer
+   * races with, or leaves stale data in, that shared state.
+   *
+   * The "Run" button below is still disabled during export, though: the
+   * pipeline model (`preprocessing.steps()`, `rootLayer.toModel()`) is
+   * read fresh on every frame, and editing it mid-export would still let
+   * a single export blend results from two different pipeline versions
+   * across its frames - a consistency issue, not a data race.
    */
   private async runFrameThroughPipeline(image: ImageData): Promise<ImageData> {
     const preprocessing = this.preprocessingComponent();
@@ -187,10 +193,15 @@ export class WorkbenchComponent {
       image,
       preprocessing.channelMode()
     );
-    this.dogService.setWorkingImage(channel);
 
+    // Passed explicitly rather than via dogService.setWorkingImage(): that
+    // slot is shared with the interactive preview, and writing per-frame
+    // data into it here would leave it pinned to the last exported frame
+    // once the export loop finished - desyncing every subsequent "Run"/
+    // Preview (which reads workingImage) from the before/after comparison
+    // in the canvas (which always shows sourceImage(), i.e. frame 0).
     const node = rootLayer.toModel();
-    const result = await this.dogService.run(node);
+    const result = await this.dogService.run(node, channel);
     if (!result) {
       throw new Error('DoG worker is unavailable.');
     }

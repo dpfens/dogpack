@@ -44,7 +44,8 @@ export abstract class DogPreviewableComponent<T extends DogNode> implements DogM
     this.dogService.setPending(this.focusLabel());
     const start = performance.now();
     try {
-      const image = await this.dogService.run(this.toModel());
+
+      const image = await this.dogService.run(this.toModel(), this.dogService.workingImage()!);
       if (image) {
         this.channelImage.emit(image);
         this.dogService.show(this.focusLabel(), luminanceToImageData(image));

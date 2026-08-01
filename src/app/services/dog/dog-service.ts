@@ -49,13 +49,22 @@ export class DoGService implements OnDestroy {
     this._workingImage.set(image);
   }
 
-  async run(node: DogNode): Promise<ChannelImage | undefined> {
+  /**
+   * Runs `node` against an image.
+   *
+   * By default reads the shared `workingImage` signal - this is what
+   * every interactive "Preview"/"Run" button in the UI relies on, since
+   * they don't have their own image handy and expect to read whatever
+   * PreprocessingComponent last wrote there.
+   *
+   * Pass `image` explicitly to bypass `workingImage` entirely - e.g. a
+   * batch/per-frame caller (video export) that has its own image for
+   * this call and must NOT perturb the shared slot the interactive
+   * preview depends on. See WorkbenchComponent.runFrameThroughPipeline().
+   */
+  async run(node: DogNode, image: ChannelImage): Promise<ChannelImage | undefined> {
     if (!this.client) {
       return undefined;
-    }
-    const image = this._workingImage();
-    if (!image) {
-      throw new Error('No working image set - preprocessing must run before a DoG preview.');
     }
     const layer: DogLayer = isLayer(node)
       ? node

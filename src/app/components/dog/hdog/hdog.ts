@@ -101,7 +101,7 @@ export class HDogComponent implements DogModelProvider<HDogConfig> {
     this.previewPending.set(true);
     const start = performance.now();
     try {
-      const image = await this.dogService.run(this.toModel());
+      const image = await this.dogService.run(this.toModel(), this.dogService.workingImage()!);
       if (image) this.channelImage.emit(image);
     } finally {
       this.previewPending.set(false);
