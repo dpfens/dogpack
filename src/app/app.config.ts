@@ -1,8 +1,14 @@
-import { ApplicationConfig, inject, provideAppInitializer, provideBrowserGlobalErrorListeners } from '@angular/core';
+import {
+  ApplicationConfig,
+  inject,
+  provideAppInitializer,
+  provideBrowserGlobalErrorListeners,
+} from '@angular/core';
 import { provideRouter } from '@angular/router';
 
 import { routes } from './app.routes';
 import { GoogleAnalyticsService } from './services/analytics/google-analytics.service';
+import { provideClientHydration } from '@angular/platform-browser';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -12,5 +18,6 @@ export const appConfig: ApplicationConfig = {
       const gaService = inject(GoogleAnalyticsService);
       gaService.initialize('G-J0ZMYBT112');
     }),
-  ]
+    provideClientHydration(),
+  ],
 };

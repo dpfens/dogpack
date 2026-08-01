@@ -204,7 +204,7 @@ export class AppComponent implements OnInit {
       "items": [
         {
           "question": "Why does my HDoG output look thin in the darkest shadows even with high density settings?",
-          "answer": "Larger primitives naturally need more spacing between them, which caps how dark a region can look purely from size. This tool/library's answer is a second ADoG pass at a larger scale, run only to fill in the darkest areas without disturbing lighter ones. If shadows look too sparse, adjust the adogSecondary parameter."
+          "answer": "Larger primitives naturally need more spacing between them, which caps how dark a region can look purely from size. HDoG's answer is a second ADoG pass at a larger scale, run only to fill in the darkest areas without disturbing lighter ones. That second pass's scale is controlled by adogSecondaryScaleFactor (default 4, meaning the secondary pass uses 4x the primary pass's s value). If shadows still look too sparse, try increasing it."
         },
         {
           "question": "Why does phi/epsilon barely seem to do anything at some settings?",
@@ -221,7 +221,7 @@ export class AppComponent implements OnInit {
         },
         {
           "question": "What's the difference between the preprocessing presets (light/standard/heavy/artistic/nature)?",
-          "answer": "preprocessing.ts only mirrors the names of PreprocessingPresets from dogpack — the actual step combinations aren't in the files provided. This is one to pull from the dogpack source or ADVANCED.md rather than guess at; better to leave it as a placeholder than invent behavior."
+          "answer": "They differ in how much smoothing they apply and which filters they use. Light runs a single mild bilateral pass, good for already-clean studio shots or illustrations. Standard runs one moderately stronger bilateral pass for typical outdoor photos and portraits. Heavy and Nature both run two bilateral passes back to back for aggressive noise removal, but Nature uses a stronger first pass tuned for grass, foliage, and other fine natural texture, while Heavy is a bit more moderate and general-purpose. Artistic is the odd one out: it runs a Kuwahara filter (which gives a painterly, stylized look) followed by a light bilateral pass, rather than two bilateral passes."
         },
         {
           "question": "Can I preview what preprocessing alone does, before adding a DoG layer?",
