@@ -31,18 +31,16 @@
     <div class="mb-3">
       <label class="form-label d-flex align-items-center justify-content-between">
         <span>p (sharpening strength)</span>
-        @if(allowAutoP()) {
-          <span class="form-check form-switch mb-0">
-            <input
-              class="form-check-input"
-              type="checkbox"
-              role="switch"
-              id="pAutoToggle"
-              [checked]="pAuto()"
-              (change)="onPAutoToggle($any($event.target).checked)" />
-            <label class="form-check-label small" for="pAutoToggle">Vary across image</label>
-          </span>
-        }
+        <span class="form-check form-switch mb-0">
+          <input
+            class="form-check-input"
+            type="checkbox"
+            role="switch"
+            id="pAutoToggle"
+            [checked]="pAuto()"
+            (change)="onPAutoToggle($any($event.target).checked)" />
+          <label class="form-check-label small" for="pAutoToggle">Vary across image</label>
+        </span>
       </label>
 
       @if (!pAuto()) {
@@ -95,17 +93,6 @@
                 (committed)="onCommit()" />
               <div class="form-text">{{ pSmoothingSigmaHint() }}</div>
             </div>
-            <div style="height: 160px;">
-              <app-image-canvas
-                [imageData]="pPreviewImageData()"
-                [status]="pPreviewStatus()"
-                [zoomEnabled]="true"
-                [downloadEnabled]="false"
-                fit="contain" />
-            </div>
-            <div class="form-text">
-              Gradient-magnitude p estimate, recomputed on commit.
-            </div>
           }
         </div>
       }
@@ -114,18 +101,16 @@
     <div class="mb-3">
       <label class="form-label d-flex align-items-center justify-content-between">
         <span>epsilon (white/black threshold)</span>
-        @if(allowAutoEpsilon()) {
-          <span class="form-check form-switch mb-0">
-            <input
-              class="form-check-input"
-              type="checkbox"
-              role="switch"
-              id="epsilonAutoToggle"
-              [checked]="epsilonAuto()"
-              (change)="onEpsilonAutoToggle($any($event.target).checked)" />
-            <label class="form-check-label small" for="epsilonAutoToggle">Vary across image</label>
-          </span>
-        }
+        <span class="form-check form-switch mb-0">
+          <input
+            class="form-check-input"
+            type="checkbox"
+            role="switch"
+            id="epsilonAutoToggle"
+            [checked]="epsilonAuto()"
+            (change)="onEpsilonAutoToggle($any($event.target).checked)" />
+          <label class="form-check-label small" for="epsilonAutoToggle">Vary across image</label>
+        </span>
       </label>
 
       @if (!epsilonAuto()) {
@@ -155,17 +140,6 @@
                 (committed)="onCommit()" />
               <div class="form-text">{{ contrastMarginHint() }}</div>
             </div>
-            <div style="height: 160px;">
-              <app-image-canvas
-                [imageData]="epsilonPreviewImageData()"
-                [status]="epsilonPreviewStatus()"
-                [zoomEnabled]="true"
-                [downloadEnabled]="false"
-                fit="contain" />
-            </div>
-            <div class="form-text">
-              Local-baseline epsilon estimate at sigma = {{ form.controls.sigma.value }}, recomputed on commit.
-            </div>
           }
         </div>
       }
@@ -174,18 +148,16 @@
     <div class="mb-3">
       <label class="form-label d-flex align-items-center justify-content-between">
         <span>phi (threshold sharpness)</span>
-        @if(allowAutoPhi()) {
-          <span class="form-check form-switch mb-0">
-            <input
-              class="form-check-input"
-              type="checkbox"
-              role="switch"
-              id="phiAutoToggle"
-              [checked]="phiAuto()"
-              (change)="onPhiAutoToggle($any($event.target).checked)" />
-            <label class="form-check-label small" for="phiAutoToggle">Vary across image</label>
-          </span>
-        }
+        <span class="form-check form-switch mb-0">
+          <input
+            class="form-check-input"
+            type="checkbox"
+            role="switch"
+            id="phiAutoToggle"
+            [checked]="phiAuto()"
+            (change)="onPhiAutoToggle($any($event.target).checked)" />
+          <label class="form-check-label small" for="phiAutoToggle">Vary across image</label>
+        </span>
       </label>
 
       @if (!phiAuto()) {
@@ -242,17 +214,6 @@
                 [formControl]="form.controls.phiSigma"
                 (committed)="onCommit()" />
               <div class="form-text">{{ phiSigmaHint() }}</div>
-            </div>
-            <div style="height: 160px;">
-              <app-image-canvas
-                [imageData]="phiPreviewImageData()"
-                [status]="phiPreviewStatus()"
-                [zoomEnabled]="true"
-                [downloadEnabled]="false"
-                fit="contain" />
-            </div>
-            <div class="form-text">
-              Local-variance phi estimate, recomputed on commit.
             </div>
           }
         </div>

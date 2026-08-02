@@ -1,5 +1,5 @@
 import type { BlendFunction, DoGImplementation, BlurStrategy, ThresholdStrategy } from "dogpack";
-import { XDoG, FDoG, ADoG, HDoG } from "dogpack/dog";
+import { XDoG, FDoG, ADoG, HDoG, DEFAULT_ADOG_CONFIG } from "dogpack/dog";
 import { IsotropicBlur } from "dogpack/blur";
 import { SoftThresholdStrategy, HardThresholdStrategy, HysteresisThresholdStrategy } from "dogpack/threshold";
 import type { ChannelImage } from "dogpack";
@@ -74,9 +74,13 @@ async function resolveP(p: number | AutoP | undefined, image: ChannelImage): Pro
   if (p === undefined) return undefined;
   return typeof p === "number" ? p : await resolveAutoP(p, image);
 }
-async function resolveEpsilon(epsilon: number | AutoEpsilon | undefined, image: ChannelImage): Promise<number | ChannelImage | undefined> {
+async function resolveEpsilon(
+  epsilon: number | AutoEpsilon | undefined,
+  image: ChannelImage,
+  resolver: (auto: AutoEpsilon, image: ChannelImage) => Promise<ChannelImage> = resolveAutoEpsilon
+): Promise<number | ChannelImage | undefined> {
   if (epsilon === undefined) return undefined;
-  return typeof epsilon === "number" ? epsilon : await resolveAutoEpsilon(epsilon, image);
+  return typeof epsilon === "number" ? epsilon : await resolver(epsilon, image);
 }
 async function resolvePhi(phi: number | AutoPhi | undefined, image: ChannelImage): Promise<number | ChannelImage | undefined> {
   if (phi === undefined) return undefined;
@@ -122,20 +126,17 @@ function createThresholdStrategy(descriptor: ThresholdStrategyDescriptor): Thres
   }
 }
 
-/**
- * Was `hydrateThresholdStrategy` — now also resolves p/epsilon/phi against
- * `image`. Everything else about this config passes through untouched.
- */
-async function hydrateAutoConfig<
-  T extends {
+
+// hydrateAutoConfig threads an optional epsilon resolver through to resolveEpsilon
+async function hydrateAutoConfig<T extends {
     thresholdStrategy?: ThresholdStrategyDescriptor;
     p?: number | AutoP;
     epsilon?: number | AutoEpsilon;
     phi?: number | AutoPhi;
-  }
->(
+  }>(
   config: T,
-  image: ChannelImage
+  image: ChannelImage,
+  epsilonResolver?: (auto: AutoEpsilon, image: ChannelImage) => Promise<ChannelImage>
 ): Promise<Omit<T, "thresholdStrategy" | "p" | "epsilon" | "phi"> & {
   thresholdStrategy?: ThresholdStrategy;
   p?: number | ChannelImage;
@@ -144,7 +145,7 @@ async function hydrateAutoConfig<
 }> {
   const { thresholdStrategy, p, epsilon, phi, ...rest } = config;
   const resolvedP = await resolveP(p, image);
-  const resolvedEpsilon = await resolveEpsilon(epsilon, image);
+  const resolvedEpsilon = await resolveEpsilon(epsilon, image, epsilonResolver);
   const resolvedPhi = await resolvePhi(phi, image);
   return {
     ...rest,
@@ -155,9 +156,25 @@ async function hydrateAutoConfig<
   };
 }
 
-/** Shared by ADoG leaves and HDoG's nested adog/adogSecondary configs. */
+/**
+ * ADoG-specific hydration: swaps in adogLocalBaselineEstimate (scaled by
+ * (1-tau)*tanh(s*I), see Eq. 4/5) in place of the generic
+ * epsilon.localBaselineEstimate, which is only correct for XDoG/FDoG's
+ * S(x) ~ localTone flat-region behavior. tau/s are read straight off the
+ * config being hydrated -- they're plain numbers on WireADoGConfig, not
+ * auto-resolved fields, so no chicken-and-egg with p/epsilon/phi resolution.
+ */
 function hydrateADoGConfig(config: Partial<WireADoGConfig>, image: ChannelImage) {
-  return hydrateAutoConfig(config, image);
+  const tau = config.tau ?? DEFAULT_ADOG_CONFIG.tau;
+  const s = config.s ?? DEFAULT_ADOG_CONFIG.s;
+  const adogEpsilonResolver = (auto: AutoEpsilon, img: ChannelImage) =>
+    parameterEstimation.epsilon.adogLocalBaselineEstimate(img, {
+      sigma: auto.sigma,
+      contrastMargin: auto.contrastMargin,
+      tau,
+      s,
+    });
+  return hydrateAutoConfig(config, image, adogEpsilonResolver);
 }
 
 async function createDoGImplementation(node: DogConfigNode, image: ChannelImage): Promise<DoGImplementation> {
@@ -172,7 +189,7 @@ async function createDoGImplementation(node: DogConfigNode, image: ChannelImage)
     case "fdog":
       return new FDoG(await hydrateAutoConfig(node.config, image));
     case "adog":
-      return new ADoG(await hydrateAutoConfig(node.config, image));
+      return new ADoG(await hydrateADoGConfig(node.config, image));
     case "hdog": {
       const { fdog, adog, adogSecondary, ...rest } = node.config;
       return new HDoG({
@@ -291,6 +308,7 @@ export async function executeDogProcessingContext(
   input: ChannelImage
 ): Promise<ChannelImage> {
   const executionPlan = await buildExecutablePlan(context, input);
+  console.log(executionPlan);
   return executeDogExecutablePlan(executionPlan, input);
 }
 

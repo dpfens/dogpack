@@ -1,27 +1,26 @@
 import { Component, computed, effect, input, model, signal, untracked } from '@angular/core';
 import { FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
 import {
-  DoGConfig,
   DogConfigParamType,
   ADOG_PARAM_RANGES,
   ADogConfigParamType,
   ParamRange,
   ADOG_STYLE_PRESETS,
+  ADoG,
 } from 'dogpack/dog';
 import { DogComponent } from '../dog/dog';
 import { ParamSliderComponent } from '../../ui/param-slider-component/param-slider-component';
-import { WireDoGConfig, ADogConfig, ADogPreset, WireADoGConfig, ThresholdStrategyDescriptor } from '../../../models/dog';
+import { WireDoGConfig, ADogConfig, ADogPreset, WireADoGConfig } from '../../../models/dog';
 import { DogPreviewableComponent } from '../base';
 import { DogFocusLabel } from '../../../services/dog/dog-service';
 import { ADOG_EXTRA_PARAM_HINTS, withRange } from '../../content/pipeline-help-content';
 import { presetFromLibrary } from '../../../utilities/dog';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { ChannelImage, LocalBaselineOptions } from 'dogpack';
+import { parameterEstimation } from 'dogpack/preprocess';
 
 type ThresholdType = 'Soft' | 'Hard';
 
-const THRESHOLD_TYPE_TO_DESCRIPTOR_KIND: Record<ThresholdType, ThresholdStrategyDescriptor['kind']> = {
-  Soft: 'soft',
-  Hard: 'hard',
-};
 
 @Component({
   selector: 'adog',
@@ -42,6 +41,29 @@ export class ADogComponent extends DogPreviewableComponent<ADogConfig> {
   readonly s = this.rangeControl('s');
   readonly noiseScaleC = this.rangeControl('noiseScaleC');
   readonly kernelSizeMultiplier = this.rangeControl('kernelSizeMultiplier');
+
+  private readonly tauValue = toSignal(this.tau.valueChanges, { initialValue: this.tau.value });
+  readonly epsilonCeiling = computed(() => ADoG.getEpsilonCeiling(this.tauValue()));
+  /**
+   * paramRanges, but epsilon's hardMax/recommendedMax are pinned to the
+   * current tau's ceiling (1 - tau) instead of the static
+   * ADOG_PARAM_RANGES.epsilon.recommendedMax = 0.2, which is only
+   * correct by coincidence at whatever tau it was tuned against.
+   * Passed to <dog> in place of the raw paramRanges; every other slider
+   * in this template still reads the static paramRanges directly, since
+   * only epsilon depends on tau.
+   */
+  readonly dogRanges = computed<Record<DogConfigParamType, ParamRange>>(() => {
+    const ceiling = ADoG.getEpsilonCeiling(this.tauValue());
+    return {
+      ...this.paramRanges,
+      epsilon: {
+        ...this.paramRanges.epsilon,
+        hardMax: ceiling,
+        recommendedMax: ceiling
+      },
+    };
+  });
 
   private controlFor: Record<ADogConfigParamType, FormControl<number>> = {
     tau: this.tau,
@@ -92,10 +114,6 @@ export class ADogComponent extends DogPreviewableComponent<ADogConfig> {
     });
   }
 
-  private buildThresholdStrategyDescriptor(): ThresholdStrategyDescriptor {
-    return { kind: THRESHOLD_TYPE_TO_DESCRIPTOR_KIND[this.thresholdStrategyKey()] };
-  }
-
   hint(key: ADogConfigParamType): string {
     return withRange(ADOG_EXTRA_PARAM_HINTS[key].hint, this.paramRanges[key]);
   }
@@ -116,10 +134,16 @@ export class ADogComponent extends DogPreviewableComponent<ADogConfig> {
       noiseScaleC: this.noiseScaleC.value,
       kernelSizeMultiplier: this.kernelSizeMultiplier.value,
     };
+    console.log(adogConfig);
     this.config.set(adogConfig);
   }
 
   toModel(): ADogConfig {
     return { kind: 'config', type: 'adog', config: this.config() };
+  }
+
+  epsilonEstimator = async (src: ChannelImage, opts: LocalBaselineOptions) => {
+    const result = await parameterEstimation.epsilon.adogLocalBaselineEstimate(src, { ...opts, tau: this.tau.value, s: this.s.value });
+    return result;
   }
 }

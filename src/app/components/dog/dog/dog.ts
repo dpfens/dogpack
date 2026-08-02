@@ -14,11 +14,9 @@ import {
   FormControl,
   Validators,
 } from '@angular/forms';
-import { ParamRange, DogConfigParamType, ChannelImage } from 'dogpack';
-import { parameterEstimation } from 'dogpack/preprocess';
+import { ParamRange, DogConfigParamType } from 'dogpack';
 import { ThresholdStrategyDescriptor, ThresholdType, WireDoGConfig } from '../../../models/dog';
 import { ParamSliderComponent } from '../../ui/param-slider-component/param-slider-component';
-import { ImageCanvasComponent, ImageStatus } from '../../ui/image-canvas/image-canvas';
 import {
   DOG_PARAM_HINTS,
   THRESHOLD_STRATEGIES,
@@ -26,7 +24,6 @@ import {
   findThresholdStrategy,
   withRange,
 } from '../../content/pipeline-help-content';
-import { luminanceToImageData } from 'dogpack/utils';
 import { DoGService } from '../../../services/dog/dog-service';
 
 const THRESHOLD_TYPE_TO_DESCRIPTOR_KIND: Record<ThresholdType, ThresholdStrategyDescriptor['kind']> = {
@@ -53,16 +50,12 @@ type DogFormControls = {
 @Component({
   selector: 'dog',
   standalone: true,
-  imports: [ReactiveFormsModule, ParamSliderComponent, ImageCanvasComponent],
+  imports: [ReactiveFormsModule, ParamSliderComponent],
   templateUrl: './dog.html',
 })
 export class DogComponent {
   dog = inject(DoGService);
   ranges = input.required<Record<DogConfigParamType, ParamRange>>();
-
-  allowAutoEpsilon = input<boolean>(true);
-  allowAutoP = input<boolean>(true);
-  allowAutoPhi = input<boolean>(true);
   preset = input<Partial<WireDoGConfig> | null>(null);
   sourceChannel = this.dog.workingImage;
   configChange = output<WireDoGConfig>();
@@ -80,30 +73,6 @@ export class DogComponent {
   epsilonAuto = signal(false);
   pAuto = signal(false);
   phiAuto = signal(false);
-
-  /** Last computed auto-epsilon map (null until computed / when manual). */
-  private epsilonPreview = signal<ChannelImage | null>(null);
-  epsilonPreviewStatus = signal<ImageStatus>('idle');
-  epsilonPreviewImageData = computed(() => {
-    const img = this.epsilonPreview();
-    return img ? luminanceToImageData(img) : null;
-  });
-
-  /** Last computed auto-p map (null until computed / when manual). */
-  private pPreview = signal<ChannelImage | null>(null);
-  pPreviewStatus = signal<ImageStatus>('idle');
-  pPreviewImageData = computed(() => {
-    const img = this.pPreview();
-    return img ? luminanceToImageData(img) : null;
-  });
-
-  /** Last computed auto-phi map (null until computed / when manual). */
-  private phiPreview = signal<ChannelImage | null>(null);
-  phiPreviewStatus = signal<ImageStatus>('idle');
-  phiPreviewImageData = computed(() => {
-    const img = this.phiPreview();
-    return img ? luminanceToImageData(img) : null;
-  });
 
   /** Description shown under the "Threshold strategy" <select>. */
   readonly strategyHint = computed(
@@ -185,68 +154,6 @@ export class DogComponent {
       Validators.max(r.phi.hardMax),
     ]);
     this.form.controls.phiHard.updateValueAndValidity({ emitEvent: false });
-  });
-
-  __epsilon_auto_sync__ = effect(() => {
-    const auto = this.epsilonAuto();
-    const src = this.sourceChannel();
-    untracked(() => {
-      if (auto) {
-        this.form.controls.epsilon.disable({ emitEvent: false });
-        this.form.controls.contrastMargin.enable({ emitEvent: false });
-        this.recomputeEpsilonAutoIfNeeded();
-      } else {
-        this.form.controls.epsilon.enable({ emitEvent: false });
-        this.form.controls.contrastMargin.disable({ emitEvent: false });
-        this.epsilonPreview.set(null);
-        this.epsilonPreviewStatus.set('idle');
-        this.emitIfValid();
-      }
-    });
-  });
-
-  __p_auto_sync__ = effect(() => {
-    const auto = this.pAuto();
-    const src = this.sourceChannel();
-    untracked(() => {
-      if (auto) {
-        this.form.controls.p.disable({ emitEvent: false });
-        this.form.controls.pWeak.enable({ emitEvent: false });
-        this.form.controls.pStrong.enable({ emitEvent: false });
-        this.form.controls.pSmoothingSigma.enable({ emitEvent: false });
-        this.recomputePAutoIfNeeded();
-      } else {
-        this.form.controls.p.enable({ emitEvent: false });
-        this.form.controls.pWeak.disable({ emitEvent: false });
-        this.form.controls.pStrong.disable({ emitEvent: false });
-        this.form.controls.pSmoothingSigma.disable({ emitEvent: false });
-        this.pPreview.set(null);
-        this.pPreviewStatus.set('idle');
-        this.emitIfValid();
-      }
-    });
-  });
-
-  __phi_auto_sync__ = effect(() => {
-    const auto = this.phiAuto();
-    const src = this.sourceChannel();
-    untracked(() => {
-      if (auto) {
-        this.form.controls.phi.disable({ emitEvent: false });
-        this.form.controls.phiSoft.enable({ emitEvent: false });
-        this.form.controls.phiHard.enable({ emitEvent: false });
-        this.form.controls.phiSigma.enable({ emitEvent: false });
-        this.recomputePhiAutoIfNeeded();
-      } else {
-        this.form.controls.phi.enable({ emitEvent: false });
-        this.form.controls.phiSoft.disable({ emitEvent: false });
-        this.form.controls.phiHard.disable({ emitEvent: false });
-        this.form.controls.phiSigma.disable({ emitEvent: false });
-        this.phiPreview.set(null);
-        this.phiPreviewStatus.set('idle');
-        this.emitIfValid();
-      }
-    });
   });
 
   private initialEmitDone = false;
@@ -389,112 +296,10 @@ export class DogComponent {
    */
   onCommit(): void {
     this.emitIfValid();
-    this.recomputeEpsilonAutoIfNeeded();
-    this.recomputePAutoIfNeeded();
-    this.recomputePhiAutoIfNeeded();
-  }
-
-  private epsilonComputeToken = 0;
-
-  private recomputeEpsilonAutoIfNeeded(): void {
-    if (!this.epsilonAuto()) return;
-
-    const src = this.sourceChannel();
-    if (!src) {
-      this.epsilonPreview.set(null);
-      this.epsilonPreviewStatus.set('idle');
-      return;
-    }
-
-    const sigma = this.form.controls.sigma.value;
-    const contrastMargin = this.form.controls.contrastMargin.value;
-    const token = ++this.epsilonComputeToken;
-    this.epsilonPreviewStatus.set('loading');
-
-    parameterEstimation.epsilon.localBaselineEstimate(src, { sigma, contrastMargin })
-      .then((result) => {
-        if (token !== this.epsilonComputeToken) return;
-        this.epsilonPreview.set(result);
-        this.epsilonPreviewStatus.set('ready');
-        this.emitIfValid();
-      })
-      .catch(() => {
-        if (token !== this.epsilonComputeToken) return;
-        this.epsilonPreview.set(null);
-        this.epsilonPreviewStatus.set('error');
-      });
-  }
-
-  private pComputeToken = 0;
-
-  private recomputePAutoIfNeeded(): void {
-    if (!this.pAuto()) return;
-
-    const src = this.sourceChannel();
-    if (!src) {
-      this.pPreview.set(null);
-      this.pPreviewStatus.set('idle');
-      return;
-    }
-
-    const pWeak = this.form.controls.pWeak.value;
-    const pStrong = this.form.controls.pStrong.value;
-    const smoothingSigma = this.form.controls.pSmoothingSigma.value;
-    const token = ++this.pComputeToken;
-    this.pPreviewStatus.set('loading');
-
-    parameterEstimation.p.magnitudeAdaptiveEstimate(src, { pWeak, pStrong, smoothingSigma })
-      .then((result) => {
-        if (token !== this.pComputeToken) return;
-        this.pPreview.set(result);
-        this.pPreviewStatus.set('ready');
-        this.emitIfValid();
-      })
-      .catch(() => {
-        if (token !== this.pComputeToken) return;
-        this.pPreview.set(null);
-        this.pPreviewStatus.set('error');
-      });
-  }
-
-  private phiComputeToken = 0;
-
-  private recomputePhiAutoIfNeeded(): void {
-    if (!this.phiAuto()) return;
-
-    const src = this.sourceChannel();
-    if (!src) {
-      this.phiPreview.set(null);
-      this.phiPreviewStatus.set('idle');
-      return;
-    }
-
-    const sigma = this.form.controls.phiSigma.value;
-    const phiSoft = this.form.controls.phiSoft.value;
-    const phiHard = this.form.controls.phiHard.value;
-    const token = ++this.phiComputeToken;
-    this.phiPreviewStatus.set('loading');
-
-    parameterEstimation.phi.varianceAdaptiveEstimate(src, { sigma, phiSoft, phiHard })
-      .then((result) => {
-        if (token !== this.phiComputeToken) return;
-        this.phiPreview.set(result);
-        this.phiPreviewStatus.set('ready');
-        this.emitIfValid();
-      })
-      .catch(() => {
-        if (token !== this.phiComputeToken) return;
-        this.phiPreview.set(null);
-        this.phiPreviewStatus.set('error');
-      });
   }
 
   private emitIfValid(): void {
     if (this.form.invalid) return;
-    if (this.epsilonAuto() && !this.epsilonPreview()) return;
-    if (this.pAuto() && !this.pPreview()) return;
-    if (this.phiAuto() && !this.phiPreview()) return;
-
     const v = this.form.getRawValue();
     this.configChange.emit({
       sigma: v.sigma,
