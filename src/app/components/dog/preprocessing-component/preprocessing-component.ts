@@ -58,6 +58,7 @@ export class PreprocessingComponent {
   }
 
   __on_change__ = effect(async () => {
+    this.dogService.setPending({kind: 'preprocessing'});
     const { imageData, channel } = await this.preprocessing.apply(this.steps(), this.image(), this.channelMode());
     this.channelImage.emit(imageData);
     this.lastOutput.set(imageData);
