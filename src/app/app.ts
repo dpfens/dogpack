@@ -6,6 +6,7 @@ import { WorkbenchComponent } from './components/ui/workbench/workbench';
 import { SourceMediaService } from './services/source-media/source-media-service';
 import { ApplicationAnalyticsService } from './services/analytics/application-analytics.service';
 import { GoogleAnalyticsService } from './services/analytics/google-analytics.service';
+import { VERSION } from './version';
 
 /** Canonical URL of the app - update if the domain/path ever changes. */
 const APP_PATH = '/dogpack/';
@@ -38,6 +39,11 @@ export class AppComponent implements OnInit {
   /** null = show the landing/ornamentation; set = show the workbench. */
   readonly sourceMedia = this.sourceMediaService.media;
   readonly error = this.sourceMediaService.error;
+
+  readonly version = VERSION.version;
+  dateTimeFormatter = new Intl.DateTimeFormat(Intl.DateTimeFormat().resolvedOptions().locale, { dateStyle: 'short', timeStyle: 'short' });
+  rawBuildDate = VERSION.buildDate;
+  buildDate = this.dateTimeFormatter.format(new Date(VERSION.buildDate));
 
   /** Purely local UI state for the dropzone hover style - doesn't belong in the service. */
   readonly isDragging = signal(false);

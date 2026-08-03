@@ -1,7 +1,18 @@
 {
   "name": "dogpack-ui",
+  "displayName": "DoG Studio",
   "version": "0.1.5",
+  "repository": {
+    "url": "https://github.com/dpfens/dogpack#gh-pages"
+  },
+  "bugs": {
+    "url": "https://github.com/dpfens/dogpack/issues"
+  },
+  "keywords": ["difference-of-guassians", "images", "webgpu", "sketch"],
+  "description": "A web application for producing sketch-ified images using Difference-of-Gaussians",
   "scripts": {
+    "prebuild": "node scripts/generate-version.js",
+    "prestart": "node scripts/generate-version.js",
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",
