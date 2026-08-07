@@ -7,6 +7,7 @@ import { SourceMediaService } from './services/source-media/source-media-service
 import { ApplicationAnalyticsService } from './services/analytics/application-analytics.service';
 import { GoogleAnalyticsService } from './services/analytics/google-analytics.service';
 import { VERSION } from './version';
+import { WebGpuService } from './services/webgpu/webgpu-service';
 
 /** Canonical URL of the app - update if the domain/path ever changes. */
 const APP_PATH = '/dogpack/';
@@ -35,6 +36,8 @@ export class AppComponent implements OnInit {
   private readonly titleService = inject(Title);
   private readonly meta = inject(Meta);
   private readonly document = inject(DOCUMENT);
+
+  private readonly webgpu = inject(WebGpuService);
 
   /** null = show the landing/ornamentation; set = show the workbench. */
   readonly sourceMedia = this.sourceMediaService.media;
