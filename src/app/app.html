@@ -1,3 +1,14 @@
+@if (showGpuWarning()) {
+  <div class="alert alert-warning rounded-0 mb-0 py-2 px-3 small text-center" role="alert">
+    <strong>WebGPU isn't available right now.</strong>
+    DoG Studio will still work, but processing will run on a much slower fallback path.
+    Expect up to 1 minute per image (depending how large it is) instead of under a second.
+    WebGPU now ships in all major browsers, so this is often just a setting: check
+    whether WebGPU is enabled in your browser (some browsers still gate it behind a flag)
+    and reload the page.
+  </div>
+}
+
 @if (sourceMedia(); as media) {
   <div class="d-flex justify-content-between p-2 pe-3">
     <h1 class="h3">DoG Studio</h1>

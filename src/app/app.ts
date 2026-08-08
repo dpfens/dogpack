@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, computed, inject, OnInit, signal } from '@angular/core';
 import { DOCUMENT } from '@angular/common';
 import { Meta, Title } from '@angular/platform-browser';
 
@@ -51,10 +51,23 @@ export class AppComponent implements OnInit {
   /** Purely local UI state for the dropzone hover style - doesn't belong in the service. */
   readonly isDragging = signal(false);
 
+  /**
+   * True once we've finished checking and WebGPU is *not* usable (unsupported,
+   * no adapter, or a request/device-loss error). Stays false while the check
+   * is still in flight so we don't flash a warning before we know either way.
+   * Processing falls back to a much slower path in this case (~60s vs. <1s
+   * per image), so we warn the user up front.
+   */
+  readonly showGpuWarning = computed(() => {
+    const status = this.webgpu.status();
+    return status === 'unsupported' || status === 'no-adapter' || status === 'error';
+  });
+
   ngOnInit(): void {
     this.setSeoTags();
     this.injectStructuredData();
     this.googleAnalytics.trackPageView(APP_PATH, APP_TITLE);
+    void this.webgpu.initialize();
   }
 
   /** Static title/meta/OG/Twitter tags. Safe to set once - this app has no per-route content. */
