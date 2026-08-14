@@ -225,12 +225,13 @@ const DEFAULT_WEBGL_CONFIG: WebGLBlurConfig = {
  */
 export class WebGLIsotropicBlur extends BaseWebGLStrategy implements BlurStrategy {
   private config: WebGLBlurConfig;
+  // Only the compiled programs + static geometry buffers are cached on the
+  // instance now. These are immutable/read-only once created, so sharing
+  // them across calls is safe. Textures and the framebuffer -- the pieces
+  // that are actually mutated during a blur -- are allocated fresh inside
+  // blur() below (see comment there).
   private resources: WebGLResources | null = null;
-  private currentWidth = 0;
-  private currentHeight = 0;
-  private framebuffer: WebGLFramebuffer | null = null;
-  private textures: WebGLTexture[] = [];
-  
+
   constructor(config: Partial<WebGLBlurConfig> = {}) {
     super();
     this.config = { ...DEFAULT_WEBGL_CONFIG, ...config };
@@ -284,6 +285,14 @@ export class WebGLIsotropicBlur extends BaseWebGLStrategy implements BlurStrateg
     return this.resources;
   }
   
+  /**
+   * Textures and the framebuffer are allocated per-call (not cached on
+   * `this`) so concurrent blur() calls on the same instance -- e.g.
+   * DoGProcessor.process()'s Promise.all([blur(sigma), blur(sigma*k)]) --
+   * never share mutable GPU state. Mirrors the pattern already used by
+   * WebGPUIsotropicBlur. Always cleaned up in `finally`, even if a pass or
+   * readback throws.
+   */
   async blur(input: ChannelImage, sigma: number): Promise<ChannelImage> {
     if (sigma < 0.1) {
       return {
@@ -303,75 +312,79 @@ export class WebGLIsotropicBlur extends BaseWebGLStrategy implements BlurStrateg
       Math.max(3, Math.floor(sigma * this.config.kernelSizeMultiplier) | 1)
     );
     const kernel = generateGaussianKernel(sigma, kernelSize);
-    
-    // Create or reuse textures
-    if (this.currentWidth !== width || this.currentHeight !== height) {
-      this.textures.forEach(t => gl.deleteTexture(t));
-      this.textures = [];
-      
+
+    const textures: WebGLTexture[] = [];
+    const framebuffer = gl.createFramebuffer();
+    if (!framebuffer) {
+      throw new Error('Failed to create framebuffer');
+    }
+
+    try {
       for (let i = 0; i < 3; i++) {
         const texture = gl.createTexture();
+        if (!texture) {
+          throw new Error('Failed to create texture');
+        }
         gl.bindTexture(gl.TEXTURE_2D, texture);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, width, height, 0, gl.RED, gl.FLOAT, null);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        this.textures.push(texture!);
+        textures.push(texture);
       }
-      
-      if (this.framebuffer) {
-        gl.deleteFramebuffer(this.framebuffer);
-      }
-      this.framebuffer = gl.createFramebuffer();
-      this.currentWidth = width;
-      this.currentHeight = height;
+
+      // Upload input data
+      gl.bindTexture(gl.TEXTURE_2D, textures[0]);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RED, gl.FLOAT, input.data);
+
+      // Horizontal blur
+      this.blurPass(resources, framebuffer, textures[0], textures[1], kernel, kernelSize, width, height, true);
+
+      // Vertical blur
+      this.blurPass(resources, framebuffer, textures[1], textures[2], kernel, kernelSize, width, height, false);
+
+      // Read back result
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, framebuffer);
+      gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, textures[2], 0);
+      const resultData = new Float32Array(width * height);
+      gl.readPixels(0, 0, width, height, gl.RED, gl.FLOAT, resultData);
+
+      return {
+        data: resultData,
+        width,
+        height,
+      };
+    } finally {
+      textures.forEach(t => gl.deleteTexture(t));
+      gl.deleteFramebuffer(framebuffer);
     }
-    
-    // Upload input data
-    gl.bindTexture(gl.TEXTURE_2D, this.textures[0]);
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RED, gl.FLOAT, input.data);
-    
-    // Horizontal blur
-    this.blurPass(resources, this.textures[0], this.textures[1], kernel, kernelSize, true);
-    
-    // Vertical blur
-    this.blurPass(resources, this.textures[1], this.textures[2], kernel, kernelSize, false);
-    
-    // Read back result
-    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.framebuffer);
-    gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.textures[2], 0);
-    const resultData = new Float32Array(width * height);
-    gl.readPixels(0, 0, width, height, gl.RED, gl.FLOAT, resultData);
-    
-    return {
-      data: resultData,
-      width,
-      height,
-    };
   }
   
   private blurPass(
     resources: WebGLResources,
+    framebuffer: WebGLFramebuffer,
     inputTexture: WebGLTexture,
     outputTexture: WebGLTexture,
     kernel: Float32Array,
     kernelSize: number,
+    width: number,
+    height: number,
     isHorizontal: boolean
   ): void {
     const { gl, quadBuffer, texCoordBuffer } = resources;
     const program = isHorizontal ? resources.horizontalBlurProgram : resources.verticalBlurProgram;
     
     gl.useProgram(program);
-    gl.viewport(0, 0, this.currentWidth, this.currentHeight);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
+    gl.viewport(0, 0, width, height);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, outputTexture, 0);
     
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, inputTexture);
     gl.uniform1i(gl.getUniformLocation(program, 'u_image'), 0);
-    gl.uniform2f(gl.getUniformLocation(program, 'u_resolution'), this.currentWidth, this.currentHeight);
-    gl.uniform1iv(gl.getUniformLocation(program, 'u_kernel'), Array.from(kernel));
+    gl.uniform2f(gl.getUniformLocation(program, 'u_resolution'), width, height);
+    gl.uniform1fv(gl.getUniformLocation(program, 'u_kernel'), kernel);
     gl.uniform1i(gl.getUniformLocation(program, 'u_kernelSize'), kernelSize);
     
     gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
@@ -396,19 +409,7 @@ export class WebGLIsotropicBlur extends BaseWebGLStrategy implements BlurStrateg
       gl.deleteBuffer(this.resources.texCoordBuffer);
     }
     
-    const { gl } = this.resources || { gl: null };
-    if (gl) {
-      this.textures.forEach(t => gl.deleteTexture(t));
-      if (this.framebuffer) {
-        gl.deleteFramebuffer(this.framebuffer);
-      }
-    }
-    
     this.resources = null;
-    this.textures = [];
-    this.framebuffer = null;
-    this.currentWidth = 0;
-    this.currentHeight = 0;
   }
 }
 
