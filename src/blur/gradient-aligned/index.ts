@@ -45,7 +45,7 @@ export class GradientAlignedBlur implements BlurStrategy {
           const instance = new Ctor({ ...config, flowField }) as BackendInstance;
           return new GradientAlignedBlur(instance, Ctor, flowField, config);
         } catch {
-          continue; // isSupported() lied — try next
+          continue; // isSupported() lied
         }
       }
     }

@@ -1,5 +1,5 @@
 // common.wgsl
-// Pipeline-overridable — real value supplied via
+// Pipeline-overridable. real value supplied via
 // GPUComputePipelineDescriptor.compute.constants (see makePipeline() in
 // webgpu.ts). Declared once here since it's shared by every shader module.
 override WORKGROUP_SIZE: u32 = 8u;

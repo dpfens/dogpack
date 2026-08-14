@@ -77,6 +77,11 @@ export interface BackendIdentifiable {
   readonly backend: 'webgpu' | 'webgl' | 'cpu';
 }
 
+export interface EdgeAwareFilterCore<TParams> extends Disposable, BackendIdentifiable {
+  apply(input: ChannelImage, params: TParams): Promise<ChannelImage>;
+}
+export type EdgeAwareFilterCtor<TParams> = StrategyCtor<EdgeAwareFilterCore<TParams>>
+
 /**
  * Abstract blur strategy interface
  * Implementations provide different blur algorithms (isotropic, flow-guided, etc.)
@@ -213,6 +218,13 @@ export interface BilateralFilterConfig {
   radiusMultiplier?: number;
 }
 
+// Default config values (mirrors the CPU implementation in cpu.ts)
+export const DEFAULT_BILATERAL_CONFIG: BilateralFilterConfig = {
+  sigmaSpatial: 3,
+  sigmaRange: 0.1,
+  radiusMultiplier: 2,
+};
+
 /**
  * Configuration for median filter
  */
@@ -221,6 +233,10 @@ export interface MedianFilterConfig {
   radius: number;
 }
 
+export const DEFAULT_MEDIAN_CONFIG: MedianFilterConfig = {
+  radius: 2,
+};
+
 /**
  * Configuration for Kuwahara filter
  */
@@ -228,6 +244,36 @@ export interface KuwaharaFilterConfig {
   /** Radius of the filter (default: 3) */
   radius: number;
 }
+
+export const DEFAULT_KUWAHARA_CONFIG: KuwaharaFilterConfig = {
+  radius: 3,
+};
+
+export interface ContrastEnhancementConfig {
+  blackPoint: number;
+  whitePoint: number;
+}
+
+export const DEFAULT_CONTRAST_ENHANCEMENT_CONFIG: ContrastEnhancementConfig = {
+  blackPoint: 0.01,
+  whitePoint: 0.99
+};
+
+export interface QuantizerConfig {
+  levels: number;
+}
+
+export const DEFAULT_QUANTIZER_CONFIG = {
+  levels: 8
+};
+
+export interface GaussianConfig {
+  sigma: number;
+}
+
+export const DEFAULT_GAUSSIAN_CONFIG = {
+  sigma: 1.0
+};
 
 /**
  * Configuration for Edge Tangent Flow computation

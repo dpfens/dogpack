@@ -6,7 +6,7 @@
  * 
  * Implements the reparameterized formulation from Section 2.5 of:
  * "XDoG: An eXtended difference-of-Gaussians compendium including 
- * advanced image stylization" by Winnemöller et al. (2012)
+ * advanced image stylization" by Winnemoller et al. (2012)
  */
 
 import type { BlurStrategy, ChannelImage } from './interfaces/base.js';
@@ -20,7 +20,7 @@ import { DEFAULT_DOG_CONFIG, type DoGProcessingResult } from './interfaces/dog.j
  * Difference of Gaussians processor
  * 
  * Uses the reparameterized formulation (Equation 7):
- * S_σ,k,p(x) = G_σ(x) + p x D_σ,k(x) = (1 + p) x G_σ(x) - p x G_kσ(x)
+ * S_sigma,k,p(x) = G_sigma(x) + p x D_sigma,k(x) = (1 + p) x G_sigma(x) - p x G_ksigma(x)
  * 
  * This is equivalent to unsharp masking of the blurred image, which
  * decouples edge sharpening strength (p) from threshold parameters.
@@ -61,14 +61,14 @@ export class DoGProcessor {
     const params = { ...this.config, ...overrides };
     
     // Step 1: Apply two Gaussian blurs with different sigma values
-    // G_σ * I and G_kσ * I
+    // G_sigma * I and G_ksigma * I
     const [blur1, blur2] = await Promise.all([
       this.blurStrategy.blur(input, params.sigma),
       this.blurStrategy.blur(input, params.sigma * params.k)
     ]);
     
     // Step 2: Compute sharpened image using Equation 7
-    // S = (1 + p) * G_σ * I - p * G_kσ * I
+    // S = (1 + p) * G_sigma * I - p * G_ksigma * I
     const sharpened = this.computeSharpening(blur1, blur2, params.p);
     
     // Step 3: Apply soft thresholding using Equation 5
@@ -156,7 +156,7 @@ export class DoGProcessor {
   }
   
   /**
-   * Compute raw Difference of Gaussians: D(x) = G_σ(x) - G_kσ(x)
+   * Compute raw Difference of Gaussians: D(x) = G_sigma(x) - G_ksigma(x)
    * This is the standard DoG without any weighting
    */
   private computeDoG(
@@ -175,14 +175,14 @@ export class DoGProcessor {
   
   /**
    * Compute sharpened image using Equation 7 from the paper:
-   * S_σ,k,p(x) = G_σ(x) + p x D_σ,k(x) = (1 + p) x G_σ(x) - p x G_kσ(x)
+   * S_sigma,k,p(x) = G_sigma(x) + p x D_sigma,k(x) = (1 + p) x G_sigma(x) - p x G_ksigma(x)
    * 
    * This can be understood as unsharp masking of the blurred image.
    * The parameter p controls the edge sharpening strength independently
    * of the threshold parameters.
    * 
-   * @param blur1 G_σ * I (smaller blur)
-   * @param blur2 G_kσ * I (larger blur)
+   * @param blur1 G_sigma * I (smaller blur)
+   * @param blur2 G_ksigma * I (larger blur)
    * @param p Sharpening strength (p ≈ 20 typical, p ≈ 100 for woodcut)
    */
   private computeSharpening(

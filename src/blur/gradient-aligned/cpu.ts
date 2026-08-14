@@ -29,7 +29,6 @@ export class CPUGradientAlignedBlur extends BaseCPUStrategy implements BlurStrat
     this.config = { ...DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, ...config };
   }
 
-  /** CPU is always available — no environment capability to probe. */
   static async isSupported(): Promise<boolean> {
     return true;
   }
