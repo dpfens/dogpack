@@ -39,7 +39,7 @@ const DEFAULT_KUWAHARA_CONFIG = {
  * while supporting strong edges.
  *
  * CPU is always available (BaseCPUStrategy.isSupported() / dispose() /
- * backend all apply unchanged) — this is the universal fallback.
+ * backend all apply unchanged). This is the universal fallback.
  */
 class BilateralFilter extends base_js_1.BaseCPUStrategy {
     config;
@@ -314,7 +314,7 @@ exports.Quantizer = Quantizer;
  */
 class LocalVariancePreprocessor {
     config;
-    /** CPU-only — no WebGL/WebGPU counterpart exists for this preprocessor. */
+    /** CPU-only. No WebGL/WebGPU counterparts for this yet. */
     backend = 'cpu';
     constructor(config = {}) {
         this.config = {

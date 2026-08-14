@@ -4,7 +4,6 @@
  *
  * Functional port of the WebGL2 implementation (webgl.ts) onto WebGPU
  * compute shaders. Structurally this is much simpler than the WebGL version:
- * there's no canvas, no framebuffers, and no fragment-shader ping-pong —
  * every stage is a compute pass over flat storage buffers, addressed by
  * (y * width + x) instead of texture coordinates. Edge-clamping is done
  * manually via clampIdx() rather than relying on CLAMP_TO_EDGE sampler state.
@@ -13,7 +12,7 @@
  * capped the Gaussian blur radius at 16), the WebGL implementation had to
  * work around GLSL's lack of dynamically-sized arrays. Storage buffers have
  * no such limit here, so the blur radius is only bounded by sanity/perf
- * limits, not by shader syntax — see MAX_BLUR_RADIUS below.
+ * limits, not by shader syntax. See MAX_BLUR_RADIUS below.
  *
  * Multi-channel support follows Di Zenzo's approach ("A note on the
  * gradient of a multi-image", CVGIP 33, 1986), matching the CPU backend:
@@ -21,29 +20,28 @@
  * and a single eigendecomposition is performed on the combined tensor.
  * On the GPU this means: for each input channel, run the fused
  * gradient/structure-tensor pass and *accumulate* (read-modify-write add)
- * into one shared tensor buffer, rather than overwriting it — see
+ * into one shared tensor buffer, rather than overwriting it. See
  * GRADIENT_STRUCTURE_TENSOR_SHADER. Everything from the Gaussian blur pass
  * onward is unchanged regardless of channel count, so compute() is
  * implemented as computeMultiChannel() called with a single-element array.
  *
- * This module has no knowledge of color spaces — it only ever sees
+ * This has no knowledge of color spaces. It only ever sees
  * ChannelImage scalar fields. RGB/Lab/etc. splitting and conversion is
  * the caller's responsibility (see utils/color.ts).
  *
  * ---- Row-band tiling (memory) ----
  * Every WGSL shader here addresses purely through the `Params` uniform
- * (width/height/radius/kernelSize) and clampIdx() — none of them assume
+ * (width/height/radius/kernelSize) and clampIdx(). None assume
  * anything about a "global" image size beyond what's passed in. That
  * means a smaller sub-image ("band") of rows is, as far as every shader
- * is concerned, just an image — no shader changes were needed to support
- * tiling.
+ * is concerned, just an image
  *
  * computeInternal() splits the image into horizontal row bands and runs
  * the full pipeline (gradient+tensor-accumulate (fused) -> blur -> extract
  * -> refine) once per band, on band-sized buffers, instead of
  * allocating whole-image buffers. Peak GPU memory is therefore bounded by
  * a fixed, tunable budget (bandMemoryBudgetBytes) rather than by image
- * resolution — see planBandLayout() for the memory math and the
+ * resolution. See planBandLayout() for the memory math and the
  * `halo` comment in computeInternal() for why each band has to compute
  * more rows than it ultimately outputs.
  *
@@ -57,8 +55,7 @@
  * synchronization comment inside computeInternal() for the exact
  * correctness argument (it relies on WebGPU's same-queue in-order
  * execution guarantee, plus explicitly awaiting the relevant readback
- * before a slot's buffers — in particular its mapped staging buffer — are
- * reused).
+ * before a slot's buffers are reused).
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.WebGpuEdgeTangentFlowComputer = void 0;
@@ -76,8 +73,8 @@ const tangent_refine_wgsl_js_1 = require("./shaders/webgpu/tangent_refine.wgsl.j
 // yet (only isWebGLComputeSupported is referenced in webgl.ts), so a local
 // equivalent is defined at the bottom of this file. Feel free to hoist it
 // into utils/index.js as a sibling of isWebGLComputeSupported.
-/** Sanity cap on Gaussian blur radius (pixels). Not a shader limitation —
- *  just guards against pathological sigma values blowing up dispatch cost. */
+/** Sanity cap on Gaussian blur radius (pixels). uards against pathological
+ * sigma values blowing up dispatch cost. */
 const MAX_BLUR_RADIUS = 64;
 const WORKGROUP_SIZE = 8;
 /**
@@ -94,7 +91,7 @@ const WORKGROUP_SIZE = 8;
  *   kernel: (2*32 + 1) * 4B                                            =  260B
  *   total                                                              = 9476B
  * That leaves ~7KB of headroom for driver overhead/alignment. Radii above
- * this (i.e. large-sigma blurs) are rare in practice and still correct —
+ * this (i.e. large-sigma blurs) are rare in practice and still correct,
  * they just don't get the shared-memory win.
  *
  * Unrelated to row-band tiling below (that's about bounding *image*
@@ -119,17 +116,16 @@ const DEFAULT_BAND_MEMORY_BUDGET_BYTES = 256 * 1024 * 1024; // 256 MiB
  * Floor on band core-row count. Guards against degenerate configurations
  * (huge halo relative to the memory budget) producing a zero/negative
  * band size, at the cost of possibly exceeding bandMemoryBudgetBytes in
- * that edge case — see planBandLayout().
+ * that edge case. See planBandLayout().
  */
 const MIN_BAND_ROWS = 64;
 // ============== WGSL Shader Sources ==============
 // Computes one channel's Sobel gradient and *accumulates* its structure
 // tensor contribution into accumBuf (Di Zenzo multichannel summation)
-// instead of overwriting it — fused into a single pass since nothing
-// downstream ever consumes the raw gradient on its own (it used to be
-// materialized into its own full-image buffer purely so this pass could
-// read it back one dispatch later). accumBuf must be zero before the
-// first channel's pass each band — see the encoder.clearBuffer() call in
+// instead of overwriting it. Fused into a single pass since nothing
+// downstream ever consumes the raw gradient on its own.
+// accumBuf must be zero before the
+// first channel's pass each band. See the encoder.clearBuffer() call in
 // computeInternal(), which replaces the "freshly-created buffers are
 // zero" guarantee the single-shot version used to rely on (band buffers
 // are now allocated once and reused).
@@ -141,21 +137,21 @@ const MIN_BAND_ROWS = 64;
 // once from the final accumulated trace directly inside
 // TANGENT_EXTRACT_SHADER instead of a separate finalize pass.
 const GRADIENT_STRUCTURE_TENSOR_SHADER = common_wgsl_js_1.default + gradient_structure_tensor_wgsl_js_1.default;
-// Both blur directions live in the same module — WGSL allows multiple
-// @compute entry points per shader module, so this replaces the WebGL
+// Both blur directions live in the same module. Since WGSL allows multiple
+// @compute entry points per shader module, this replaces the WebGL
 // version's two separate H/V programs with one module and two pipelines.
 const GAUSSIAN_BLUR_SHADER = common_wgsl_js_1.default + gaussian_blur_wgsl_js_1.default;
 // Tiled counterpart to GAUSSIAN_BLUR_SHADER, used when radius <=
 // TILE_RADIUS_CAP (see that constant's comment for the sizing rationale).
 // Each workgroup loads its input footprint into workgroup-shared memory
 // once, then every thread reads its taps from shared memory instead of
-// re-issuing up to `kernelSize` independent global storage-buffer reads —
+// re-issuing up to `kernelSize` independent global storage-buffer reads;
 // the redundant-read pattern the untiled version has, since neighboring
 // threads' kernel windows overlap almost entirely.
 const GAUSSIAN_BLUR_TILED_SHADER = common_wgsl_js_1.default + gaussian_blur_tiled_wgsl_js_1.default;
 const TANGENT_EXTRACT_SHADER = common_wgsl_js_1.default + tangent_extract_wgsl_js_1.default;
 // Unlike the blur radius, the refine neighborhood is a fixed 5x5 (radius
-// 2) — so the tile size is a compile-time constant with no data-dependent
+// 2) so the tile size is a compile-time constant with no data-dependent
 // cap/fallback needed, unlike GAUSSIAN_BLUR_TILED_SHADER above. Every
 // invocation in the untiled version re-read the same 5x5=25 neighbors its
 // neighbors were also reading independently from global storage; here
@@ -180,12 +176,10 @@ class WebGpuEdgeTangentFlowComputer extends base_js_2.BaseWebGPUStrategy {
      */
     static bandMemoryBudgetBytes = DEFAULT_BAND_MEMORY_BUDGET_BYTES;
     /**
-     * Cheap check — mirrors the shape of isWebGLComputeSupported(), just
-     * wrapped in a resolved Promise to match the async `ETFComputerCtor`
-     * shape. This only confirms the API surface exists; it can't confirm
+     * This cheap check simply confirms the API surface exists; it can't confirm
      * an adapter is actually obtainable (that requires the async
      * requestAdapter() call made lazily inside
-     * initResources()/computeInternal()) — use getUnsupportedReason() for
+     * initResources()/computeInternal()). use getUnsupportedReason() for
      * that deeper check.
      */
     static async isSupported() {
@@ -321,7 +315,7 @@ class WebGpuEdgeTangentFlowComputer extends base_js_2.BaseWebGPUStrategy {
     }
     /**
      * Compute ETF from a single scalar channel using WebGPU compute shaders.
-     * Implemented as computeMultiChannel() with a single-element array — the
+     * Implemented as computeMultiChannel() with a single-element array. the
      * per-channel accumulate pass degenerates to a plain assignment when
      * there's only one channel (see GRADIENT_STRUCTURE_TENSOR_SHADER).
      */
@@ -340,8 +334,7 @@ class WebGpuEdgeTangentFlowComputer extends base_js_2.BaseWebGPUStrategy {
     /**
      * Release the cached WebGPU device + pipelines. Safe to call even if no
      * compute()/computeMultiChannel() call has happened yet. Since the
-     * underlying resources are cached statically (shared across instances —
-     * see the class doc comment), this releases them for every
+     * underlying resources are cached statically, this releases them for every
      * WebGpuEdgeTangentFlowComputer instance, not just this one; call it
      * once you're done with all ETF computations for the session.
      */
@@ -359,7 +352,7 @@ class WebGpuEdgeTangentFlowComputer extends base_js_2.BaseWebGPUStrategy {
      * Splits the image into horizontal row bands and runs the full
      * gradient+tensor-accumulate (fused) -> blur -> extract -> refine
      * pipeline once per band, on two round-robin, reused,
-     * band-sized buffer sets ("slots") — see the module-level doc comment
+     * band-sized buffer sets ("slots"). See the module-level doc comment
      * for why this bounds memory and how the double-buffering keeps the
      * GPU fed. Buffer allocation, band-size planning, and the halo math
      * are the only real additions versus a single-shot whole-image run;
@@ -380,13 +373,13 @@ class WebGpuEdgeTangentFlowComputer extends base_js_2.BaseWebGPUStrategy {
         // `halo` is how many extra rows above/below a band's *target* output
         // rows have to be computed (and hence loaded) for those target rows
         // to come out identical to a full, untiled run:
-        //   ±1        Sobel gradient stencil (gradient.wgsl)
-        //   ±radius   separable Gaussian blur (blurH then blurV — a single
+        //   +/1        Sobel gradient stencil (gradient.wgsl)
+        //   +/-radius   separable Gaussian blur (blurH then blurV: a single
         //             `radius` margin covers both passes: blurH is computed
         //             row-independently so needs no extra y-margin itself,
         //             and blurV only needs blurH's output `radius` rows out,
         //             which that single margin already provides)
-        //   ±2*iters  5x5 tangent-refine kernel, applied `iterations` times —
+        //   +/-2*iters  5x5 tangent-refine kernel, applied `iterations` times:
         //             each pass "eats" 2 rows of validity from the band's
         //             edges, so the untouched margin has to start
         //             2*iterations rows out from the target rows
@@ -402,13 +395,13 @@ class WebGpuEdgeTangentFlowComputer extends base_js_2.BaseWebGPUStrategy {
         return this.runGuarded(device, async () => {
             // Two full sets of band-sized buffers, alternated per band, so band
             // N's compute can be submitted before band N-1's result has
-            // finished being read back — see synchronization note below.
+            // finished being read back. See synchronization note below.
             const slots = [
                 createBandBufferSet(device, width, maxBandBufHeight, channelCount),
                 createBandBufferSet(device, width, maxBandBufHeight, channelCount),
             ];
             // Reusable JS-side scratch for building each band's halo-padded,
-            // edge-clamped channel rows — one buffer per (slot, channel), sized
+            // edge-clamped channel rows. one buffer per (slot, channel), sized
             // once up front instead of allocated fresh every band.
             const channelScratch = [0, 1].map(() => inputs.map(() => new Float32Array(width * maxBandBufHeight)));
             const tangents = new Float32Array(width * height * 2);
@@ -426,9 +419,9 @@ class WebGpuEdgeTangentFlowComputer extends base_js_2.BaseWebGPUStrategy {
                     const bandBufHeight = bandRowsThisBand + 2 * halo;
                     const bandPixelCount = width * bandBufHeight;
                     // This slot's buffers were last used two bands ago (or never,
-                    // for bandIdx < 2). Before touching them again — uploading new
+                    // for bandIdx < 2). Before touching them again (uploading new
                     // channel data, clearing tensorAccumBuf, or recording new
-                    // commands that target them — make sure that band's GPU work
+                    // commands that target them) make sure that band's GPU work
                     // is done and, critically, that its staging buffer has been
                     // unmap()'d: WebGPU rejects any submission that references a
                     // still-mapped buffer, and mapAsync()/unmap() are the one part
@@ -458,9 +451,7 @@ class WebGpuEdgeTangentFlowComputer extends base_js_2.BaseWebGPUStrategy {
                     // each band's per-channel accumulation loop.
                     encoder.clearBuffer(bufs.tensorAccumBuf);
                     // Step 1: per channel, fused gradient + structure-tensor-accumulate
-                    // directly into tensorAccumBuf. (Magnitude is no longer finalized
-                    // here as a separate pass — tangent_extract derives it from the
-                    // accumulated trace once, after blurring.)
+                    // directly into tensorAccumBuf.
                     for (let k = 0; k < channelCount; k++) {
                         const bindGroup = device.createBindGroup({
                             layout: res.gradientStructureTensorPipeline.getBindGroupLayout(0),
@@ -548,12 +539,11 @@ class WebGpuEdgeTangentFlowComputer extends base_js_2.BaseWebGPUStrategy {
                     // Copy this band's final tangent buffer into its slot's staging
                     // buffer. This is deliberately the LAST command in the
                     // submission: awaiting its mapAsync (below) is then sufficient
-                    // proof that every earlier command in this band's submission —
-                    // and hence every buffer this slot owns — has finished on the
-                    // GPU, without any further explicit synchronization.
+                    // proof that every earlier command in this band's submission
+                    // has finished on the GPU, without any further explicit synchronization.
                     encoder.copyBufferToBuffer(readBuf, 0, bufs.stagingBuf, 0, bandPixelCount * 4 * 4);
                     device.queue.submit([encoder.finish()]);
-                    // Deliberately NOT awaited here — stashed instead. The next
+                    // Deliberately stashed. The next
                     // time this slot comes up (two bands from now) we await it
                     // before reusing these buffers. That gap is what lets band
                     // N+1's upload + dispatch overlap with band N's GPU execution
@@ -602,7 +592,7 @@ function createEmptyVec4Buffer(device, pixelCount) {
 }
 function createParamsBuffer(device, params) {
     const buffer = device.createBuffer({
-        size: 16, // 4 x u32, already 16-byte aligned
+        size: 16,
         usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     });
     device.queue.writeBuffer(buffer, 0, new Uint32Array([params.width, params.height, params.radius, params.kernelSize]));
@@ -628,14 +618,12 @@ function generateGaussianKernel(sigma, size) {
  *
  * Every intermediate that scales with band height is a whole-band
  * vec4<f32> buffer (16 bytes/pixel): tensorAccum, blurTemp, blurOutput,
- * tangentBuf1, tangentBuf2 (5 of them — gradientScratch was folded into
- * tensorAccum when the gradient and structure-tensor-accumulate passes
- * were fused into one shader, so it no longer needs its own buffer),
+ * tangentBuf1, tangentBuf2,
  * plus one scalar f32 input buffer per channel (4 bytes/pixel), plus one
  * vec4 staging buffer for readback (16 bytes/pixel). `bandRows` is chosen
  * so that (bandRows + 2*halo) rows of all of those together fit under
  * budgetBytes, floored at MIN_BAND_ROWS so a large halo can't produce a
- * degenerate (zero/negative) band — in that edge case the actual
+ * degenerate (zero/negative) band. In that edge case the actual
  * footprint may exceed budgetBytes; see the thrown error below for the
  * case where it can't be made to fit even at the floor.
  */
@@ -696,7 +684,7 @@ function destroyBandBufferSet(set) {
 /**
  * Fill `out` (length must be width * (bandRows + 2*halo)) with this
  * channel's rows [bandStartY - halo, bandStartY + bandRows + halo),
- * clamping source row indices to [0, height-1] — i.e. replicating the
+ * clamping source row indices to [0, height-1]. i.e. replicating the
  * true image's top/bottom edge rows exactly where clampIdx() would have,
  * had this been computed as part of a single whole-image run. Interior
  * band boundaries (not at the true image edge) get real neighboring row

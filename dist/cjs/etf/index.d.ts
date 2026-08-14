@@ -20,8 +20,7 @@ export declare class EdgeTangentFlowComputer implements ETFComputer {
     dispose(): void;
     /**
      * Compute an Edge Tangent Flow. The returned FlowField carries its own
-     * magnitude/anisotropy (see interfaces/base.ts) — there is no separate
-     * "detailed" variant anymore.
+     * magnitude/anisotropy (see interfaces/base.ts)
      */
     compute(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
     computeMultiChannel(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;

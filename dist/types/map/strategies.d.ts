@@ -1,5 +1,5 @@
 /**
- * Strategy pattern for parameter maps -- plain classes, matching how
+ * Strategy pattern for parameter maps. plain classes matching how
  * every Preprocessor/BlurStrategy elsewhere in this codebase is written.
  * `param` is the swap contract: ParameterMapPipeline.set() and
  * CompositeStrategy both check it before wiring a strategy in.

@@ -5,24 +5,42 @@
  * and DoG processor together.
  */
 import { type ChannelImage } from '../interfaces/base.js';
-import { type ADoGConfig, type ADoGProcessingResult, type DoGImplementation } from '../interfaces/dog.js';
+import { type ADoGConfig, type ADoGProcessingResult, type DoGImplementation, type ParamRange } from '../interfaces/dog.js';
 export declare class ADoG implements DoGImplementation {
     private config;
     private blurStrategy;
     constructor(config?: Partial<ADoGConfig>);
     dispose(): void;
     /**
-     * Estimate a good `epsilon` for a given input + config by running the
-     * ADoG pipeline once and taking the mean of the (pre-threshold) sharpened
-     * response. Since ADoG's response straddles the true edge/noise "zero"
-     * around the local mean rather than a fixed absolute constant (see Eq. 4/5),
-     * a fixed epsilon default doesn't transfer across images, tau/s/noiseScaleC
-     * choices, or resolutions -- this recomputes it per-input instead.
-     *
-     * @param biasOffset Shifts the estimate away from the raw mean to bias
-     *   density (positive -> denser/more black). Default 0 (balanced 50/50).
+     * Analytical epsilon ceiling for a given tau: beyond this, no flat
+     * region (however bright) can cross threshold, and the output floods
+     * to solid black regardless of image content. Pure function of tau,
+     * so it's sync and doesn't need an input image or a processor instance.
      */
+    static getEpsilonCeiling(tau: number): number;
+    /**
+     * Runs the pipeline once and returns mean/std of the pre-threshold
+     * sharpened response, plus the tau-derived ceiling. Shared by
+     * estimateEpsilon() and getEpsilonRange() so they don't each pay for
+     * their own processDetailed() pass.
+     */
+    private static computeEpsilonStats;
+    /**
+     * Recommended [min, max] band for the epsilon slider, plus a sensible
+     * default, derived from the actual image + config rather than the
+     * static ADOG_PARAM_RANGES.epsilon entry (which can't account for
+     * tau/s/noiseScaleC/image content).
+     */
+    static getEpsilonRange(input: ChannelImage, config?: Partial<ADoGConfig>, spread?: number): Promise<ParamRange>;
+    /** Existing method, now built on computeEpsilonStats. */
     static estimateEpsilon(input: ChannelImage, config?: Partial<ADoGConfig>, biasOffset?: number): Promise<number>;
+    /**
+     * Analytical epsilon ceiling for a given tau: beyond this, no flat
+     * region (however bright) can cross threshold, and the output floods
+     * to solid black regardless of image content. Pure function of tau,
+     * so it's sync and doesn't need an input image or a processor instance.
+     */
+    static getEpsilonMax(tau: number): number;
     static estimateSigma(input: ChannelImage, { referenceDimension, baseSigma }?: {
         referenceDimension?: number;
         baseSigma?: number;

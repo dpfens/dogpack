@@ -29,8 +29,8 @@ import { generateGaussianKernel } from '../utils/math.js';
  */
 export interface BaseIsotropicBlurConfig {
   /** 
-   * Kernel size multiplier relative to sigma (default: 6, meaning 3σ on each side)
-   * Paper samples at 2× sigma for flow-aligned, 2.45× for structure tensor
+   * Kernel size multiplier relative to sigma (default: 6, meaning 3 * sigma on each side)
+   * Paper samples at 2x sigma for flow-aligned, 2.45x for structure tensor
    */
   kernelSizeMultiplier: number;
 }
@@ -57,11 +57,11 @@ export interface FlowGuidedBlurConfig {
 
 /**
  * Compute kernel size from sigma
- * Paper samples at all integer locations less than 2× sigma for flow-aligned,
- * and extends to 2.45σ for structure tensor blur
+ * Paper samples at all integer locations less than 2x sigma for flow-aligned,
+ * and extends to 2.45 * sigma for structure tensor blur
  * 
  * @param sigma Standard deviation
- * @param multiplier Size multiplier (default 6 = 3σ on each side)
+ * @param multiplier Size multiplier (default 6 = 3*sigma on each side)
  */
 function computeKernelSize(sigma: number, multiplier: number = 6): number {
   // Ensure odd size for symmetric kernel
@@ -80,7 +80,7 @@ export class CPUIsotropicBlur extends BaseCPUStrategy implements BlurStrategy {
     this.config = { ...DEFAULT_ISOTROPIC_CONFIG, ...config };
   }
 
-  /** CPU is always available — it's the universal fallback. */
+  /** CPU is always available */
   static async isSupported(): Promise<boolean> {
     return true;
   }
@@ -712,7 +712,7 @@ export class IsotropicBlur implements BlurStrategy {
    * remaining backend: cascading on one call risks masking a real input
    * bug (e.g. a bad sigma) as a backend problem.
    *
-   * `failedBackends` is per-instance, not module-global — a transient
+   * `failedBackends` is per-instance, not module-global so a transient
    * driver hiccup shouldn't permanently blacklist a backend for the whole
    * session.
    */

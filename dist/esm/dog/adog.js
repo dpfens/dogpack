@@ -21,28 +21,70 @@ export class ADoG {
         this.blurStrategy.then(strategy => strategy.dispose());
     }
     /**
-     * Estimate a good `epsilon` for a given input + config by running the
-     * ADoG pipeline once and taking the mean of the (pre-threshold) sharpened
-     * response. Since ADoG's response straddles the true edge/noise "zero"
-     * around the local mean rather than a fixed absolute constant (see Eq. 4/5),
-     * a fixed epsilon default doesn't transfer across images, tau/s/noiseScaleC
-     * choices, or resolutions -- this recomputes it per-input instead.
-     *
-     * @param biasOffset Shifts the estimate away from the raw mean to bias
-     *   density (positive -> denser/more black). Default 0 (balanced 50/50).
+     * Analytical epsilon ceiling for a given tau: beyond this, no flat
+     * region (however bright) can cross threshold, and the output floods
+     * to solid black regardless of image content. Pure function of tau,
+     * so it's sync and doesn't need an input image or a processor instance.
      */
-    static async estimateEpsilon(input, config = {}, biasOffset = 0) {
+    static getEpsilonCeiling(tau) {
+        return 1 - tau;
+    }
+    /**
+     * Runs the pipeline once and returns mean/std of the pre-threshold
+     * sharpened response, plus the tau-derived ceiling. Shared by
+     * estimateEpsilon() and getEpsilonRange() so they don't each pay for
+     * their own processDetailed() pass.
+     */
+    static async computeEpsilonStats(input, config = {}) {
         const processor = new ADoG(config);
         try {
             const { sharpened } = await processor.processDetailed(input);
+            const n = sharpened.data.length;
             let sum = 0;
-            for (let i = 0; i < sharpened.data.length; i++)
+            for (let i = 0; i < n; i++)
                 sum += sharpened.data[i];
-            return sum / sharpened.data.length - biasOffset;
+            const mean = sum / n;
+            let sqDiff = 0;
+            for (let i = 0; i < n; i++)
+                sqDiff += (sharpened.data[i] - mean) ** 2;
+            const std = Math.sqrt(sqDiff / n);
+            const tau = config.tau ?? DEFAULT_ADOG_CONFIG.tau;
+            return { mean, std, ceiling: ADoG.getEpsilonCeiling(tau) };
         }
         finally {
             processor.dispose();
         }
+    }
+    /**
+     * Recommended [min, max] band for the epsilon slider, plus a sensible
+     * default, derived from the actual image + config rather than the
+     * static ADOG_PARAM_RANGES.epsilon entry (which can't account for
+     * tau/s/noiseScaleC/image content).
+     */
+    static async getEpsilonRange(input, config = {}, spread = 1.5) {
+        const { mean, std, ceiling } = await ADoG.computeEpsilonStats(input, config);
+        return {
+            hardMin: 0,
+            recommendedMin: Math.max(0, mean - spread * std),
+            recommendedMax: Math.min(ceiling, mean + spread * std),
+            hardMax: 0.2,
+            default: mean,
+            step: 0.001
+        };
+    }
+    /** Existing method, now built on computeEpsilonStats. */
+    static async estimateEpsilon(input, config = {}, biasOffset = 0) {
+        const { mean } = await ADoG.computeEpsilonStats(input, config);
+        return mean - biasOffset;
+    }
+    /**
+     * Analytical epsilon ceiling for a given tau: beyond this, no flat
+     * region (however bright) can cross threshold, and the output floods
+     * to solid black regardless of image content. Pure function of tau,
+     * so it's sync and doesn't need an input image or a processor instance.
+     */
+    static getEpsilonMax(tau) {
+        return 1 - tau;
     }
     static estimateSigma(input, { referenceDimension = 700, baseSigma = 1.0 } = {}) {
         const scale = Math.min(input.width, input.height) / referenceDimension;

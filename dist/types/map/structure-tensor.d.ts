@@ -1,7 +1,7 @@
 /**
  * Raw structure tensor: magnitude (edge confidence) and anisotropy
  * (directional coherence). Kept separate from strategies.ts because it's
- * the one feature with no existing preprocessor to delegate to --
+ * the one feature with no existing preprocessor to delegate to.
  * ETFComputer only exposes the flow field + trace magnitude
  * (ETFDetailedResult), not the raw e/f/g components anisotropy needs.
  */

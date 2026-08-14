@@ -20,7 +20,7 @@ class CPUFlowGuidedBlur extends base_js_1.BaseCPUStrategy {
         this.flowField = flowField;
         this.config = { ...DEFAULT_FLOW_CONFIG, ...config };
     }
-    /** CPU is always available — it's the universal fallback. */
+    /** CPU is always available */
     static async isSupported() {
         return true;
     }
@@ -344,7 +344,7 @@ class WebGPUFlowGuidedBlur extends base_js_1.BaseWebGPUStrategy {
     config;
     flowField;
     resources = null;
-    // Small, cached across calls — proportional to kernel size, never to
+    // proportional to kernel size, never to
     // image size, so there's no reason to ever tile these.
     kernelBuffer = null;
     currentKernelSize = 0;
@@ -359,12 +359,7 @@ class WebGPUFlowGuidedBlur extends base_js_1.BaseWebGPUStrategy {
     static CPU_BAKE_ROWS_PER_CHUNK = 512;
     // Bytes we're willing to put in a single GPU buffer for one row-band
     // tile of *output*. Large images are processed in row-band tiles bounded
-    // by this, so memory use stays flat regardless of image size — this is
-    // what prevents the silent corruption/blank-out that the old, untiled,
-    // whole-image output buffer produced once its size crossed the device's
-    // default storage-buffer binding limit (that failure mode doesn't throw
-    // a catchable JS exception, so nothing fell back — it just silently
-    // read back zeros/garbage in the regions past the limit).
+    // by this, so memory use stays flat regardless of image size
     maxTileBytes = 0;
     static TILE_MEMORY_SAFETY_FACTOR = 0.5;
     constructor(flowField, config = {}) {
@@ -389,7 +384,7 @@ class WebGPUFlowGuidedBlur extends base_js_1.BaseWebGPUStrategy {
         // maxBufferSize / maxStorageBufferBindingSize are usually the binding
         // constraint that bites first on large images (commonly 256MB / 128MB
         // by default, even when the adapter can do far more). Cap tile size to
-        // half of whichever is smaller as a safety margin — driver-reported
+        // half of whichever is smaller as a safety margin. Driver-reported
         // limits are the ceiling, not a size it's safe to actually hit.
         const limits = device.limits;
         this.maxTileBytes = Math.max(16 * 4, // never go below one row's worth of data at workgroup width 16
@@ -415,9 +410,7 @@ class WebGPUFlowGuidedBlur extends base_js_1.BaseWebGPUStrategy {
         const flowPipeline = device.createComputePipeline({
             layout: pipelineLayout,
             compute: {
-                module: device.createShaderModule({
-                    code: webgpu_flow_blur_wgsl_js_1.default,
-                }),
+                module: device.createShaderModule({ code: webgpu_flow_blur_wgsl_js_1.default }),
                 entryPoint: 'main',
             },
         });
@@ -433,7 +426,7 @@ class WebGPUFlowGuidedBlur extends base_js_1.BaseWebGPUStrategy {
     }
     /**
      * Textures are bound by maxTextureDimension2D (typically 8192-16384),
-     * not the storage-buffer binding limit — but that ceiling still exists,
+     * not the storage-buffer binding limit. That ceiling still exists,
      * and silently exceeding it is exactly the failure mode this fix is
      * closing off. Throw a clear, catchable error instead, so the
      * FlowGuidedBlur wrapper's fallback logic gets a chance to demote to
@@ -498,9 +491,9 @@ class WebGPUFlowGuidedBlur extends base_js_1.BaseWebGPUStrategy {
     }
     /**
      * Update the flow field (e.g., when processing a new image). Marks the
-     * cached flow texture dirty rather than rebuilding immediately — the
-     * next blur() call rebuilds it (and only then, against the dimensions
-     * that call actually needs).
+     * cached flow texture dirty rather than rebuilding immediately. The
+     * next blur() call rebuilds it against the dimensions that call actually
+     * needs.
      */
     setFlowField(flowField) {
         this.flowField = flowField;
@@ -508,13 +501,7 @@ class WebGPUFlowGuidedBlur extends base_js_1.BaseWebGPUStrategy {
     }
     /**
      * MEMORY: the output/readback path is processed in row-band tiles
-     * bounded by `maxTileBytes`, not one whole-image buffer — this is what
-     * keeps memory flat for large images instead of scaling linearly with
-     * width*height, and is what prevents the silent corruption/blank-out
-     * described above. The input/flow textures are still one full-image
-     * texture each (bounded by `maxTextureDimension2D`, checked via
-     * `assertWithinTextureLimits`), which is a far higher ceiling than the
-     * storage-buffer limit the old version was implicitly subject to.
+     * bounded by `maxTileBytes`, not one whole-image buffer
      */
     async blur(input, sigma) {
         if (sigma < 0.1) {
@@ -549,7 +536,7 @@ class WebGPUFlowGuidedBlur extends base_js_1.BaseWebGPUStrategy {
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
         // Row-band tile plan. Only the output/readback buffers scale with
-        // tile size — the input/flow textures above are still whole-image.
+        // tile size. input/flow textures above are still whole-image.
         const bytesPerRow = width * 4;
         const rowsPerTile = Math.max(1, Math.min(height, Math.floor(this.maxTileBytes / bytesPerRow)));
         const tileBufferSize = rowsPerTile * bytesPerRow;
@@ -575,8 +562,8 @@ class WebGPUFlowGuidedBlur extends base_js_1.BaseWebGPUStrategy {
             });
             const output = (0, image_js_1.createChannelImage)(width, height);
             // Tiles are processed sequentially (dispatch -> readback -> next),
-            // since outputBuffer/readBuffer are reused across iterations — that
-            // reuse is exactly what keeps memory bounded, at the cost of some
+            // since outputBuffer/readBuffer are reused across iterations.
+            // reuse keeps memory bounded, at the cost of some
             // overlap opportunity between tiles.
             for (let rowOffset = 0; rowOffset < height; rowOffset += rowsPerTile) {
                 const tileHeight = Math.min(rowsPerTile, height - rowOffset);
@@ -620,12 +607,10 @@ class WebGPUFlowGuidedBlur extends base_js_1.BaseWebGPUStrategy {
 exports.WebGPUFlowGuidedBlur = WebGPUFlowGuidedBlur;
 /**
  * Backend-agnostic flow-guided blur. Same per-algorithm backend selection
- * and single-retry fallback as `IsotropicBlur` — see that file for the
- * rationale on `create()`/`satisfies`/per-instance `failedBackends`/
- * single-step retry.
+ * and single-retry fallback as `IsotropicBlur`
  *
- * One addition here: the flow field is mutable state (`setFlowField` swaps
- * it for a new frame), so it has to be tracked on the wrapper too — a
+ * One addition here: the flow field is mutable,
+ * so it has to be tracked on the wrapper too. A
  * fallback needs to construct the next backend with the *current* flow
  * field, not the one from construction time.
  */
@@ -655,7 +640,7 @@ class FlowGuidedBlur {
                     return new FlowGuidedBlur(new Ctor(flowField, config), Ctor, config, flowField);
                 }
                 catch {
-                    continue; // isSupported() lied — try the next candidate
+                    continue; // isSupported() lied
                 }
             }
         }

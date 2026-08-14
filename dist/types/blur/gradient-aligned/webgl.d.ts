@@ -27,14 +27,6 @@ export declare class WebGLGradientAlignedBlur implements BlurStrategy {
     private contextLost;
     private flowField;
     constructor(config: GradientAlignedBlurBackendConfig);
-    /**
-     * Cheap synchronous-capability probe wrapped in an async signature to
-     * match `BlurStrategyCtor`. Doesn't touch the instance — creates its own
-     * throwaway canvas/context, same as the constructor does for real, so a
-     * `true` here means "constructing an instance should work", not a
-     * guarantee (construction can still fail — see key decisions in the
-     * design doc on why we still try/catch `new Ctor(...)`).
-     */
     static isSupported(): Promise<boolean>;
     static getUnsupportedReason(): Promise<string | undefined>;
     private setupTextureParams;

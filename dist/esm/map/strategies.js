@@ -1,5 +1,5 @@
 /**
- * Strategy pattern for parameter maps -- plain classes, matching how
+ * Strategy pattern for parameter maps. plain classes matching how
  * every Preprocessor/BlurStrategy elsewhere in this codebase is written.
  * `param` is the swap contract: ParameterMapPipeline.set() and
  * CompositeStrategy both check it before wiring a strategy in.
@@ -8,7 +8,6 @@ import { GaussianBlur } from '../preprocess/preprocessors/preprocessor.js';
 import { LocalVariancePreprocessor } from '../preprocess/preprocessors/cpu.js';
 import { computeStructureTensorMaps } from './structure-tensor.js';
 import { lerpChannel, mapChannel, blendChannels, multiplyChannels, combineChannels, normalizeChannel } from './channel-map-ops.js';
-// ---- Concrete strategies -----------------------------------------------
 /** Local-variance texture. High texture -> low p / high epsilon. */
 export class TextureStrategy {
     param;
@@ -25,9 +24,7 @@ export class TextureStrategy {
             ? lerpChannel(this.opts.high, this.opts.low, texture)
             : lerpChannel(this.opts.low, this.opts.high, texture);
     }
-    dispose() {
-        // LocalVariancePreprocessorOptimized is created fresh per compute() call.
-    }
+    dispose() { }
 }
 /** Tone map (broad blur). Dark -> low epsilon (denser shading), light -> high epsilon. */
 export class LuminanceStrategy {

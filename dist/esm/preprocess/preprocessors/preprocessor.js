@@ -12,8 +12,8 @@
  *                                // WebGPU can't provide here
  *
  * A device can support WebGPU for one algorithm and not another, so
- * resolution happens per class, not once globally for the whole module —
- * this follows the same pattern used for BlurStrategy/ETFComputer.
+ * resolution happens per class, not once globally for the whole module.
+ * This follows the same pattern used for BlurStrategy/ETFComputer.
  *
  * If a backend fails mid-session (driver crash, lost context), each
  * instance demotes itself to the next supported candidate once and
@@ -85,10 +85,6 @@ export class KuwaharaFilter extends ResilientPreprocessor {
 }
 /**
  * Separable Gaussian blur.
- *
- * Config here is just `number` (sigma), not an object — candidates'
- * constructors all take `(sigma: number)` directly, so `TConfig` is
- * `number` rather than a `Partial<...>` shape.
  */
 export class GaussianBlur extends ResilientPreprocessor {
     static candidates = [

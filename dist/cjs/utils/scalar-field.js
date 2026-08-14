@@ -7,7 +7,7 @@
  * public API. This module is the equivalent of createChannelImage() for
  * that type: the runtime helpers for building and composing fields.
  *
- * Composition (map/blend/scale) is free until sampled -- no intermediate
+ * Composition (map/blend/scale) is free until sampled. No intermediate
  * buffer is allocated unless you call materialize(). This matters because
  * DoGConfig's p/epsilon/phi are ScalarFields evaluated once per pixel
  * inside processor.ts's hot loops; building a config like

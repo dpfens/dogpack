@@ -1,5 +1,5 @@
 /**
- * Strategy pattern for parameter maps -- plain classes, matching how
+ * Strategy pattern for parameter maps. plain classes matching how
  * every Preprocessor/BlurStrategy elsewhere in this codebase is written.
  * `param` is the swap contract: ParameterMapPipeline.set() and
  * CompositeStrategy both check it before wiring a strategy in.
@@ -18,7 +18,6 @@ export interface ParameterMapStrategy extends Disposable {
   compute(input: ChannelImage): Promise<ChannelImage>;
 }
 
-// ---- Concrete strategies -----------------------------------------------
 
 /** Local-variance texture. High texture -> low p / high epsilon. */
 export class TextureStrategy implements ParameterMapStrategy {
@@ -35,9 +34,7 @@ export class TextureStrategy implements ParameterMapStrategy {
       : lerpChannel(this.opts.low, this.opts.high, texture);
   }
 
-  dispose(): void {
-    // LocalVariancePreprocessorOptimized is created fresh per compute() call.
-  }
+  dispose(): void {}
 }
 
 /** Tone map (broad blur). Dark -> low epsilon (denser shading), light -> high epsilon. */

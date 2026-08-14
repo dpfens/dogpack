@@ -18,7 +18,7 @@ export declare function clearShaderCaches(): void;
  * of a much taller image (see the chunking loop in `process()` below).
  * `spatialWeights` is a precomputed (2*radius+1)^2 lookup table for the
  * spatial term of the bilateral weight, which depends only on (dx, dy)
- * and is identical for every pixel — computing it on the CPU once instead
+ * and is identical for every pixel. Computing it on the CPU once instead
  * of calling `exp()` for it on every shader invocation roughly halves the
  * transcendental-function work in the inner loop.
  */
@@ -67,7 +67,7 @@ export declare class GPUContrastEnhancer extends BaseWebGPUStrategy implements P
      *
      * The two GPU round-trips (histogram pass, then stretch pass) are each
      * wrapped in their own runGuarded scope rather than one scope spanning
-     * both — the CPU-side histogram bucketing that happens between them
+     * both. The CPU-side histogram bucketing that happens between them
      * isn't GPU work, so it shouldn't sit inside a WebGPU error scope.
      */
     process(input: ChannelImage): Promise<ChannelImage>;
@@ -80,8 +80,8 @@ export declare class GPUQuantizer extends BaseWebGPUStrategy implements Preproce
     process(input: ChannelImage): Promise<ChannelImage>;
 }
 /**
- * Preset preprocessing pipelines for common use cases — async GPU
- * equivalents of `PreprocessingPresets` in cpu.ts.
+ * Preset preprocessing pipelines for common use cases.
+ * async GPU equivalents of `PreprocessingPresets` in cpu.ts.
  */
 export declare const GPUPreprocessingPresets: {
     /** Light preprocessing - minimal smoothing. Good for clean studio photos, illustrations. */
@@ -96,8 +96,8 @@ export declare const GPUPreprocessingPresets: {
     nature: (input: ChannelImage) => Promise<ChannelImage>;
 };
 /**
- * Convenience class for chaining GPU preprocessing operations — async
- * equivalent of `PreprocessingPipeline` in cpu.ts.
+ * Convenience class for chaining GPU preprocessing operations
+ * async equivalent of `PreprocessingPipeline` in cpu.ts.
  */
 export declare class GPUPreprocessingPipeline {
     private operations;

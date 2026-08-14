@@ -290,7 +290,7 @@ declare class SoftThresholdStrategy implements ThresholdStrategy {
 }
 /**
  * Hard black/white threshold (step function).
- * Equivalent to φ → ∞ in SoftThresholdStrategy, and to ThresholdModes.hard
+ * Equivalent to phi → inf in SoftThresholdStrategy, and to ThresholdModes.hard
  * in processor.ts, but expressed as a ThresholdStrategy so it can be plugged
  * into DoGConfig.thresholdStrategy (e.g. as ADoG's default, since the paper's
  * screentone output is binarized rather than soft-thresholded).
@@ -836,10 +836,10 @@ declare function xdog(input: ChannelImage, config?: Partial<XDoGConfig>): Promis
  * 5. Optional: Apply anti-aliasing LIC pass
  *
  * Parameters:
- * - σc: Structure tensor smoothing (controls ETF smoothness)
- * - σe: Edge detection sigma (controls edge width)
- * - σm: Flow-aligned smoothing (controls line coherence)
- * - σa: Anti-aliasing sigma (optional post-processing)
+ * - sigmaC: Structure tensor smoothing (controls ETF smoothness)
+ * - sigmaE: Edge detection sigma (controls edge width)
+ * - sigmaM: Flow-aligned smoothing (controls line coherence)
+ * - sigmaA: Anti-aliasing sigma (optional post-processing)
  */
 declare class FDoG implements DoGImplementation {
     private config;
@@ -908,17 +908,35 @@ declare class ADoG implements DoGImplementation {
     constructor(config?: Partial<ADoGConfig>);
     dispose(): void;
     /**
-     * Estimate a good `epsilon` for a given input + config by running the
-     * ADoG pipeline once and taking the mean of the (pre-threshold) sharpened
-     * response. Since ADoG's response straddles the true edge/noise "zero"
-     * around the local mean rather than a fixed absolute constant (see Eq. 4/5),
-     * a fixed epsilon default doesn't transfer across images, tau/s/noiseScaleC
-     * choices, or resolutions -- this recomputes it per-input instead.
-     *
-     * @param biasOffset Shifts the estimate away from the raw mean to bias
-     *   density (positive -> denser/more black). Default 0 (balanced 50/50).
+     * Analytical epsilon ceiling for a given tau: beyond this, no flat
+     * region (however bright) can cross threshold, and the output floods
+     * to solid black regardless of image content. Pure function of tau,
+     * so it's sync and doesn't need an input image or a processor instance.
      */
+    static getEpsilonCeiling(tau: number): number;
+    /**
+     * Runs the pipeline once and returns mean/std of the pre-threshold
+     * sharpened response, plus the tau-derived ceiling. Shared by
+     * estimateEpsilon() and getEpsilonRange() so they don't each pay for
+     * their own processDetailed() pass.
+     */
+    private static computeEpsilonStats;
+    /**
+     * Recommended [min, max] band for the epsilon slider, plus a sensible
+     * default, derived from the actual image + config rather than the
+     * static ADOG_PARAM_RANGES.epsilon entry (which can't account for
+     * tau/s/noiseScaleC/image content).
+     */
+    static getEpsilonRange(input: ChannelImage, config?: Partial<ADoGConfig>, spread?: number): Promise<ParamRange>;
+    /** Existing method, now built on computeEpsilonStats. */
     static estimateEpsilon(input: ChannelImage, config?: Partial<ADoGConfig>, biasOffset?: number): Promise<number>;
+    /**
+     * Analytical epsilon ceiling for a given tau: beyond this, no flat
+     * region (however bright) can cross threshold, and the output floods
+     * to solid black regardless of image content. Pure function of tau,
+     * so it's sync and doesn't need an input image or a processor instance.
+     */
+    static getEpsilonMax(tau: number): number;
     static estimateSigma(input: ChannelImage, { referenceDimension, baseSigma }?: {
         referenceDimension?: number;
         baseSigma?: number;
@@ -1045,14 +1063,14 @@ declare namespace index$5 {
  *
  * Implements the reparameterized formulation from Section 2.5 of:
  * "XDoG: An eXtended difference-of-Gaussians compendium including
- * advanced image stylization" by Winnemöller et al. (2012)
+ * advanced image stylization" by Winnemoller et al. (2012)
  */
 
 /**
  * Difference of Gaussians processor
  *
  * Uses the reparameterized formulation (Equation 7):
- * S_σ,k,p(x) = G_σ(x) + p x D_σ,k(x) = (1 + p) x G_σ(x) - p x G_kσ(x)
+ * S_sigma,k,p(x) = G_sigma(x) + p x D_sigma,k(x) = (1 + p) x G_sigma(x) - p x G_ksigma(x)
  *
  * This is equivalent to unsharp masking of the blurred image, which
  * decouples edge sharpening strength (p) from threshold parameters.
@@ -1115,20 +1133,20 @@ declare class DoGProcessor {
      */
     setBlurStrategy(strategy: BlurStrategy): void;
     /**
-     * Compute raw Difference of Gaussians: D(x) = G_σ(x) - G_kσ(x)
+     * Compute raw Difference of Gaussians: D(x) = G_sigma(x) - G_ksigma(x)
      * This is the standard DoG without any weighting
      */
     private computeDoG;
     /**
      * Compute sharpened image using Equation 7 from the paper:
-     * S_σ,k,p(x) = G_σ(x) + p x D_σ,k(x) = (1 + p) x G_σ(x) - p x G_kσ(x)
+     * S_sigma,k,p(x) = G_sigma(x) + p x D_sigma,k(x) = (1 + p) x G_sigma(x) - p x G_ksigma(x)
      *
      * This can be understood as unsharp masking of the blurred image.
      * The parameter p controls the edge sharpening strength independently
      * of the threshold parameters.
      *
-     * @param blur1 G_σ * I (smaller blur)
-     * @param blur2 G_kσ * I (larger blur)
+     * @param blur1 G_sigma * I (smaller blur)
+     * @param blur2 G_ksigma * I (larger blur)
      * @param p Sharpening strength (p ≈ 20 typical, p ≈ 100 for woodcut)
      */
     private computeSharpening;
@@ -1273,8 +1291,8 @@ declare class BaseWebGPUStrategy {
  */
 interface BaseIsotropicBlurConfig {
     /**
-     * Kernel size multiplier relative to sigma (default: 6, meaning 3σ on each side)
-     * Paper samples at 2× sigma for flow-aligned, 2.45× for structure tensor
+     * Kernel size multiplier relative to sigma (default: 6, meaning 3 * sigma on each side)
+     * Paper samples at 2x sigma for flow-aligned, 2.45x for structure tensor
      */
     kernelSizeMultiplier: number;
 }
@@ -1285,7 +1303,7 @@ interface BaseIsotropicBlurConfig {
 declare class CPUIsotropicBlur extends BaseCPUStrategy implements BlurStrategy {
     private config;
     constructor(config?: Partial<BaseIsotropicBlurConfig>);
-    /** CPU is always available — it's the universal fallback. */
+    /** CPU is always available */
     static isSupported(): Promise<boolean>;
     dispose(): void;
     blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
@@ -1398,7 +1416,7 @@ declare class IsotropicBlur implements BlurStrategy {
      * remaining backend: cascading on one call risks masking a real input
      * bug (e.g. a bad sigma) as a backend problem.
      *
-     * `failedBackends` is per-instance, not module-global — a transient
+     * `failedBackends` is per-instance, not module-global so a transient
      * driver hiccup shouldn't permanently blacklist a backend for the whole
      * session.
      */
@@ -1435,7 +1453,7 @@ declare class CPUFlowGuidedBlur extends BaseCPUStrategy implements BlurStrategy,
     private flowField;
     private config;
     constructor(flowField: FlowField, config?: Partial<CPUFlowGuidedBlurConfig>);
-    /** CPU is always available — it's the universal fallback. */
+    /** CPU is always available */
     static isSupported(): Promise<boolean>;
     dispose(): void;
     /**
@@ -1522,7 +1540,7 @@ declare class WebGPUFlowGuidedBlur extends BaseWebGPUStrategy implements BlurStr
     private initResources;
     /**
      * Textures are bound by maxTextureDimension2D (typically 8192-16384),
-     * not the storage-buffer binding limit — but that ceiling still exists,
+     * not the storage-buffer binding limit. That ceiling still exists,
      * and silently exceeding it is exactly the failure mode this fix is
      * closing off. Throw a clear, catchable error instead, so the
      * FlowGuidedBlur wrapper's fallback logic gets a chance to demote to
@@ -1540,20 +1558,14 @@ declare class WebGPUFlowGuidedBlur extends BaseWebGPUStrategy implements BlurStr
     private getFlowTexture;
     /**
      * Update the flow field (e.g., when processing a new image). Marks the
-     * cached flow texture dirty rather than rebuilding immediately — the
-     * next blur() call rebuilds it (and only then, against the dimensions
-     * that call actually needs).
+     * cached flow texture dirty rather than rebuilding immediately. The
+     * next blur() call rebuilds it against the dimensions that call actually
+     * needs.
      */
     setFlowField(flowField: FlowField): void;
     /**
      * MEMORY: the output/readback path is processed in row-band tiles
-     * bounded by `maxTileBytes`, not one whole-image buffer — this is what
-     * keeps memory flat for large images instead of scaling linearly with
-     * width*height, and is what prevents the silent corruption/blank-out
-     * described above. The input/flow textures are still one full-image
-     * texture each (bounded by `maxTextureDimension2D`, checked via
-     * `assertWithinTextureLimits`), which is a far higher ceiling than the
-     * storage-buffer limit the old version was implicitly subject to.
+     * bounded by `maxTileBytes`, not one whole-image buffer
      */
     blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
     dispose(): void;
@@ -1561,12 +1573,10 @@ declare class WebGPUFlowGuidedBlur extends BaseWebGPUStrategy implements BlurStr
 type FlowGuidedBlurConfig = CPUFlowGuidedBlurConfig | GLGPUBlurConfig;
 /**
  * Backend-agnostic flow-guided blur. Same per-algorithm backend selection
- * and single-retry fallback as `IsotropicBlur` — see that file for the
- * rationale on `create()`/`satisfies`/per-instance `failedBackends`/
- * single-step retry.
+ * and single-retry fallback as `IsotropicBlur`
  *
- * One addition here: the flow field is mutable state (`setFlowField` swaps
- * it for a new frame), so it has to be tracked on the wrapper too — a
+ * One addition here: the flow field is mutable,
+ * so it has to be tracked on the wrapper too. A
  * fallback needs to construct the next backend with the *current* flow
  * field, not the one from construction time.
  */
@@ -1660,8 +1670,7 @@ declare class EdgeTangentFlowComputer implements ETFComputer {
     dispose(): void;
     /**
      * Compute an Edge Tangent Flow. The returned FlowField carries its own
-     * magnitude/anisotropy (see interfaces/base.ts) — there is no separate
-     * "detailed" variant anymore.
+     * magnitude/anisotropy (see interfaces/base.ts)
      */
     compute(input: ChannelImage, config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
     computeMultiChannel(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
@@ -1704,10 +1713,24 @@ declare function toneAdaptiveEstimateAuto$2(input: ChannelImage, options: Omit<T
  * `computeSharpening()` actually produces in flat regions).
  */
 declare function localBaselineEstimate(input: ChannelImage, options: LocalBaselineOptions): Promise<ChannelImage>;
+/**
+ * Spatially-varying epsilon map for ADoG specifically. Unlike the generic
+ * epsilon.localBaselineEstimate (principled for XDoG's S(x) ≈ localTone),
+ * ADoG's flat-region response is I(x) * (1-p(x)) = I(x) * (1-τ) * tanh(s * I(x)),
+ * bounded by (1-τ) rather than 1 (see Eq. 4/5). This pre-scales the input
+ * by that closed form before handing it to the same blur/offset/
+ * contrastMargin machinery shared.localBaselineEstimate already provides.
+ */
+declare function adogLocalBaselineEstimate(input: ChannelImage, options: LocalBaselineOptions & {
+    tau: number;
+    s: number;
+}): Promise<ChannelImage>;
 
+declare const epsilon_adogLocalBaselineEstimate: typeof adogLocalBaselineEstimate;
 declare const epsilon_localBaselineEstimate: typeof localBaselineEstimate;
 declare namespace epsilon {
   export {
+    epsilon_adogLocalBaselineEstimate as adogLocalBaselineEstimate,
     epsilon_localBaselineEstimate as localBaselineEstimate,
     toneAdaptiveEstimate$2 as toneAdaptiveEstimate,
     toneAdaptiveEstimateAuto$2 as toneAdaptiveEstimateAuto,
@@ -1896,7 +1919,7 @@ interface LocalVarianceConfig {
  */
 declare class LocalVariancePreprocessor implements Preprocessor {
     private config;
-    /** CPU-only — no WebGL/WebGPU counterpart exists for this preprocessor. */
+    /** CPU-only. No WebGL/WebGPU counterparts for this yet. */
     readonly backend: "cpu";
     constructor(config?: Partial<LocalVarianceConfig>);
     dispose(): void;
@@ -2081,8 +2104,8 @@ declare function disposeWebGPU(): void;
  *                                // WebGPU can't provide here
  *
  * A device can support WebGPU for one algorithm and not another, so
- * resolution happens per class, not once globally for the whole module —
- * this follows the same pattern used for BlurStrategy/ETFComputer.
+ * resolution happens per class, not once globally for the whole module.
+ * This follows the same pattern used for BlurStrategy/ETFComputer.
  *
  * If a backend fails mid-session (driver crash, lost context), each
  * instance demotes itself to the next supported candidate once and
@@ -2121,10 +2144,6 @@ declare class KuwaharaFilter extends ResilientPreprocessor<Partial<KuwaharaFilte
 }
 /**
  * Separable Gaussian blur.
- *
- * Config here is just `number` (sigma), not an object — candidates'
- * constructors all take `(sigma: number)` directly, so `TConfig` is
- * `number` rather than a `Partial<...>` shape.
  */
 declare class GaussianBlur extends ResilientPreprocessor<number> {
     private static readonly candidates;

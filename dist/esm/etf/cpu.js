@@ -60,9 +60,7 @@ export class CpuEdgeTangentFlowComputer extends BaseCPUStrategy {
  * computeMultiChannel() above.
  *
  * Magnitude and anisotropy are baked directly into the returned
- * TangentFlowField rather than surfaced as separate sibling results —
- * FlowField now carries its own confidence data (see interfaces/base.ts),
- * so there's no separate "detailed" result type to build here anymore.
+ * TangentFlowField rather than surfaced as separate sibling results.
  */
 function buildFlowField(channelTensor, width, height, config, sigmaC) {
     const cfg = { ...DEFAULT_ETF_CONFIG, ...config };
@@ -74,8 +72,7 @@ function buildFlowField(channelTensor, width, height, config, sigmaC) {
     }
     // Derived from the same (blurred) tensor extractTangentField() used for
     // its eigenvectors, so it lines up with the flow field refine() starts
-    // from — not recomputed post-refine, since refine only perturbs
-    // direction, not the tensor anisotropy reflects.
+    // from since refine only perturbs direction, not the tensor anisotropy reflects.
     const anisotropy = tensorAnisotropy(smoothedTensor, width * height);
     return TangentFlowField.fromVec2Array(tangents, width, height, channelTensor.magnitude, anisotropy);
 }
@@ -114,7 +111,7 @@ function computeChannelTensor(input) {
 /**
  * Di Zenzo tensor summation: combine several channels' structure tensors
  * (and their magnitudes) into one. Valid because E, F, G, and the
- * trace-derived magnitude are all additive across channels — this is
+ * trace-derived magnitude are all additive across channels, which is
  * the mathematical basis for treating multi-channel ETF as "the same
  * as single-channel, but with a summed tensor."
  */

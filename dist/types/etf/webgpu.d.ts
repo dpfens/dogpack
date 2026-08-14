@@ -3,7 +3,6 @@
  *
  * Functional port of the WebGL2 implementation (webgl.ts) onto WebGPU
  * compute shaders. Structurally this is much simpler than the WebGL version:
- * there's no canvas, no framebuffers, and no fragment-shader ping-pong —
  * every stage is a compute pass over flat storage buffers, addressed by
  * (y * width + x) instead of texture coordinates. Edge-clamping is done
  * manually via clampIdx() rather than relying on CLAMP_TO_EDGE sampler state.
@@ -12,7 +11,7 @@
  * capped the Gaussian blur radius at 16), the WebGL implementation had to
  * work around GLSL's lack of dynamically-sized arrays. Storage buffers have
  * no such limit here, so the blur radius is only bounded by sanity/perf
- * limits, not by shader syntax — see MAX_BLUR_RADIUS below.
+ * limits, not by shader syntax. See MAX_BLUR_RADIUS below.
  *
  * Multi-channel support follows Di Zenzo's approach ("A note on the
  * gradient of a multi-image", CVGIP 33, 1986), matching the CPU backend:
@@ -20,29 +19,28 @@
  * and a single eigendecomposition is performed on the combined tensor.
  * On the GPU this means: for each input channel, run the fused
  * gradient/structure-tensor pass and *accumulate* (read-modify-write add)
- * into one shared tensor buffer, rather than overwriting it — see
+ * into one shared tensor buffer, rather than overwriting it. See
  * GRADIENT_STRUCTURE_TENSOR_SHADER. Everything from the Gaussian blur pass
  * onward is unchanged regardless of channel count, so compute() is
  * implemented as computeMultiChannel() called with a single-element array.
  *
- * This module has no knowledge of color spaces — it only ever sees
+ * This has no knowledge of color spaces. It only ever sees
  * ChannelImage scalar fields. RGB/Lab/etc. splitting and conversion is
  * the caller's responsibility (see utils/color.ts).
  *
  * ---- Row-band tiling (memory) ----
  * Every WGSL shader here addresses purely through the `Params` uniform
- * (width/height/radius/kernelSize) and clampIdx() — none of them assume
+ * (width/height/radius/kernelSize) and clampIdx(). None assume
  * anything about a "global" image size beyond what's passed in. That
  * means a smaller sub-image ("band") of rows is, as far as every shader
- * is concerned, just an image — no shader changes were needed to support
- * tiling.
+ * is concerned, just an image
  *
  * computeInternal() splits the image into horizontal row bands and runs
  * the full pipeline (gradient+tensor-accumulate (fused) -> blur -> extract
  * -> refine) once per band, on band-sized buffers, instead of
  * allocating whole-image buffers. Peak GPU memory is therefore bounded by
  * a fixed, tunable budget (bandMemoryBudgetBytes) rather than by image
- * resolution — see planBandLayout() for the memory math and the
+ * resolution. See planBandLayout() for the memory math and the
  * `halo` comment in computeInternal() for why each band has to compute
  * more rows than it ultimately outputs.
  *
@@ -56,8 +54,7 @@
  * synchronization comment inside computeInternal() for the exact
  * correctness argument (it relies on WebGPU's same-queue in-order
  * execution guarantee, plus explicitly awaiting the relevant readback
- * before a slot's buffers — in particular its mapped staging buffer — are
- * reused).
+ * before a slot's buffers are reused).
  */
 import { type ChannelImage, type FlowField, type ETFConfig, type ETFComputer } from '../interfaces/base.js';
 import { BaseWebGPUStrategy } from '../base.js';
@@ -80,12 +77,10 @@ export declare class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy im
      */
     static bandMemoryBudgetBytes: number;
     /**
-     * Cheap check — mirrors the shape of isWebGLComputeSupported(), just
-     * wrapped in a resolved Promise to match the async `ETFComputerCtor`
-     * shape. This only confirms the API surface exists; it can't confirm
+     * This cheap check simply confirms the API surface exists; it can't confirm
      * an adapter is actually obtainable (that requires the async
      * requestAdapter() call made lazily inside
-     * initResources()/computeInternal()) — use getUnsupportedReason() for
+     * initResources()/computeInternal()). use getUnsupportedReason() for
      * that deeper check.
      */
     static isSupported(): Promise<boolean>;
@@ -101,7 +96,7 @@ export declare class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy im
     private validateChannels;
     /**
      * Compute ETF from a single scalar channel using WebGPU compute shaders.
-     * Implemented as computeMultiChannel() with a single-element array — the
+     * Implemented as computeMultiChannel() with a single-element array. the
      * per-channel accumulate pass degenerates to a plain assignment when
      * there's only one channel (see GRADIENT_STRUCTURE_TENSOR_SHADER).
      */
@@ -115,8 +110,7 @@ export declare class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy im
     /**
      * Release the cached WebGPU device + pipelines. Safe to call even if no
      * compute()/computeMultiChannel() call has happened yet. Since the
-     * underlying resources are cached statically (shared across instances —
-     * see the class doc comment), this releases them for every
+     * underlying resources are cached statically, this releases them for every
      * WebGpuEdgeTangentFlowComputer instance, not just this one; call it
      * once you're done with all ETF computations for the session.
      */
@@ -127,7 +121,7 @@ export declare class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy im
      * Splits the image into horizontal row bands and runs the full
      * gradient+tensor-accumulate (fused) -> blur -> extract -> refine
      * pipeline once per band, on two round-robin, reused,
-     * band-sized buffer sets ("slots") — see the module-level doc comment
+     * band-sized buffer sets ("slots"). See the module-level doc comment
      * for why this bounds memory and how the double-buffering keeps the
      * GPU fed. Buffer allocation, band-size planning, and the halo math
      * are the only real additions versus a single-shot whole-image run;

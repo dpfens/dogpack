@@ -29,7 +29,7 @@ export declare class CPUFlowGuidedBlur extends BaseCPUStrategy implements BlurSt
     private flowField;
     private config;
     constructor(flowField: FlowField, config?: Partial<CPUFlowGuidedBlurConfig>);
-    /** CPU is always available — it's the universal fallback. */
+    /** CPU is always available */
     static isSupported(): Promise<boolean>;
     dispose(): void;
     /**
@@ -116,7 +116,7 @@ export declare class WebGPUFlowGuidedBlur extends BaseWebGPUStrategy implements 
     private initResources;
     /**
      * Textures are bound by maxTextureDimension2D (typically 8192-16384),
-     * not the storage-buffer binding limit — but that ceiling still exists,
+     * not the storage-buffer binding limit. That ceiling still exists,
      * and silently exceeding it is exactly the failure mode this fix is
      * closing off. Throw a clear, catchable error instead, so the
      * FlowGuidedBlur wrapper's fallback logic gets a chance to demote to
@@ -134,20 +134,14 @@ export declare class WebGPUFlowGuidedBlur extends BaseWebGPUStrategy implements 
     private getFlowTexture;
     /**
      * Update the flow field (e.g., when processing a new image). Marks the
-     * cached flow texture dirty rather than rebuilding immediately — the
-     * next blur() call rebuilds it (and only then, against the dimensions
-     * that call actually needs).
+     * cached flow texture dirty rather than rebuilding immediately. The
+     * next blur() call rebuilds it against the dimensions that call actually
+     * needs.
      */
     setFlowField(flowField: FlowField): void;
     /**
      * MEMORY: the output/readback path is processed in row-band tiles
-     * bounded by `maxTileBytes`, not one whole-image buffer — this is what
-     * keeps memory flat for large images instead of scaling linearly with
-     * width*height, and is what prevents the silent corruption/blank-out
-     * described above. The input/flow textures are still one full-image
-     * texture each (bounded by `maxTextureDimension2D`, checked via
-     * `assertWithinTextureLimits`), which is a far higher ceiling than the
-     * storage-buffer limit the old version was implicitly subject to.
+     * bounded by `maxTileBytes`, not one whole-image buffer
      */
     blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
     dispose(): void;
@@ -155,12 +149,10 @@ export declare class WebGPUFlowGuidedBlur extends BaseWebGPUStrategy implements 
 export type FlowGuidedBlurConfig = CPUFlowGuidedBlurConfig | GLGPUBlurConfig;
 /**
  * Backend-agnostic flow-guided blur. Same per-algorithm backend selection
- * and single-retry fallback as `IsotropicBlur` — see that file for the
- * rationale on `create()`/`satisfies`/per-instance `failedBackends`/
- * single-step retry.
+ * and single-retry fallback as `IsotropicBlur`
  *
- * One addition here: the flow field is mutable state (`setFlowField` swaps
- * it for a new frame), so it has to be tracked on the wrapper too — a
+ * One addition here: the flow field is mutable,
+ * so it has to be tracked on the wrapper too. A
  * fallback needs to construct the next backend with the *current* flow
  * field, not the one from construction time.
  */

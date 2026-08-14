@@ -46,7 +46,7 @@ function createProgram(gl, vsSrc, fsSrc) {
 /**
  * Creates a throwaway canvas + WebGL2 context to check capability, without
  * touching any live instance state. Used by both `isSupported()` and
- * `getUnsupportedReason()` — cheap enough (one canvas + one context) that
+ * `getUnsupportedReason()`which is cheap enough (one canvas + one context) that
  * we don't bother caching the result across calls.
  */
 function probeWebGL2Support() {
@@ -84,15 +84,8 @@ class WebGLGradientAlignedBlur {
     fboWidth = 0;
     fboHeight = 0;
     uniforms = {};
-    // Set by the 'webglcontextlost' listener below. Checked at the top of
-    // blur() so a lost context surfaces as an immediate, clear error on the
-    // very next call instead of failing deep inside a GL call (or worse,
-    // silently no-opping, since a lost context makes most GL calls into
-    // silent no-ops rather than throws).
     contextLost = false;
     flowField;
-    // Single-arg constructor (flowField bundled into config) so this class
-    // satisfies `BlurStrategyCtor`'s `new (config: any)` shape.
     constructor(config) {
         this.flowField = config.flowField;
         this.config = { ...base_js_1.DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, ...config };
@@ -104,12 +97,6 @@ class WebGLGradientAlignedBlur {
         if (!gl.getExtension('EXT_color_buffer_float')) {
             throw new Error('[GradientAlignedBlur/WebGL] EXT_color_buffer_float not supported (required for R32F render targets)');
         }
-        // Proactively catch context loss (driver crash, GPU reset, tab backgrounded
-        // and reclaimed, etc.) rather than waiting for the next blur() call to
-        // fail deep inside a GL call. preventDefault() signals we'd support
-        // restoration if it happens, but we don't currently rebuild GL state on
-        // 'webglcontextrestored' — a lost context is treated as a terminal
-        // failure for this instance, and the wrapper demotes to the next backend.
         canvas.addEventListener('webglcontextlost', (event) => {
             event.preventDefault();
             this.contextLost = true;
@@ -138,14 +125,6 @@ class WebGLGradientAlignedBlur {
         gl.uniform1i(this.uniforms['u_input'], 0);
         gl.uniform1i(this.uniforms['u_flowDir'], 1);
     }
-    /**
-     * Cheap synchronous-capability probe wrapped in an async signature to
-     * match `BlurStrategyCtor`. Doesn't touch the instance — creates its own
-     * throwaway canvas/context, same as the constructor does for real, so a
-     * `true` here means "constructing an instance should work", not a
-     * guarantee (construction can still fail — see key decisions in the
-     * design doc on why we still try/catch `new Ctor(...)`).
-     */
     static async isSupported() {
         return probeWebGL2Support() === undefined;
     }
@@ -155,8 +134,6 @@ class WebGLGradientAlignedBlur {
     setupTextureParams(tex) {
         const gl = this.gl;
         gl.bindTexture(gl.TEXTURE_2D, tex);
-        // NEAREST everywhere — we do bilinear manually in-shader via texelFetch,
-        // so hardware filtering support for float textures is irrelevant here.
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -195,7 +172,6 @@ class WebGLGradientAlignedBlur {
         this.fboHeight = height;
     }
     bakeFlowTexture(width, height) {
-        const t0 = performance.now();
         const gl = this.gl;
         const data = new Float32Array(width * height * 2);
         for (let y = 0; y < height; y++) {
@@ -214,13 +190,11 @@ class WebGLGradientAlignedBlur {
         this.flowFieldWidth = width;
         this.flowFieldHeight = height;
         this.flowDirty = false;
-        console.log(`[GradientAlignedBlur/WebGL] Baked flow field texture (${width}x${height}): ${(performance.now() - t0).toFixed(2)}ms`);
     }
     async blur(input, sigma) {
         if (this.contextLost || this.gl.isContextLost()) {
             throw new Error('[GradientAlignedBlur/WebGL] context lost');
         }
-        const tTotal = performance.now();
         if (sigma < 0.1) {
             return { data: new Float32Array(input.data), width: input.width, height: input.height };
         }
@@ -236,9 +210,6 @@ class WebGLGradientAlignedBlur {
         }
         this.ensureFbo(width, height);
         const halfSamples = Math.min(MAX_SAMPLES - 1, Math.ceil((sigma * 2) / this.config.stepSize));
-        if (Math.ceil((sigma * 2) / this.config.stepSize) > MAX_SAMPLES - 1) {
-            console.warn(`[GradientAlignedBlur/WebGL] halfSamples clamped to ${MAX_SAMPLES - 1} (sigma=${sigma} wanted more); kernel truncated. Raise MAX_SAMPLES if this matters.`);
-        }
         const numSamples = halfSamples * 2 + 1;
         const weights = (0, math_js_1.generateGaussianKernel)(sigma, numSamples);
         const paddedWeights = new Float32Array(MAX_SAMPLES);
@@ -255,17 +226,12 @@ class WebGLGradientAlignedBlur {
         gl.uniform1i(this.uniforms['u_halfSamples'], halfSamples);
         gl.uniform1f(this.uniforms['u_stepSize'], this.config.stepSize);
         gl.uniform1fv(this.uniforms['u_weights'], paddedWeights);
-        const tDraw = performance.now();
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
         gl.bindVertexArray(this.vao);
         gl.drawArrays(gl.TRIANGLES, 0, 6);
-        console.log(`[GradientAlignedBlur/WebGL] Draw call submit (JS-side only, GPU work is async — see note at top of file): ${(performance.now() - tDraw).toFixed(2)}ms`);
-        const tReadback = performance.now();
         const output = (0, image_js_1.createChannelImage)(width, height);
         gl.readPixels(0, 0, width, height, gl.RED, gl.FLOAT, output.data);
-        console.log(`[GradientAlignedBlur/WebGL] Readback (this is where the GPU wait actually happens): ${(performance.now() - tReadback).toFixed(2)}ms`);
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        console.log(`[GradientAlignedBlur/WebGL] blur() total (sigma=${sigma.toFixed(2)}, halfSamples=${halfSamples}): ${(performance.now() - tTotal).toFixed(2)}ms`);
         return output;
     }
 }

@@ -24,6 +24,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.toneAdaptiveEstimate = toneAdaptiveEstimate;
 exports.toneAdaptiveEstimateAuto = toneAdaptiveEstimateAuto;
 exports.localBaselineEstimate = localBaselineEstimate;
+exports.adogLocalBaselineEstimate = adogLocalBaselineEstimate;
+const image_js_1 = require("../../utils/image.js");
 const shared = require("./shared.js");
 async function toneAdaptiveEstimate(input, options) {
     const { epsilonDark, epsilonLight, ...rest } = options;
@@ -40,6 +42,23 @@ async function toneAdaptiveEstimateAuto(input, options) {
  */
 async function localBaselineEstimate(input, options) {
     return shared.localBaselineEstimate(input, options);
+}
+/**
+ * Spatially-varying epsilon map for ADoG specifically. Unlike the generic
+ * epsilon.localBaselineEstimate (principled for XDoG's S(x) ≈ localTone),
+ * ADoG's flat-region response is I(x) * (1-p(x)) = I(x) * (1-τ) * tanh(s * I(x)),
+ * bounded by (1-τ) rather than 1 (see Eq. 4/5). This pre-scales the input
+ * by that closed form before handing it to the same blur/offset/
+ * contrastMargin machinery shared.localBaselineEstimate already provides.
+ */
+async function adogLocalBaselineEstimate(input, options) {
+    const { tau, s, ...baseOptions } = options;
+    const scaled = (0, image_js_1.createChannelImage)(input.width, input.height);
+    for (let i = 0; i < input.data.length; i++) {
+        const I = input.data[i];
+        scaled.data[i] = I * (1 - tau) * Math.tanh(s * I);
+    }
+    return shared.localBaselineEstimate(scaled, baseOptions);
 }
 /**
  * Usage:

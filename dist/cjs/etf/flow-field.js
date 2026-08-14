@@ -11,7 +11,7 @@ class TangentFlowField {
     height;
     magnitude;
     anisotropy;
-    // Flat, stride-2 (x, y) buffer — avoids allocating pixelCount JS
+    // Flat, stride-2 (x, y) buffer which avoids allocating pixelCount JS
     // objects regardless of which backend produced the data.
     //
     // magnitude/anisotropy are flat, stride-1 (one value per pixel) buffers,

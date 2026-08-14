@@ -29,7 +29,7 @@ export class EdgeTangentFlowComputer implements ETFComputer {
         try {
           return new EdgeTangentFlowComputer(new Ctor(), Ctor);
         } catch {
-          continue; // isSupported() lied — try next
+          continue; // isSupported() lied
         }
       }
     }
@@ -50,8 +50,7 @@ export class EdgeTangentFlowComputer implements ETFComputer {
 
   /**
    * Compute an Edge Tangent Flow. The returned FlowField carries its own
-   * magnitude/anisotropy (see interfaces/base.ts) — there is no separate
-   * "detailed" variant anymore.
+   * magnitude/anisotropy (see interfaces/base.ts)
    */
   async compute(
     input: ChannelImage,
@@ -97,7 +96,7 @@ export class EdgeTangentFlowComputer implements ETFComputer {
           return this.instance;
         } catch (err) {
           console.warn(`[${Ctor.name}] construction failed despite isSupported():`, err);
-          this.failedBackends.add(Ctor); // isSupported() lied — try next
+          this.failedBackends.add(Ctor); // isSupported() lied
         }
       }
     }

@@ -13,8 +13,8 @@ import { BaseCPUStrategy, BaseWebGLStrategy, BaseWebGPUStrategy } from '../base.
  */
 export interface BaseIsotropicBlurConfig {
     /**
-     * Kernel size multiplier relative to sigma (default: 6, meaning 3σ on each side)
-     * Paper samples at 2× sigma for flow-aligned, 2.45× for structure tensor
+     * Kernel size multiplier relative to sigma (default: 6, meaning 3 * sigma on each side)
+     * Paper samples at 2x sigma for flow-aligned, 2.45x for structure tensor
      */
     kernelSizeMultiplier: number;
 }
@@ -39,7 +39,7 @@ export interface FlowGuidedBlurConfig {
 export declare class CPUIsotropicBlur extends BaseCPUStrategy implements BlurStrategy {
     private config;
     constructor(config?: Partial<BaseIsotropicBlurConfig>);
-    /** CPU is always available — it's the universal fallback. */
+    /** CPU is always available */
     static isSupported(): Promise<boolean>;
     dispose(): void;
     blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
@@ -152,7 +152,7 @@ export declare class IsotropicBlur implements BlurStrategy {
      * remaining backend: cascading on one call risks masking a real input
      * bug (e.g. a bad sigma) as a backend problem.
      *
-     * `failedBackends` is per-instance, not module-global — a transient
+     * `failedBackends` is per-instance, not module-global so a transient
      * driver hiccup shouldn't permanently blacklist a backend for the whole
      * session.
      */

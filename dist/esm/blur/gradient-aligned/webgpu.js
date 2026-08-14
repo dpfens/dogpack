@@ -17,7 +17,6 @@ export class WebGPUGradientAlignedBlur {
     device;
     pipeline;
     flowField;
-    // --- class-level device cache ---------------------
     static cachedDevice = null;
     static deviceInitPromise = null;
     static lastUnsupportedReason;
@@ -27,11 +26,6 @@ export class WebGPUGradientAlignedBlur {
     flowFieldHeight = 0;
     flowDirty = true;
     flowBakePromise = null;
-    // Bytes we're willing to put in a single GPU buffer for one tile, well
-    // under whatever the device actually supports.
-    // Large images are processed in row-band tiles bounded by this so memory
-    // use stays flat regardless of image size — this is what prevents the
-    // crash on big images/concurrent calls.
     maxTileBytes = 0;
     static CPU_BAKE_ROWS_PER_CHUNK = 512;
     static TILE_MEMORY_SAFETY_FACTOR = 0.5;
@@ -44,19 +38,10 @@ export class WebGPUGradientAlignedBlur {
         this.device = device;
         this.config = { ...DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, ...config };
         this.initPipeline();
-        // maxBufferSize / maxStorageBufferBindingSize are usually the binding
-        // constraint that bites first on large images (commonly 256MB / 128MB
-        // by default, even when the adapter can do far more). Cap tile size to
-        // half of whichever is smaller as a safety margin — driver-reported
-        // limits are the ceiling, not a size it's safe to actually hit.
         const limits = this.device.limits;
         this.maxTileBytes = Math.max(WORKGROUP_SIZE * 4, // never go below one row's worth of data
         Math.floor(Math.min(limits.maxStorageBufferBindingSize, limits.maxBufferSize) *
             WebGPUGradientAlignedBlur.TILE_MEMORY_SAFETY_FACTOR));
-        // Surface GPU-side failures (e.g. a validation error from a size that
-        // slipped past our checks) as visible console errors instead of a
-        // silent hang or an opaque tab crash. Attached once per (shared) device,
-        // not once per instance.
         if (!WebGPUGradientAlignedBlur.errorListenerAttached) {
             WebGPUGradientAlignedBlur.errorListenerAttached = true;
             this.device.addEventListener('uncapturederror', (event) => {
@@ -86,9 +71,9 @@ export class WebGPUGradientAlignedBlur {
                 throw new Error('[GradientAlignedBlur/WebGPU] No adapter available');
             }
             // Explicitly request the adapter's actual max limits rather than
-            // accepting the (often much lower) spec-minimum defaults — e.g. the
+            // accepting the (often much lower) spec-minimum defaults (e.g. the
             // default maxBufferSize/maxStorageBufferBindingSize are commonly
-            // 256MB/128MB, but many adapters support several times that.
+            // 256MB/128MB, but many adapters support several times that).
             const device = await adapter.requestDevice({
                 requiredLimits: {
                     maxTextureDimension2D: adapter.limits.maxTextureDimension2D,
@@ -165,9 +150,6 @@ export class WebGPUGradientAlignedBlur {
             format: 'rg32float',
             usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
         });
-        // Build+upload in row-chunks rather than one Float32Array(width*height*2)
-        // for the whole image — for a large image that single array can itself
-        // be gigabytes of JS heap before any GPU work happens.
         const rowsPerChunk = Math.max(1, WebGPUGradientAlignedBlur.CPU_BAKE_ROWS_PER_CHUNK);
         for (let y0 = 0; y0 < height; y0 += rowsPerChunk) {
             const rows = Math.min(rowsPerChunk, height - y0);
@@ -184,14 +166,6 @@ export class WebGPUGradientAlignedBlur {
             this.device.queue.writeTexture({ texture: newTexture, origin: { x: 0, y: y0 } }, chunk, { bytesPerRow: width * 2 * 4, rowsPerImage: rows }, { width, height: rows });
         }
         const oldTexture = this.flowTexture;
-        // Swap in the new texture only after it's fully written, and only
-        // destroy the old one after the swap so a concurrent blur() call that
-        // already grabbed a reference to `oldTexture` for an in-flight dispatch
-        // isn't left pointing at a destroyed resource. (There's still a narrow
-        // window if a call reads `this.flowTexture` between the old texture's
-        // last use and here — acceptable for a texture that only changes when
-        // setFlowField() is called, which is rare relative to blur() calls
-        // with a stable flow field.)
         this.flowTexture = newTexture;
         oldTexture?.destroy();
         this.flowFieldWidth = width;
@@ -236,8 +210,8 @@ export class WebGPUGradientAlignedBlur {
      * MEMORY: the output/readback path is processed in row-band tiles
      * bounded by `maxTileBytes`, not one whole-image buffer. This is what
      * keeps memory flat for large images (and for concurrent calls on the
-     * same image) instead of scaling linearly with width*height — see the
-     * note above `maxTileBytes` for why. The input/flow textures are still
+     * same image) instead of scaling linearly with width*height.
+     * The input/flow textures are still
      * one full-image texture each; if width or height exceeds the device's
      * maxTextureDimension2D, `getFlowTexture`/this method throw a clear
      * error rather than silently corrupting or crashing (see
@@ -245,9 +219,6 @@ export class WebGPUGradientAlignedBlur {
      */
     async blur(input, sigma) {
         if (WebGPUGradientAlignedBlur.cachedDevice !== this.device) {
-            // The device this instance was built on has since been lost/replaced
-            // (see the `device.lost` handler in acquireDevice()). Fail fast
-            // rather than issuing GPU calls against a dead device.
             throw new Error('[GradientAlignedBlur/WebGPU] device lost');
         }
         if (sigma < 0.1) {
@@ -266,14 +237,9 @@ export class WebGPUGradientAlignedBlur {
         const paddedWeights = new Float32Array(MAX_SAMPLES);
         paddedWeights.set(weights);
         // Row-band tile plan. Only the output/readback buffers scale with
-        // tile size — the input/flow textures below are still whole-image.
+        // tile size. input/flow textures below are still whole-image.
         const bytesPerRow = width * 4;
         const rowsPerTile = Math.max(1, Math.min(height, Math.floor(this.maxTileBytes / bytesPerRow)));
-        // Per-call GPU resources — never shared across concurrent blur() calls.
-        // Input/flow textures are whole-image (bounded by maxTextureDimension2D,
-        // checked above); output/readback buffers are sized to one tile only
-        // and reused sequentially across tiles, so peak memory here is
-        // O(tileRows * width) rather than O(height * width).
         const inputTexture = this.device.createTexture({
             size: [width, height],
             format: 'r32float',
@@ -310,10 +276,6 @@ export class WebGPUGradientAlignedBlur {
                 ],
             });
             const output = createChannelImage(width, height);
-            // Tiles are processed sequentially (dispatch -> readback -> next)
-            // rather than pipelined, since outputBuffer/readBuffer are reused
-            // across iterations — that reuse is exactly what keeps memory
-            // bounded, at the cost of some overlap opportunity between tiles.
             for (let rowOffset = 0; rowOffset < height; rowOffset += rowsPerTile) {
                 const tileHeight = Math.min(rowsPerTile, height - rowOffset);
                 const paramsData = new ArrayBuffer(32);

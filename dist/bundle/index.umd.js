@@ -381,7 +381,7 @@
     }
     /**
      * Hard black/white threshold (step function).
-     * Equivalent to φ → ∞ in SoftThresholdStrategy, and to ThresholdModes.hard
+     * Equivalent to phi → inf in SoftThresholdStrategy, and to ThresholdModes.hard
      * in processor.ts, but expressed as a ThresholdStrategy so it can be plugged
      * into DoGConfig.thresholdStrategy (e.g. as ADoG's default, since the paper's
      * screentone output is binarized rather than soft-thresholded).
@@ -541,7 +541,7 @@
         ...DOG_PARAM_RANGES,
         kernelSizeMultiplier: XDOG_PARAM_RANGES.kernelSizeMultiplier,
         k: { hardMin: 1.0, hardMax: Infinity, recommendedMin: 1.6, recommendedMax: 1.6, default: 1.6, step: 0.01 },
-        epsilon: { hardMin: 0, hardMax: 1, recommendedMin: 0.0, recommendedMax: 0.2, default: 0.05, step: 0.01 },
+        epsilon: { hardMin: 0, hardMax: 1, recommendedMin: 0.0, recommendedMax: 0.2, default: 0.05, step: 0.001 },
         phi: { hardMin: 0, hardMax: Infinity, recommendedMin: 100, recommendedMax: 200, default: 200, step: 5 },
         tau: { hardMin: 0, hardMax: 1, recommendedMin: 0.97, recommendedMax: 1.0, default: 0.99, step: 0.005 },
         s: { hardMin: 0, hardMax: Infinity, recommendedMin: 0.5, recommendedMax: 5.0, default: 2.0, step: 0.1 },
@@ -779,13 +779,13 @@
      *
      * Implements the reparameterized formulation from Section 2.5 of:
      * "XDoG: An eXtended difference-of-Gaussians compendium including
-     * advanced image stylization" by Winnemöller et al. (2012)
+     * advanced image stylization" by Winnemoller et al. (2012)
      */
     /**
      * Difference of Gaussians processor
      *
      * Uses the reparameterized formulation (Equation 7):
-     * S_σ,k,p(x) = G_σ(x) + p x D_σ,k(x) = (1 + p) x G_σ(x) - p x G_kσ(x)
+     * S_sigma,k,p(x) = G_sigma(x) + p x D_sigma,k(x) = (1 + p) x G_sigma(x) - p x G_ksigma(x)
      *
      * This is equivalent to unsharp masking of the blurred image, which
      * decouples edge sharpening strength (p) from threshold parameters.
@@ -822,13 +822,13 @@
         async process(input, overrides = {}) {
             const params = { ...this.config, ...overrides };
             // Step 1: Apply two Gaussian blurs with different sigma values
-            // G_σ * I and G_kσ * I
+            // G_sigma * I and G_ksigma * I
             const [blur1, blur2] = await Promise.all([
                 this.blurStrategy.blur(input, params.sigma),
                 this.blurStrategy.blur(input, params.sigma * params.k)
             ]);
             // Step 2: Compute sharpened image using Equation 7
-            // S = (1 + p) * G_σ * I - p * G_kσ * I
+            // S = (1 + p) * G_sigma * I - p * G_ksigma * I
             const sharpened = this.computeSharpening(blur1, blur2, params.p);
             // Step 3: Apply soft thresholding using Equation 5
             const output = this.applyThreshold(sharpened, params.epsilon, params.phi);
@@ -902,7 +902,7 @@
             this.blurStrategy = strategy;
         }
         /**
-         * Compute raw Difference of Gaussians: D(x) = G_σ(x) - G_kσ(x)
+         * Compute raw Difference of Gaussians: D(x) = G_sigma(x) - G_ksigma(x)
          * This is the standard DoG without any weighting
          */
         computeDoG(blur1, blur2) {
@@ -915,14 +915,14 @@
         }
         /**
          * Compute sharpened image using Equation 7 from the paper:
-         * S_σ,k,p(x) = G_σ(x) + p x D_σ,k(x) = (1 + p) x G_σ(x) - p x G_kσ(x)
+         * S_sigma,k,p(x) = G_sigma(x) + p x D_sigma,k(x) = (1 + p) x G_sigma(x) - p x G_ksigma(x)
          *
          * This can be understood as unsharp masking of the blurred image.
          * The parameter p controls the edge sharpening strength independently
          * of the threshold parameters.
          *
-         * @param blur1 G_σ * I (smaller blur)
-         * @param blur2 G_kσ * I (larger blur)
+         * @param blur1 G_sigma * I (smaller blur)
+         * @param blur2 G_ksigma * I (larger blur)
          * @param p Sharpening strength (p ≈ 20 typical, p ≈ 100 for woodcut)
          */
         computeSharpening(blur1, blur2, p) {
@@ -1419,11 +1419,11 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     };
     /**
      * Compute kernel size from sigma
-     * Paper samples at all integer locations less than 2× sigma for flow-aligned,
-     * and extends to 2.45σ for structure tensor blur
+     * Paper samples at all integer locations less than 2x sigma for flow-aligned,
+     * and extends to 2.45 * sigma for structure tensor blur
      *
      * @param sigma Standard deviation
-     * @param multiplier Size multiplier (default 6 = 3σ on each side)
+     * @param multiplier Size multiplier (default 6 = 3*sigma on each side)
      */
     function computeKernelSize(sigma, multiplier = 6) {
         // Ensure odd size for symmetric kernel
@@ -1439,7 +1439,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             super();
             this.config = { ...DEFAULT_ISOTROPIC_CONFIG, ...config };
         }
-        /** CPU is always available — it's the universal fallback. */
+        /** CPU is always available */
         static async isSupported() {
             return true;
         }
@@ -1923,7 +1923,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
          * remaining backend: cascading on one call risks masking a real input
          * bug (e.g. a bad sigma) as a backend problem.
          *
-         * `failedBackends` is per-instance, not module-global — a transient
+         * `failedBackends` is per-instance, not module-global so a transient
          * driver hiccup shouldn't permanently blacklist a backend for the whole
          * session.
          */
@@ -2099,7 +2099,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         height;
         magnitude;
         anisotropy;
-        // Flat, stride-2 (x, y) buffer — avoids allocating pixelCount JS
+        // Flat, stride-2 (x, y) buffer which avoids allocating pixelCount JS
         // objects regardless of which backend produced the data.
         //
         // magnitude/anisotropy are flat, stride-1 (one value per pixel) buffers,
@@ -2238,7 +2238,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     // Source: etf/shaders/webgpu/common.wgsl
     // Regenerate with `npm run build:shaders`.
     const source$y = `// common.wgsl
-// Pipeline-overridable — real value supplied via
+// Pipeline-overridable. real value supplied via
 // GPUComputePipelineDescriptor.compute.constants (see makePipeline() in
 // webgpu.ts). Declared once here since it's shared by every shader module.
 override WORKGROUP_SIZE: u32 = 8u;
@@ -2622,7 +2622,6 @@ fn main(
      *
      * Functional port of the WebGL2 implementation (webgl.ts) onto WebGPU
      * compute shaders. Structurally this is much simpler than the WebGL version:
-     * there's no canvas, no framebuffers, and no fragment-shader ping-pong —
      * every stage is a compute pass over flat storage buffers, addressed by
      * (y * width + x) instead of texture coordinates. Edge-clamping is done
      * manually via clampIdx() rather than relying on CLAMP_TO_EDGE sampler state.
@@ -2631,7 +2630,7 @@ fn main(
      * capped the Gaussian blur radius at 16), the WebGL implementation had to
      * work around GLSL's lack of dynamically-sized arrays. Storage buffers have
      * no such limit here, so the blur radius is only bounded by sanity/perf
-     * limits, not by shader syntax — see MAX_BLUR_RADIUS below.
+     * limits, not by shader syntax. See MAX_BLUR_RADIUS below.
      *
      * Multi-channel support follows Di Zenzo's approach ("A note on the
      * gradient of a multi-image", CVGIP 33, 1986), matching the CPU backend:
@@ -2639,29 +2638,28 @@ fn main(
      * and a single eigendecomposition is performed on the combined tensor.
      * On the GPU this means: for each input channel, run the fused
      * gradient/structure-tensor pass and *accumulate* (read-modify-write add)
-     * into one shared tensor buffer, rather than overwriting it — see
+     * into one shared tensor buffer, rather than overwriting it. See
      * GRADIENT_STRUCTURE_TENSOR_SHADER. Everything from the Gaussian blur pass
      * onward is unchanged regardless of channel count, so compute() is
      * implemented as computeMultiChannel() called with a single-element array.
      *
-     * This module has no knowledge of color spaces — it only ever sees
+     * This has no knowledge of color spaces. It only ever sees
      * ChannelImage scalar fields. RGB/Lab/etc. splitting and conversion is
      * the caller's responsibility (see utils/color.ts).
      *
      * ---- Row-band tiling (memory) ----
      * Every WGSL shader here addresses purely through the `Params` uniform
-     * (width/height/radius/kernelSize) and clampIdx() — none of them assume
+     * (width/height/radius/kernelSize) and clampIdx(). None assume
      * anything about a "global" image size beyond what's passed in. That
      * means a smaller sub-image ("band") of rows is, as far as every shader
-     * is concerned, just an image — no shader changes were needed to support
-     * tiling.
+     * is concerned, just an image
      *
      * computeInternal() splits the image into horizontal row bands and runs
      * the full pipeline (gradient+tensor-accumulate (fused) -> blur -> extract
      * -> refine) once per band, on band-sized buffers, instead of
      * allocating whole-image buffers. Peak GPU memory is therefore bounded by
      * a fixed, tunable budget (bandMemoryBudgetBytes) rather than by image
-     * resolution — see planBandLayout() for the memory math and the
+     * resolution. See planBandLayout() for the memory math and the
      * `halo` comment in computeInternal() for why each band has to compute
      * more rows than it ultimately outputs.
      *
@@ -2675,15 +2673,14 @@ fn main(
      * synchronization comment inside computeInternal() for the exact
      * correctness argument (it relies on WebGPU's same-queue in-order
      * execution guarantee, plus explicitly awaiting the relevant readback
-     * before a slot's buffers — in particular its mapped staging buffer — are
-     * reused).
+     * before a slot's buffers are reused).
      */
     // NOTE: isWebGPUComputeSupported() isn't assumed to exist in utils/index.js
     // yet (only isWebGLComputeSupported is referenced in webgl.ts), so a local
     // equivalent is defined at the bottom of this file. Feel free to hoist it
     // into utils/index.js as a sibling of isWebGLComputeSupported.
-    /** Sanity cap on Gaussian blur radius (pixels). Not a shader limitation —
-     *  just guards against pathological sigma values blowing up dispatch cost. */
+    /** Sanity cap on Gaussian blur radius (pixels). uards against pathological
+     * sigma values blowing up dispatch cost. */
     const MAX_BLUR_RADIUS = 64;
     const WORKGROUP_SIZE$2 = 8;
     /**
@@ -2700,7 +2697,7 @@ fn main(
      *   kernel: (2*32 + 1) * 4B                                            =  260B
      *   total                                                              = 9476B
      * That leaves ~7KB of headroom for driver overhead/alignment. Radii above
-     * this (i.e. large-sigma blurs) are rare in practice and still correct —
+     * this (i.e. large-sigma blurs) are rare in practice and still correct,
      * they just don't get the shared-memory win.
      *
      * Unrelated to row-band tiling below (that's about bounding *image*
@@ -2725,17 +2722,16 @@ fn main(
      * Floor on band core-row count. Guards against degenerate configurations
      * (huge halo relative to the memory budget) producing a zero/negative
      * band size, at the cost of possibly exceeding bandMemoryBudgetBytes in
-     * that edge case — see planBandLayout().
+     * that edge case. See planBandLayout().
      */
     const MIN_BAND_ROWS = 64;
     // ============== WGSL Shader Sources ==============
     // Computes one channel's Sobel gradient and *accumulates* its structure
     // tensor contribution into accumBuf (Di Zenzo multichannel summation)
-    // instead of overwriting it — fused into a single pass since nothing
-    // downstream ever consumes the raw gradient on its own (it used to be
-    // materialized into its own full-image buffer purely so this pass could
-    // read it back one dispatch later). accumBuf must be zero before the
-    // first channel's pass each band — see the encoder.clearBuffer() call in
+    // instead of overwriting it. Fused into a single pass since nothing
+    // downstream ever consumes the raw gradient on its own.
+    // accumBuf must be zero before the
+    // first channel's pass each band. See the encoder.clearBuffer() call in
     // computeInternal(), which replaces the "freshly-created buffers are
     // zero" guarantee the single-shot version used to rely on (band buffers
     // are now allocated once and reused).
@@ -2747,21 +2743,21 @@ fn main(
     // once from the final accumulated trace directly inside
     // TANGENT_EXTRACT_SHADER instead of a separate finalize pass.
     const GRADIENT_STRUCTURE_TENSOR_SHADER = source$y + source$x;
-    // Both blur directions live in the same module — WGSL allows multiple
-    // @compute entry points per shader module, so this replaces the WebGL
+    // Both blur directions live in the same module. Since WGSL allows multiple
+    // @compute entry points per shader module, this replaces the WebGL
     // version's two separate H/V programs with one module and two pipelines.
     const GAUSSIAN_BLUR_SHADER = source$y + source$w;
     // Tiled counterpart to GAUSSIAN_BLUR_SHADER, used when radius <=
     // TILE_RADIUS_CAP (see that constant's comment for the sizing rationale).
     // Each workgroup loads its input footprint into workgroup-shared memory
     // once, then every thread reads its taps from shared memory instead of
-    // re-issuing up to `kernelSize` independent global storage-buffer reads —
+    // re-issuing up to `kernelSize` independent global storage-buffer reads;
     // the redundant-read pattern the untiled version has, since neighboring
     // threads' kernel windows overlap almost entirely.
     const GAUSSIAN_BLUR_TILED_SHADER = source$y + source$v;
     const TANGENT_EXTRACT_SHADER = source$y + source$u;
     // Unlike the blur radius, the refine neighborhood is a fixed 5x5 (radius
-    // 2) — so the tile size is a compile-time constant with no data-dependent
+    // 2) so the tile size is a compile-time constant with no data-dependent
     // cap/fallback needed, unlike GAUSSIAN_BLUR_TILED_SHADER above. Every
     // invocation in the untiled version re-read the same 5x5=25 neighbors its
     // neighbors were also reading independently from global storage; here
@@ -2786,12 +2782,10 @@ fn main(
          */
         static bandMemoryBudgetBytes = DEFAULT_BAND_MEMORY_BUDGET_BYTES;
         /**
-         * Cheap check — mirrors the shape of isWebGLComputeSupported(), just
-         * wrapped in a resolved Promise to match the async `ETFComputerCtor`
-         * shape. This only confirms the API surface exists; it can't confirm
+         * This cheap check simply confirms the API surface exists; it can't confirm
          * an adapter is actually obtainable (that requires the async
          * requestAdapter() call made lazily inside
-         * initResources()/computeInternal()) — use getUnsupportedReason() for
+         * initResources()/computeInternal()). use getUnsupportedReason() for
          * that deeper check.
          */
         static async isSupported() {
@@ -2927,7 +2921,7 @@ fn main(
         }
         /**
          * Compute ETF from a single scalar channel using WebGPU compute shaders.
-         * Implemented as computeMultiChannel() with a single-element array — the
+         * Implemented as computeMultiChannel() with a single-element array. the
          * per-channel accumulate pass degenerates to a plain assignment when
          * there's only one channel (see GRADIENT_STRUCTURE_TENSOR_SHADER).
          */
@@ -2946,8 +2940,7 @@ fn main(
         /**
          * Release the cached WebGPU device + pipelines. Safe to call even if no
          * compute()/computeMultiChannel() call has happened yet. Since the
-         * underlying resources are cached statically (shared across instances —
-         * see the class doc comment), this releases them for every
+         * underlying resources are cached statically, this releases them for every
          * WebGpuEdgeTangentFlowComputer instance, not just this one; call it
          * once you're done with all ETF computations for the session.
          */
@@ -2965,7 +2958,7 @@ fn main(
          * Splits the image into horizontal row bands and runs the full
          * gradient+tensor-accumulate (fused) -> blur -> extract -> refine
          * pipeline once per band, on two round-robin, reused,
-         * band-sized buffer sets ("slots") — see the module-level doc comment
+         * band-sized buffer sets ("slots"). See the module-level doc comment
          * for why this bounds memory and how the double-buffering keeps the
          * GPU fed. Buffer allocation, band-size planning, and the halo math
          * are the only real additions versus a single-shot whole-image run;
@@ -2986,13 +2979,13 @@ fn main(
             // `halo` is how many extra rows above/below a band's *target* output
             // rows have to be computed (and hence loaded) for those target rows
             // to come out identical to a full, untiled run:
-            //   ±1        Sobel gradient stencil (gradient.wgsl)
-            //   ±radius   separable Gaussian blur (blurH then blurV — a single
+            //   +/1        Sobel gradient stencil (gradient.wgsl)
+            //   +/-radius   separable Gaussian blur (blurH then blurV: a single
             //             `radius` margin covers both passes: blurH is computed
             //             row-independently so needs no extra y-margin itself,
             //             and blurV only needs blurH's output `radius` rows out,
             //             which that single margin already provides)
-            //   ±2*iters  5x5 tangent-refine kernel, applied `iterations` times —
+            //   +/-2*iters  5x5 tangent-refine kernel, applied `iterations` times:
             //             each pass "eats" 2 rows of validity from the band's
             //             edges, so the untouched margin has to start
             //             2*iterations rows out from the target rows
@@ -3008,13 +3001,13 @@ fn main(
             return this.runGuarded(device, async () => {
                 // Two full sets of band-sized buffers, alternated per band, so band
                 // N's compute can be submitted before band N-1's result has
-                // finished being read back — see synchronization note below.
+                // finished being read back. See synchronization note below.
                 const slots = [
                     createBandBufferSet(device, width, maxBandBufHeight, channelCount),
                     createBandBufferSet(device, width, maxBandBufHeight, channelCount),
                 ];
                 // Reusable JS-side scratch for building each band's halo-padded,
-                // edge-clamped channel rows — one buffer per (slot, channel), sized
+                // edge-clamped channel rows. one buffer per (slot, channel), sized
                 // once up front instead of allocated fresh every band.
                 const channelScratch = [0, 1].map(() => inputs.map(() => new Float32Array(width * maxBandBufHeight)));
                 const tangents = new Float32Array(width * height * 2);
@@ -3032,9 +3025,9 @@ fn main(
                         const bandBufHeight = bandRowsThisBand + 2 * halo;
                         const bandPixelCount = width * bandBufHeight;
                         // This slot's buffers were last used two bands ago (or never,
-                        // for bandIdx < 2). Before touching them again — uploading new
+                        // for bandIdx < 2). Before touching them again (uploading new
                         // channel data, clearing tensorAccumBuf, or recording new
-                        // commands that target them — make sure that band's GPU work
+                        // commands that target them) make sure that band's GPU work
                         // is done and, critically, that its staging buffer has been
                         // unmap()'d: WebGPU rejects any submission that references a
                         // still-mapped buffer, and mapAsync()/unmap() are the one part
@@ -3064,9 +3057,7 @@ fn main(
                         // each band's per-channel accumulation loop.
                         encoder.clearBuffer(bufs.tensorAccumBuf);
                         // Step 1: per channel, fused gradient + structure-tensor-accumulate
-                        // directly into tensorAccumBuf. (Magnitude is no longer finalized
-                        // here as a separate pass — tangent_extract derives it from the
-                        // accumulated trace once, after blurring.)
+                        // directly into tensorAccumBuf.
                         for (let k = 0; k < channelCount; k++) {
                             const bindGroup = device.createBindGroup({
                                 layout: res.gradientStructureTensorPipeline.getBindGroupLayout(0),
@@ -3154,12 +3145,11 @@ fn main(
                         // Copy this band's final tangent buffer into its slot's staging
                         // buffer. This is deliberately the LAST command in the
                         // submission: awaiting its mapAsync (below) is then sufficient
-                        // proof that every earlier command in this band's submission —
-                        // and hence every buffer this slot owns — has finished on the
-                        // GPU, without any further explicit synchronization.
+                        // proof that every earlier command in this band's submission
+                        // has finished on the GPU, without any further explicit synchronization.
                         encoder.copyBufferToBuffer(readBuf, 0, bufs.stagingBuf, 0, bandPixelCount * 4 * 4);
                         device.queue.submit([encoder.finish()]);
-                        // Deliberately NOT awaited here — stashed instead. The next
+                        // Deliberately stashed. The next
                         // time this slot comes up (two bands from now) we await it
                         // before reusing these buffers. That gap is what lets band
                         // N+1's upload + dispatch overlap with band N's GPU execution
@@ -3207,7 +3197,7 @@ fn main(
     }
     function createParamsBuffer(device, params) {
         const buffer = device.createBuffer({
-            size: 16, // 4 x u32, already 16-byte aligned
+            size: 16,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
         device.queue.writeBuffer(buffer, 0, new Uint32Array([params.width, params.height, params.radius, params.kernelSize]));
@@ -3233,14 +3223,12 @@ fn main(
      *
      * Every intermediate that scales with band height is a whole-band
      * vec4<f32> buffer (16 bytes/pixel): tensorAccum, blurTemp, blurOutput,
-     * tangentBuf1, tangentBuf2 (5 of them — gradientScratch was folded into
-     * tensorAccum when the gradient and structure-tensor-accumulate passes
-     * were fused into one shader, so it no longer needs its own buffer),
+     * tangentBuf1, tangentBuf2,
      * plus one scalar f32 input buffer per channel (4 bytes/pixel), plus one
      * vec4 staging buffer for readback (16 bytes/pixel). `bandRows` is chosen
      * so that (bandRows + 2*halo) rows of all of those together fit under
      * budgetBytes, floored at MIN_BAND_ROWS so a large halo can't produce a
-     * degenerate (zero/negative) band — in that edge case the actual
+     * degenerate (zero/negative) band. In that edge case the actual
      * footprint may exceed budgetBytes; see the thrown error below for the
      * case where it can't be made to fit even at the floor.
      */
@@ -3301,7 +3289,7 @@ fn main(
     /**
      * Fill `out` (length must be width * (bandRows + 2*halo)) with this
      * channel's rows [bandStartY - halo, bandStartY + bandRows + halo),
-     * clamping source row indices to [0, height-1] — i.e. replicating the
+     * clamping source row indices to [0, height-1]. i.e. replicating the
      * true image's top/bottom edge rows exactly where clampIdx() would have,
      * had this been computed as part of a single whole-image run. Interior
      * band boundaries (not at the true image edge) get real neighboring row
@@ -3614,7 +3602,7 @@ void main() {
      *
      * Multi-channel support follows the same Di Zenzo multichannel structure
      * tensor approach as the CPU backend (per-channel tensors summed, then a
-     * single eigendecomposition on the combined tensor) — but the summation
+     * single eigendecomposition on the combined tensor) but the summation
      * itself is done on the GPU via additive blending straight into an
      * accumulator framebuffer, rather than reading tensors back to JS and
      * summing them there. Everything from the Gaussian blur pass onward is
@@ -3723,7 +3711,7 @@ void main() {
                 gl.bindTexture(gl.TEXTURE_2D, tensorAccumFB.tex);
                 gl.uniform1i(gl.getUniformLocation(res.finalizeMagnitudeProgram, 'u_tensor'), 0);
                 drawQuad(gl, res.quadVAO);
-                // Step 4: Gaussian blur the finalized (E, F, G, mag) tensor —
+                // Step 4: Gaussian blur the finalized (E, F, G, mag) tensor:
                 // blurring all four components together keeps magnitude aligned
                 // with the smoothed tensor that tangent_extract will read.
                 const smoothSigma = sigmaC ?? (cfg.kernelSize / 2.45);
@@ -3996,9 +3984,7 @@ void main() {
      * computeMultiChannel() above.
      *
      * Magnitude and anisotropy are baked directly into the returned
-     * TangentFlowField rather than surfaced as separate sibling results —
-     * FlowField now carries its own confidence data (see interfaces/base.ts),
-     * so there's no separate "detailed" result type to build here anymore.
+     * TangentFlowField rather than surfaced as separate sibling results.
      */
     function buildFlowField(channelTensor, width, height, config, sigmaC) {
         const cfg = { ...DEFAULT_ETF_CONFIG, ...config };
@@ -4010,8 +3996,7 @@ void main() {
         }
         // Derived from the same (blurred) tensor extractTangentField() used for
         // its eigenvectors, so it lines up with the flow field refine() starts
-        // from — not recomputed post-refine, since refine only perturbs
-        // direction, not the tensor anisotropy reflects.
+        // from since refine only perturbs direction, not the tensor anisotropy reflects.
         const anisotropy = tensorAnisotropy(smoothedTensor, width * height);
         return TangentFlowField.fromVec2Array(tangents, width, height, channelTensor.magnitude, anisotropy);
     }
@@ -4050,7 +4035,7 @@ void main() {
     /**
      * Di Zenzo tensor summation: combine several channels' structure tensors
      * (and their magnitudes) into one. Valid because E, F, G, and the
-     * trace-derived magnitude are all additive across channels — this is
+     * trace-derived magnitude are all additive across channels, which is
      * the mathematical basis for treating multi-channel ETF as "the same
      * as single-channel, but with a summed tensor."
      */
@@ -4293,7 +4278,7 @@ void main() {
                         return new EdgeTangentFlowComputer(new Ctor(), Ctor);
                     }
                     catch {
-                        continue; // isSupported() lied — try next
+                        continue; // isSupported() lied
                     }
                 }
             }
@@ -4311,8 +4296,7 @@ void main() {
         }
         /**
          * Compute an Edge Tangent Flow. The returned FlowField carries its own
-         * magnitude/anisotropy (see interfaces/base.ts) — there is no separate
-         * "detailed" variant anymore.
+         * magnitude/anisotropy (see interfaces/base.ts)
          */
         async compute(input, config = {}, sigmaC) {
             return this.callWithFallback(computer => computer.compute(input, config, sigmaC));
@@ -4351,7 +4335,7 @@ void main() {
                     }
                     catch (err) {
                         console.warn(`[${Ctor.name}] construction failed despite isSupported():`, err);
-                        this.failedBackends.add(Ctor); // isSupported() lied — try next
+                        this.failedBackends.add(Ctor); // isSupported() lied
                     }
                 }
             }
@@ -4367,7 +4351,7 @@ void main() {
      * public API. This module is the equivalent of createChannelImage() for
      * that type: the runtime helpers for building and composing fields.
      *
-     * Composition (map/blend/scale) is free until sampled -- no intermediate
+     * Composition (map/blend/scale) is free until sampled. No intermediate
      * buffer is allocated unless you call materialize(). This matters because
      * DoGConfig's p/epsilon/phi are ScalarFields evaluated once per pixel
      * inside processor.ts's hot loops; building a config like
@@ -4469,7 +4453,6 @@ void main() {
             this.flowField = config.flowField;
             this.config = { ...DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, ...config };
         }
-        /** CPU is always available — no environment capability to probe. */
         static async isSupported() {
             return true;
         }
@@ -4676,7 +4659,7 @@ void main() {
     /**
      * Creates a throwaway canvas + WebGL2 context to check capability, without
      * touching any live instance state. Used by both `isSupported()` and
-     * `getUnsupportedReason()` — cheap enough (one canvas + one context) that
+     * `getUnsupportedReason()`which is cheap enough (one canvas + one context) that
      * we don't bother caching the result across calls.
      */
     function probeWebGL2Support() {
@@ -4714,15 +4697,8 @@ void main() {
         fboWidth = 0;
         fboHeight = 0;
         uniforms = {};
-        // Set by the 'webglcontextlost' listener below. Checked at the top of
-        // blur() so a lost context surfaces as an immediate, clear error on the
-        // very next call instead of failing deep inside a GL call (or worse,
-        // silently no-opping, since a lost context makes most GL calls into
-        // silent no-ops rather than throws).
         contextLost = false;
         flowField;
-        // Single-arg constructor (flowField bundled into config) so this class
-        // satisfies `BlurStrategyCtor`'s `new (config: any)` shape.
         constructor(config) {
             this.flowField = config.flowField;
             this.config = { ...DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, ...config };
@@ -4734,12 +4710,6 @@ void main() {
             if (!gl.getExtension('EXT_color_buffer_float')) {
                 throw new Error('[GradientAlignedBlur/WebGL] EXT_color_buffer_float not supported (required for R32F render targets)');
             }
-            // Proactively catch context loss (driver crash, GPU reset, tab backgrounded
-            // and reclaimed, etc.) rather than waiting for the next blur() call to
-            // fail deep inside a GL call. preventDefault() signals we'd support
-            // restoration if it happens, but we don't currently rebuild GL state on
-            // 'webglcontextrestored' — a lost context is treated as a terminal
-            // failure for this instance, and the wrapper demotes to the next backend.
             canvas.addEventListener('webglcontextlost', (event) => {
                 event.preventDefault();
                 this.contextLost = true;
@@ -4768,14 +4738,6 @@ void main() {
             gl.uniform1i(this.uniforms['u_input'], 0);
             gl.uniform1i(this.uniforms['u_flowDir'], 1);
         }
-        /**
-         * Cheap synchronous-capability probe wrapped in an async signature to
-         * match `BlurStrategyCtor`. Doesn't touch the instance — creates its own
-         * throwaway canvas/context, same as the constructor does for real, so a
-         * `true` here means "constructing an instance should work", not a
-         * guarantee (construction can still fail — see key decisions in the
-         * design doc on why we still try/catch `new Ctor(...)`).
-         */
         static async isSupported() {
             return probeWebGL2Support() === undefined;
         }
@@ -4785,8 +4747,6 @@ void main() {
         setupTextureParams(tex) {
             const gl = this.gl;
             gl.bindTexture(gl.TEXTURE_2D, tex);
-            // NEAREST everywhere — we do bilinear manually in-shader via texelFetch,
-            // so hardware filtering support for float textures is irrelevant here.
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -4825,7 +4785,6 @@ void main() {
             this.fboHeight = height;
         }
         bakeFlowTexture(width, height) {
-            const t0 = performance.now();
             const gl = this.gl;
             const data = new Float32Array(width * height * 2);
             for (let y = 0; y < height; y++) {
@@ -4844,13 +4803,11 @@ void main() {
             this.flowFieldWidth = width;
             this.flowFieldHeight = height;
             this.flowDirty = false;
-            console.log(`[GradientAlignedBlur/WebGL] Baked flow field texture (${width}x${height}): ${(performance.now() - t0).toFixed(2)}ms`);
         }
         async blur(input, sigma) {
             if (this.contextLost || this.gl.isContextLost()) {
                 throw new Error('[GradientAlignedBlur/WebGL] context lost');
             }
-            const tTotal = performance.now();
             if (sigma < 0.1) {
                 return { data: new Float32Array(input.data), width: input.width, height: input.height };
             }
@@ -4866,9 +4823,6 @@ void main() {
             }
             this.ensureFbo(width, height);
             const halfSamples = Math.min(MAX_SAMPLES$1 - 1, Math.ceil((sigma * 2) / this.config.stepSize));
-            if (Math.ceil((sigma * 2) / this.config.stepSize) > MAX_SAMPLES$1 - 1) {
-                console.warn(`[GradientAlignedBlur/WebGL] halfSamples clamped to ${MAX_SAMPLES$1 - 1} (sigma=${sigma} wanted more); kernel truncated. Raise MAX_SAMPLES if this matters.`);
-            }
             const numSamples = halfSamples * 2 + 1;
             const weights = generateGaussianKernel$1(sigma, numSamples);
             const paddedWeights = new Float32Array(MAX_SAMPLES$1);
@@ -4885,17 +4839,12 @@ void main() {
             gl.uniform1i(this.uniforms['u_halfSamples'], halfSamples);
             gl.uniform1f(this.uniforms['u_stepSize'], this.config.stepSize);
             gl.uniform1fv(this.uniforms['u_weights'], paddedWeights);
-            const tDraw = performance.now();
             gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo);
             gl.bindVertexArray(this.vao);
             gl.drawArrays(gl.TRIANGLES, 0, 6);
-            console.log(`[GradientAlignedBlur/WebGL] Draw call submit (JS-side only, GPU work is async — see note at top of file): ${(performance.now() - tDraw).toFixed(2)}ms`);
-            const tReadback = performance.now();
             const output = createChannelImage$1(width, height);
             gl.readPixels(0, 0, width, height, gl.RED, gl.FLOAT, output.data);
-            console.log(`[GradientAlignedBlur/WebGL] Readback (this is where the GPU wait actually happens): ${(performance.now() - tReadback).toFixed(2)}ms`);
             gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-            console.log(`[GradientAlignedBlur/WebGL] blur() total (sigma=${sigma.toFixed(2)}, halfSamples=${halfSamples}): ${(performance.now() - tTotal).toFixed(2)}ms`);
             return output;
         }
     }
@@ -5011,7 +4960,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         device;
         pipeline;
         flowField;
-        // --- class-level device cache ---------------------
         static cachedDevice = null;
         static deviceInitPromise = null;
         static lastUnsupportedReason;
@@ -5021,11 +4969,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         flowFieldHeight = 0;
         flowDirty = true;
         flowBakePromise = null;
-        // Bytes we're willing to put in a single GPU buffer for one tile, well
-        // under whatever the device actually supports.
-        // Large images are processed in row-band tiles bounded by this so memory
-        // use stays flat regardless of image size — this is what prevents the
-        // crash on big images/concurrent calls.
         maxTileBytes = 0;
         static CPU_BAKE_ROWS_PER_CHUNK = 512;
         static TILE_MEMORY_SAFETY_FACTOR = 0.5;
@@ -5038,19 +4981,10 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             this.device = device;
             this.config = { ...DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, ...config };
             this.initPipeline();
-            // maxBufferSize / maxStorageBufferBindingSize are usually the binding
-            // constraint that bites first on large images (commonly 256MB / 128MB
-            // by default, even when the adapter can do far more). Cap tile size to
-            // half of whichever is smaller as a safety margin — driver-reported
-            // limits are the ceiling, not a size it's safe to actually hit.
             const limits = this.device.limits;
             this.maxTileBytes = Math.max(WORKGROUP_SIZE$1 * 4, // never go below one row's worth of data
             Math.floor(Math.min(limits.maxStorageBufferBindingSize, limits.maxBufferSize) *
                 WebGPUGradientAlignedBlur.TILE_MEMORY_SAFETY_FACTOR));
-            // Surface GPU-side failures (e.g. a validation error from a size that
-            // slipped past our checks) as visible console errors instead of a
-            // silent hang or an opaque tab crash. Attached once per (shared) device,
-            // not once per instance.
             if (!WebGPUGradientAlignedBlur.errorListenerAttached) {
                 WebGPUGradientAlignedBlur.errorListenerAttached = true;
                 this.device.addEventListener('uncapturederror', (event) => {
@@ -5080,9 +5014,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
                     throw new Error('[GradientAlignedBlur/WebGPU] No adapter available');
                 }
                 // Explicitly request the adapter's actual max limits rather than
-                // accepting the (often much lower) spec-minimum defaults — e.g. the
+                // accepting the (often much lower) spec-minimum defaults (e.g. the
                 // default maxBufferSize/maxStorageBufferBindingSize are commonly
-                // 256MB/128MB, but many adapters support several times that.
+                // 256MB/128MB, but many adapters support several times that).
                 const device = await adapter.requestDevice({
                     requiredLimits: {
                         maxTextureDimension2D: adapter.limits.maxTextureDimension2D,
@@ -5159,9 +5093,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
                 format: 'rg32float',
                 usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
             });
-            // Build+upload in row-chunks rather than one Float32Array(width*height*2)
-            // for the whole image — for a large image that single array can itself
-            // be gigabytes of JS heap before any GPU work happens.
             const rowsPerChunk = Math.max(1, WebGPUGradientAlignedBlur.CPU_BAKE_ROWS_PER_CHUNK);
             for (let y0 = 0; y0 < height; y0 += rowsPerChunk) {
                 const rows = Math.min(rowsPerChunk, height - y0);
@@ -5178,14 +5109,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
                 this.device.queue.writeTexture({ texture: newTexture, origin: { x: 0, y: y0 } }, chunk, { bytesPerRow: width * 2 * 4, rowsPerImage: rows }, { width, height: rows });
             }
             const oldTexture = this.flowTexture;
-            // Swap in the new texture only after it's fully written, and only
-            // destroy the old one after the swap so a concurrent blur() call that
-            // already grabbed a reference to `oldTexture` for an in-flight dispatch
-            // isn't left pointing at a destroyed resource. (There's still a narrow
-            // window if a call reads `this.flowTexture` between the old texture's
-            // last use and here — acceptable for a texture that only changes when
-            // setFlowField() is called, which is rare relative to blur() calls
-            // with a stable flow field.)
             this.flowTexture = newTexture;
             oldTexture?.destroy();
             this.flowFieldWidth = width;
@@ -5230,8 +5153,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
          * MEMORY: the output/readback path is processed in row-band tiles
          * bounded by `maxTileBytes`, not one whole-image buffer. This is what
          * keeps memory flat for large images (and for concurrent calls on the
-         * same image) instead of scaling linearly with width*height — see the
-         * note above `maxTileBytes` for why. The input/flow textures are still
+         * same image) instead of scaling linearly with width*height.
+         * The input/flow textures are still
          * one full-image texture each; if width or height exceeds the device's
          * maxTextureDimension2D, `getFlowTexture`/this method throw a clear
          * error rather than silently corrupting or crashing (see
@@ -5239,9 +5162,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
          */
         async blur(input, sigma) {
             if (WebGPUGradientAlignedBlur.cachedDevice !== this.device) {
-                // The device this instance was built on has since been lost/replaced
-                // (see the `device.lost` handler in acquireDevice()). Fail fast
-                // rather than issuing GPU calls against a dead device.
                 throw new Error('[GradientAlignedBlur/WebGPU] device lost');
             }
             if (sigma < 0.1) {
@@ -5260,14 +5180,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             const paddedWeights = new Float32Array(MAX_SAMPLES);
             paddedWeights.set(weights);
             // Row-band tile plan. Only the output/readback buffers scale with
-            // tile size — the input/flow textures below are still whole-image.
+            // tile size. input/flow textures below are still whole-image.
             const bytesPerRow = width * 4;
             const rowsPerTile = Math.max(1, Math.min(height, Math.floor(this.maxTileBytes / bytesPerRow)));
-            // Per-call GPU resources — never shared across concurrent blur() calls.
-            // Input/flow textures are whole-image (bounded by maxTextureDimension2D,
-            // checked above); output/readback buffers are sized to one tile only
-            // and reused sequentially across tiles, so peak memory here is
-            // O(tileRows * width) rather than O(height * width).
             const inputTexture = this.device.createTexture({
                 size: [width, height],
                 format: 'r32float',
@@ -5304,10 +5219,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
                     ],
                 });
                 const output = createChannelImage$1(width, height);
-                // Tiles are processed sequentially (dispatch -> readback -> next)
-                // rather than pipelined, since outputBuffer/readBuffer are reused
-                // across iterations — that reuse is exactly what keeps memory
-                // bounded, at the cost of some overlap opportunity between tiles.
                 for (let rowOffset = 0; rowOffset < height; rowOffset += rowsPerTile) {
                     const tileHeight = Math.min(rowsPerTile, height - rowOffset);
                     const paramsData = new ArrayBuffer(32);
@@ -5373,7 +5284,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
                         return new GradientAlignedBlur(instance, Ctor, flowField, config);
                     }
                     catch {
-                        continue; // isSupported() lied — try next
+                        continue; // isSupported() lied
                     }
                 }
             }
@@ -5630,7 +5541,7 @@ struct Params {
             this.flowField = flowField;
             this.config = { ...DEFAULT_FLOW_CONFIG, ...config };
         }
-        /** CPU is always available — it's the universal fallback. */
+        /** CPU is always available */
         static async isSupported() {
             return true;
         }
@@ -5952,7 +5863,7 @@ struct Params {
         config;
         flowField;
         resources = null;
-        // Small, cached across calls — proportional to kernel size, never to
+        // proportional to kernel size, never to
         // image size, so there's no reason to ever tile these.
         kernelBuffer = null;
         currentKernelSize = 0;
@@ -5967,12 +5878,7 @@ struct Params {
         static CPU_BAKE_ROWS_PER_CHUNK = 512;
         // Bytes we're willing to put in a single GPU buffer for one row-band
         // tile of *output*. Large images are processed in row-band tiles bounded
-        // by this, so memory use stays flat regardless of image size — this is
-        // what prevents the silent corruption/blank-out that the old, untiled,
-        // whole-image output buffer produced once its size crossed the device's
-        // default storage-buffer binding limit (that failure mode doesn't throw
-        // a catchable JS exception, so nothing fell back — it just silently
-        // read back zeros/garbage in the regions past the limit).
+        // by this, so memory use stays flat regardless of image size
         maxTileBytes = 0;
         static TILE_MEMORY_SAFETY_FACTOR = 0.5;
         constructor(flowField, config = {}) {
@@ -5997,7 +5903,7 @@ struct Params {
             // maxBufferSize / maxStorageBufferBindingSize are usually the binding
             // constraint that bites first on large images (commonly 256MB / 128MB
             // by default, even when the adapter can do far more). Cap tile size to
-            // half of whichever is smaller as a safety margin — driver-reported
+            // half of whichever is smaller as a safety margin. Driver-reported
             // limits are the ceiling, not a size it's safe to actually hit.
             const limits = device.limits;
             this.maxTileBytes = Math.max(16 * 4, // never go below one row's worth of data at workgroup width 16
@@ -6023,9 +5929,7 @@ struct Params {
             const flowPipeline = device.createComputePipeline({
                 layout: pipelineLayout,
                 compute: {
-                    module: device.createShaderModule({
-                        code: source$f,
-                    }),
+                    module: device.createShaderModule({ code: source$f }),
                     entryPoint: 'main',
                 },
             });
@@ -6041,7 +5945,7 @@ struct Params {
         }
         /**
          * Textures are bound by maxTextureDimension2D (typically 8192-16384),
-         * not the storage-buffer binding limit — but that ceiling still exists,
+         * not the storage-buffer binding limit. That ceiling still exists,
          * and silently exceeding it is exactly the failure mode this fix is
          * closing off. Throw a clear, catchable error instead, so the
          * FlowGuidedBlur wrapper's fallback logic gets a chance to demote to
@@ -6106,9 +6010,9 @@ struct Params {
         }
         /**
          * Update the flow field (e.g., when processing a new image). Marks the
-         * cached flow texture dirty rather than rebuilding immediately — the
-         * next blur() call rebuilds it (and only then, against the dimensions
-         * that call actually needs).
+         * cached flow texture dirty rather than rebuilding immediately. The
+         * next blur() call rebuilds it against the dimensions that call actually
+         * needs.
          */
         setFlowField(flowField) {
             this.flowField = flowField;
@@ -6116,13 +6020,7 @@ struct Params {
         }
         /**
          * MEMORY: the output/readback path is processed in row-band tiles
-         * bounded by `maxTileBytes`, not one whole-image buffer — this is what
-         * keeps memory flat for large images instead of scaling linearly with
-         * width*height, and is what prevents the silent corruption/blank-out
-         * described above. The input/flow textures are still one full-image
-         * texture each (bounded by `maxTextureDimension2D`, checked via
-         * `assertWithinTextureLimits`), which is a far higher ceiling than the
-         * storage-buffer limit the old version was implicitly subject to.
+         * bounded by `maxTileBytes`, not one whole-image buffer
          */
         async blur(input, sigma) {
             if (sigma < 0.1) {
@@ -6157,7 +6055,7 @@ struct Params {
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             });
             // Row-band tile plan. Only the output/readback buffers scale with
-            // tile size — the input/flow textures above are still whole-image.
+            // tile size. input/flow textures above are still whole-image.
             const bytesPerRow = width * 4;
             const rowsPerTile = Math.max(1, Math.min(height, Math.floor(this.maxTileBytes / bytesPerRow)));
             const tileBufferSize = rowsPerTile * bytesPerRow;
@@ -6183,8 +6081,8 @@ struct Params {
                 });
                 const output = createChannelImage$1(width, height);
                 // Tiles are processed sequentially (dispatch -> readback -> next),
-                // since outputBuffer/readBuffer are reused across iterations — that
-                // reuse is exactly what keeps memory bounded, at the cost of some
+                // since outputBuffer/readBuffer are reused across iterations.
+                // reuse keeps memory bounded, at the cost of some
                 // overlap opportunity between tiles.
                 for (let rowOffset = 0; rowOffset < height; rowOffset += rowsPerTile) {
                     const tileHeight = Math.min(rowsPerTile, height - rowOffset);
@@ -6227,12 +6125,10 @@ struct Params {
     }
     /**
      * Backend-agnostic flow-guided blur. Same per-algorithm backend selection
-     * and single-retry fallback as `IsotropicBlur` — see that file for the
-     * rationale on `create()`/`satisfies`/per-instance `failedBackends`/
-     * single-step retry.
+     * and single-retry fallback as `IsotropicBlur`
      *
-     * One addition here: the flow field is mutable state (`setFlowField` swaps
-     * it for a new frame), so it has to be tracked on the wrapper too — a
+     * One addition here: the flow field is mutable,
+     * so it has to be tracked on the wrapper too. A
      * fallback needs to construct the next backend with the *current* flow
      * field, not the one from construction time.
      */
@@ -6262,7 +6158,7 @@ struct Params {
                         return new FlowGuidedBlur(new Ctor(flowField, config), Ctor, config, flowField);
                     }
                     catch {
-                        continue; // isSupported() lied — try the next candidate
+                        continue; // isSupported() lied
                     }
                 }
             }
@@ -6345,10 +6241,10 @@ struct Params {
      * 5. Optional: Apply anti-aliasing LIC pass
      *
      * Parameters:
-     * - σc: Structure tensor smoothing (controls ETF smoothness)
-     * - σe: Edge detection sigma (controls edge width)
-     * - σm: Flow-aligned smoothing (controls line coherence)
-     * - σa: Anti-aliasing sigma (optional post-processing)
+     * - sigmaC: Structure tensor smoothing (controls ETF smoothness)
+     * - sigmaE: Edge detection sigma (controls edge width)
+     * - sigmaM: Flow-aligned smoothing (controls line coherence)
+     * - sigmaA: Anti-aliasing sigma (optional post-processing)
      */
     class FDoG {
         config;
@@ -6557,28 +6453,70 @@ struct Params {
             this.blurStrategy.then(strategy => strategy.dispose());
         }
         /**
-         * Estimate a good `epsilon` for a given input + config by running the
-         * ADoG pipeline once and taking the mean of the (pre-threshold) sharpened
-         * response. Since ADoG's response straddles the true edge/noise "zero"
-         * around the local mean rather than a fixed absolute constant (see Eq. 4/5),
-         * a fixed epsilon default doesn't transfer across images, tau/s/noiseScaleC
-         * choices, or resolutions -- this recomputes it per-input instead.
-         *
-         * @param biasOffset Shifts the estimate away from the raw mean to bias
-         *   density (positive -> denser/more black). Default 0 (balanced 50/50).
+         * Analytical epsilon ceiling for a given tau: beyond this, no flat
+         * region (however bright) can cross threshold, and the output floods
+         * to solid black regardless of image content. Pure function of tau,
+         * so it's sync and doesn't need an input image or a processor instance.
          */
-        static async estimateEpsilon(input, config = {}, biasOffset = 0) {
+        static getEpsilonCeiling(tau) {
+            return 1 - tau;
+        }
+        /**
+         * Runs the pipeline once and returns mean/std of the pre-threshold
+         * sharpened response, plus the tau-derived ceiling. Shared by
+         * estimateEpsilon() and getEpsilonRange() so they don't each pay for
+         * their own processDetailed() pass.
+         */
+        static async computeEpsilonStats(input, config = {}) {
             const processor = new ADoG(config);
             try {
                 const { sharpened } = await processor.processDetailed(input);
+                const n = sharpened.data.length;
                 let sum = 0;
-                for (let i = 0; i < sharpened.data.length; i++)
+                for (let i = 0; i < n; i++)
                     sum += sharpened.data[i];
-                return sum / sharpened.data.length - biasOffset;
+                const mean = sum / n;
+                let sqDiff = 0;
+                for (let i = 0; i < n; i++)
+                    sqDiff += (sharpened.data[i] - mean) ** 2;
+                const std = Math.sqrt(sqDiff / n);
+                const tau = config.tau ?? DEFAULT_ADOG_CONFIG.tau;
+                return { mean, std, ceiling: ADoG.getEpsilonCeiling(tau) };
             }
             finally {
                 processor.dispose();
             }
+        }
+        /**
+         * Recommended [min, max] band for the epsilon slider, plus a sensible
+         * default, derived from the actual image + config rather than the
+         * static ADOG_PARAM_RANGES.epsilon entry (which can't account for
+         * tau/s/noiseScaleC/image content).
+         */
+        static async getEpsilonRange(input, config = {}, spread = 1.5) {
+            const { mean, std, ceiling } = await ADoG.computeEpsilonStats(input, config);
+            return {
+                hardMin: 0,
+                recommendedMin: Math.max(0, mean - spread * std),
+                recommendedMax: Math.min(ceiling, mean + spread * std),
+                hardMax: 0.2,
+                default: mean,
+                step: 0.001
+            };
+        }
+        /** Existing method, now built on computeEpsilonStats. */
+        static async estimateEpsilon(input, config = {}, biasOffset = 0) {
+            const { mean } = await ADoG.computeEpsilonStats(input, config);
+            return mean - biasOffset;
+        }
+        /**
+         * Analytical epsilon ceiling for a given tau: beyond this, no flat
+         * region (however bright) can cross threshold, and the output floods
+         * to solid black regardless of image content. Pure function of tau,
+         * so it's sync and doesn't need an input image or a processor instance.
+         */
+        static getEpsilonMax(tau) {
+            return 1 - tau;
         }
         static estimateSigma(input, { referenceDimension = 700, baseSigma = 1.0 } = {}) {
             const scale = Math.min(input.width, input.height) / referenceDimension;
@@ -7057,6 +6995,23 @@ struct Params {
         return localBaselineEstimate$1(input, options);
     }
     /**
+     * Spatially-varying epsilon map for ADoG specifically. Unlike the generic
+     * epsilon.localBaselineEstimate (principled for XDoG's S(x) ≈ localTone),
+     * ADoG's flat-region response is I(x) * (1-p(x)) = I(x) * (1-τ) * tanh(s * I(x)),
+     * bounded by (1-τ) rather than 1 (see Eq. 4/5). This pre-scales the input
+     * by that closed form before handing it to the same blur/offset/
+     * contrastMargin machinery shared.localBaselineEstimate already provides.
+     */
+    async function adogLocalBaselineEstimate(input, options) {
+        const { tau, s, ...baseOptions } = options;
+        const scaled = createChannelImage$1(input.width, input.height);
+        for (let i = 0; i < input.data.length; i++) {
+            const I = input.data[i];
+            scaled.data[i] = I * (1 - tau) * Math.tanh(s * I);
+        }
+        return localBaselineEstimate$1(scaled, baseOptions);
+    }
+    /**
      * Usage:
      *
      *   import { XDoG } from '../../implementations/xdog.js';
@@ -7071,6 +7026,7 @@ struct Params {
 
     var epsilon = /*#__PURE__*/Object.freeze({
         __proto__: null,
+        adogLocalBaselineEstimate: adogLocalBaselineEstimate,
         localBaselineEstimate: localBaselineEstimate,
         toneAdaptiveEstimate: toneAdaptiveEstimate$2,
         toneAdaptiveEstimateAuto: toneAdaptiveEstimateAuto$2
@@ -7223,7 +7179,7 @@ struct Params {
      * while supporting strong edges.
      *
      * CPU is always available (BaseCPUStrategy.isSupported() / dispose() /
-     * backend all apply unchanged) — this is the universal fallback.
+     * backend all apply unchanged). This is the universal fallback.
      */
     let BilateralFilter$1 = class BilateralFilter extends BaseCPUStrategy {
         config;
@@ -7492,7 +7448,7 @@ struct Params {
      */
     class LocalVariancePreprocessor {
         config;
-        /** CPU-only — no WebGL/WebGPU counterpart exists for this preprocessor. */
+        /** CPU-only. No WebGL/WebGPU counterparts for this yet. */
         backend = 'cpu';
         constructor(config = {}) {
             this.config = {
@@ -9164,7 +9120,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
      * of a much taller image (see the chunking loop in `process()` below).
      * `spatialWeights` is a precomputed (2*radius+1)^2 lookup table for the
      * spatial term of the bilateral weight, which depends only on (dx, dy)
-     * and is identical for every pixel — computing it on the CPU once instead
+     * and is identical for every pixel. Computing it on the CPU once instead
      * of calling `exp()` for it on every shader invocation roughly halves the
      * transcendental-function work in the inner loop.
      */
@@ -9265,7 +9221,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         radius: 2,
     };
     // N (the per-pixel neighborhood size) sizes a function-local `var`, not a
-    // `var<workgroup>` one, so it can't become a WGSL `override` — the
+    // `var<workgroup>` one, so it can't become a WGSL `override`. The
     // override-as-array-size exception only covers workgroup-address-space
     // arrays (see median.wgsl's comment for the full explanation). It's a
     // genuine `const`, so it still has to be baked per radius at the string
@@ -9484,7 +9440,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
          *
          * The two GPU round-trips (histogram pass, then stretch pass) are each
          * wrapped in their own runGuarded scope rather than one scope spanning
-         * both — the CPU-side histogram bucketing that happens between them
+         * both. The CPU-side histogram bucketing that happens between them
          * isn't GPU work, so it shouldn't sit inside a WebGPU error scope.
          */
         async process(input) {
@@ -9646,8 +9602,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
      *                                // WebGPU can't provide here
      *
      * A device can support WebGPU for one algorithm and not another, so
-     * resolution happens per class, not once globally for the whole module —
-     * this follows the same pattern used for BlurStrategy/ETFComputer.
+     * resolution happens per class, not once globally for the whole module.
+     * This follows the same pattern used for BlurStrategy/ETFComputer.
      *
      * If a backend fails mid-session (driver crash, lost context), each
      * instance demotes itself to the next supported candidate once and
@@ -9715,10 +9671,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     /**
      * Separable Gaussian blur.
-     *
-     * Config here is just `number` (sigma), not an object — candidates'
-     * constructors all take `(sigma: number)` directly, so `TConfig` is
-     * `number` rather than a `Partial<...>` shape.
      */
     class GaussianBlur extends ResilientPreprocessor {
         static candidates = [

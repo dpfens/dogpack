@@ -6,7 +6,7 @@
  *
  * Implements the reparameterized formulation from Section 2.5 of:
  * "XDoG: An eXtended difference-of-Gaussians compendium including
- * advanced image stylization" by Winnemöller et al. (2012)
+ * advanced image stylization" by Winnemoller et al. (2012)
  */
 import type { BlurStrategy, ChannelImage } from './interfaces/base.js';
 import type { DoGConfig } from './dog/index.js';
@@ -15,7 +15,7 @@ import { type DoGProcessingResult } from './interfaces/dog.js';
  * Difference of Gaussians processor
  *
  * Uses the reparameterized formulation (Equation 7):
- * S_σ,k,p(x) = G_σ(x) + p x D_σ,k(x) = (1 + p) x G_σ(x) - p x G_kσ(x)
+ * S_sigma,k,p(x) = G_sigma(x) + p x D_sigma,k(x) = (1 + p) x G_sigma(x) - p x G_ksigma(x)
  *
  * This is equivalent to unsharp masking of the blurred image, which
  * decouples edge sharpening strength (p) from threshold parameters.
@@ -78,20 +78,20 @@ export declare class DoGProcessor {
      */
     setBlurStrategy(strategy: BlurStrategy): void;
     /**
-     * Compute raw Difference of Gaussians: D(x) = G_σ(x) - G_kσ(x)
+     * Compute raw Difference of Gaussians: D(x) = G_sigma(x) - G_ksigma(x)
      * This is the standard DoG without any weighting
      */
     private computeDoG;
     /**
      * Compute sharpened image using Equation 7 from the paper:
-     * S_σ,k,p(x) = G_σ(x) + p x D_σ,k(x) = (1 + p) x G_σ(x) - p x G_kσ(x)
+     * S_sigma,k,p(x) = G_sigma(x) + p x D_sigma,k(x) = (1 + p) x G_sigma(x) - p x G_ksigma(x)
      *
      * This can be understood as unsharp masking of the blurred image.
      * The parameter p controls the edge sharpening strength independently
      * of the threshold parameters.
      *
-     * @param blur1 G_σ * I (smaller blur)
-     * @param blur2 G_kσ * I (larger blur)
+     * @param blur1 G_sigma * I (smaller blur)
+     * @param blur2 G_ksigma * I (larger blur)
      * @param p Sharpening strength (p ≈ 20 typical, p ≈ 100 for woodcut)
      */
     private computeSharpening;

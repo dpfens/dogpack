@@ -24,7 +24,7 @@ import { BaseCPUStrategy } from '../../base.js';
  * while supporting strong edges.
  *
  * CPU is always available (BaseCPUStrategy.isSupported() / dispose() /
- * backend all apply unchanged) — this is the universal fallback.
+ * backend all apply unchanged). This is the universal fallback.
  */
 export declare class BilateralFilter extends BaseCPUStrategy implements Preprocessor {
     private readonly config;
@@ -164,7 +164,7 @@ export interface LocalVarianceConfig {
  */
 export declare class LocalVariancePreprocessor implements Preprocessor {
     private config;
-    /** CPU-only — no WebGL/WebGPU counterpart exists for this preprocessor. */
+    /** CPU-only. No WebGL/WebGPU counterparts for this yet. */
     readonly backend: "cpu";
     constructor(config?: Partial<LocalVarianceConfig>);
     dispose(): void;

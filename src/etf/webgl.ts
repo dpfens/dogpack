@@ -7,7 +7,7 @@
  *
  * Multi-channel support follows the same Di Zenzo multichannel structure
  * tensor approach as the CPU backend (per-channel tensors summed, then a
- * single eigendecomposition on the combined tensor) — but the summation
+ * single eigendecomposition on the combined tensor) but the summation
  * itself is done on the GPU via additive blending straight into an
  * accumulator framebuffer, rather than reading tensors back to JS and
  * summing them there. Everything from the Gaussian blur pass onward is
@@ -166,7 +166,7 @@ export class WebGLEdgeTangentFlowComputer extends BaseWebGLStrategy implements E
       gl.uniform1i(gl.getUniformLocation(res.finalizeMagnitudeProgram, 'u_tensor'), 0);
       drawQuad(gl, res.quadVAO);
 
-      // Step 4: Gaussian blur the finalized (E, F, G, mag) tensor —
+      // Step 4: Gaussian blur the finalized (E, F, G, mag) tensor:
       // blurring all four components together keeps magnitude aligned
       // with the smoothed tensor that tangent_extract will read.
       const smoothSigma = sigmaC ?? (cfg.kernelSize / 2.45);

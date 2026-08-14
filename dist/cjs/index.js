@@ -12,15 +12,15 @@
  * Key differences from a naive implementation:
  *
  * 1. Uses the reparameterized sharpening formulation (Equation 7):
- *    S_σ,k,p(x) = (1 + p) · G_σ(x) - p · G_kσ(x)
+ *    S_sigma,k,p(x) = (1 + p) · G_sigma(x) - p · G_ksigma(x)
  *    This decouples edge sharpening strength from threshold parameters.
  *
  * 2. FDoG uses three separate sigma parameters:
- *    - σc: Structure tensor smoothing
- *    - σe: Edge detection (gradient-aligned DoG)
- *    - σm: Flow-aligned smoothing
+ *    - sigmaC: Structure tensor smoothing
+ *    - sigmaE: Edge detection (gradient-aligned DoG)
+ *    - sigmaM: Flow-aligned smoothing
  *
- * 3. Includes anti-aliasing pass (σa) for FDoG
+ * 3. Includes anti-aliasing pass (sigmaA) for FDoG
  *
  * 4. Structure tensor is smoothed with Gaussian (not box filter)
  *
@@ -49,10 +49,10 @@
  * import { FDoG } from 'xdog';
  *
  * const fdog = new FDoG({
- *   sigma: 1.4,      // Edge detection sigma (σe)
- *   sigmaC: 2.5,     // Structure tensor smoothing (σc)
- *   sigmaM: 4.0,     // Flow-aligned smoothing (σm)
- *   sigmaA: 1.0,     // Anti-aliasing (σa)
+ *   sigma: 1.4,      // Edge detection sigma (sigmaE)
+ *   sigmaC: 2.5,     // Structure tensor smoothing (sigmaC)
+ *   sigmaM: 4.0,     // Flow-aligned smoothing (sigmaM)
+ *   sigmaA: 1.0,     // Anti-aliasing (sigmaA)
  *   p: 20,
  *   phi: 10
  * });

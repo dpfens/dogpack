@@ -67,8 +67,8 @@ export declare class WebGPUGradientAlignedBlur implements BlurStrategy {
      * MEMORY: the output/readback path is processed in row-band tiles
      * bounded by `maxTileBytes`, not one whole-image buffer. This is what
      * keeps memory flat for large images (and for concurrent calls on the
-     * same image) instead of scaling linearly with width*height — see the
-     * note above `maxTileBytes` for why. The input/flow textures are still
+     * same image) instead of scaling linearly with width*height.
+     * The input/flow textures are still
      * one full-image texture each; if width or height exceeds the device's
      * maxTextureDimension2D, `getFlowTexture`/this method throw a clear
      * error rather than silently corrupting or crashing (see

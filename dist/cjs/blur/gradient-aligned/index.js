@@ -31,7 +31,7 @@ class GradientAlignedBlur {
                     return new GradientAlignedBlur(instance, Ctor, flowField, config);
                 }
                 catch {
-                    continue; // isSupported() lied — try next
+                    continue; // isSupported() lied
                 }
             }
         }

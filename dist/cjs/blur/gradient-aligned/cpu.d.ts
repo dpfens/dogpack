@@ -12,7 +12,6 @@ export declare class CPUGradientAlignedBlur extends BaseCPUStrategy implements B
     private config;
     private flowField;
     constructor(config: GradientAlignedBlurBackendConfig);
-    /** CPU is always available — no environment capability to probe. */
     static isSupported(): Promise<boolean>;
     dispose(): void;
     setFlowField(flowField: FlowField): void;

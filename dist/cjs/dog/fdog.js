@@ -34,10 +34,10 @@ const dog_js_1 = require("../interfaces/dog.js");
  * 5. Optional: Apply anti-aliasing LIC pass
  *
  * Parameters:
- * - σc: Structure tensor smoothing (controls ETF smoothness)
- * - σe: Edge detection sigma (controls edge width)
- * - σm: Flow-aligned smoothing (controls line coherence)
- * - σa: Anti-aliasing sigma (optional post-processing)
+ * - sigmaC: Structure tensor smoothing (controls ETF smoothness)
+ * - sigmaE: Edge detection sigma (controls edge width)
+ * - sigmaM: Flow-aligned smoothing (controls line coherence)
+ * - sigmaA: Anti-aliasing sigma (optional post-processing)
  */
 class FDoG {
     config;

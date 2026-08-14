@@ -7,7 +7,7 @@
  *
  * Multi-channel support follows the same Di Zenzo multichannel structure
  * tensor approach as the CPU backend (per-channel tensors summed, then a
- * single eigendecomposition on the combined tensor) — but the summation
+ * single eigendecomposition on the combined tensor) but the summation
  * itself is done on the GPU via additive blending straight into an
  * accumulator framebuffer, rather than reading tensors back to JS and
  * summing them there. Everything from the Gaussian blur pass onward is

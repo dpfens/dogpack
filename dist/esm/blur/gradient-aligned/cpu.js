@@ -18,7 +18,6 @@ export class CPUGradientAlignedBlur extends BaseCPUStrategy {
         this.flowField = config.flowField;
         this.config = { ...DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, ...config };
     }
-    /** CPU is always available — no environment capability to probe. */
     static async isSupported() {
         return true;
     }

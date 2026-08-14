@@ -175,7 +175,7 @@ const DEFAULT_BILATERAL_CONFIG = {
  * of a much taller image (see the chunking loop in `process()` below).
  * `spatialWeights` is a precomputed (2*radius+1)^2 lookup table for the
  * spatial term of the bilateral weight, which depends only on (dx, dy)
- * and is identical for every pixel — computing it on the CPU once instead
+ * and is identical for every pixel. Computing it on the CPU once instead
  * of calling `exp()` for it on every shader invocation roughly halves the
  * transcendental-function work in the inner loop.
  */
@@ -277,7 +277,7 @@ const DEFAULT_MEDIAN_CONFIG = {
     radius: 2,
 };
 // N (the per-pixel neighborhood size) sizes a function-local `var`, not a
-// `var<workgroup>` one, so it can't become a WGSL `override` — the
+// `var<workgroup>` one, so it can't become a WGSL `override`. The
 // override-as-array-size exception only covers workgroup-address-space
 // arrays (see median.wgsl's comment for the full explanation). It's a
 // genuine `const`, so it still has to be baked per radius at the string
@@ -499,7 +499,7 @@ class GPUContrastEnhancer extends base_js_1.BaseWebGPUStrategy {
      *
      * The two GPU round-trips (histogram pass, then stretch pass) are each
      * wrapped in their own runGuarded scope rather than one scope spanning
-     * both — the CPU-side histogram bucketing that happens between them
+     * both. The CPU-side histogram bucketing that happens between them
      * isn't GPU work, so it shouldn't sit inside a WebGPU error scope.
      */
     async process(input) {
@@ -652,8 +652,8 @@ exports.GPUQuantizer = GPUQuantizer;
 /* Presets and pipeline (async-native equivalents of cpu.ts's)           */
 /* ==================================================================== */
 /**
- * Preset preprocessing pipelines for common use cases — async GPU
- * equivalents of `PreprocessingPresets` in cpu.ts.
+ * Preset preprocessing pipelines for common use cases.
+ * async GPU equivalents of `PreprocessingPresets` in cpu.ts.
  */
 exports.GPUPreprocessingPresets = {
     /** Light preprocessing - minimal smoothing. Good for clean studio photos, illustrations. */
@@ -680,8 +680,8 @@ exports.GPUPreprocessingPresets = {
     },
 };
 /**
- * Convenience class for chaining GPU preprocessing operations — async
- * equivalent of `PreprocessingPipeline` in cpu.ts.
+ * Convenience class for chaining GPU preprocessing operations
+ * async equivalent of `PreprocessingPipeline` in cpu.ts.
  */
 class GPUPreprocessingPipeline {
     operations = [];
