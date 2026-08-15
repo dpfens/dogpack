@@ -154,6 +154,28 @@ export interface Preprocessor extends Disposable, BackendIdentifiable {
 export type PreprocessorCtor = StrategyCtor<Preprocessor>;
 
 /**
+ * Configuration for isotropic Gaussian blur
+ */
+export interface IsotropicBlurConfig {
+  sigma: number;
+  /** 
+   * Kernel size multiplier relative to sigma (default: 6, meaning 3 * sigma on each side)
+   * Paper samples at 2x sigma for flow-aligned, 2.45x for structure tensor
+   */
+  kernelSizeMultiplier: number;
+  /** Maximum kernel size (default: 63) */
+  maxKernelSize: number;
+}
+
+export const DEFAULT_ISOTROPIC_BLUR_CONFIG: IsotropicBlurConfig = {
+  sigma: 1,
+  kernelSizeMultiplier: 6,
+  maxKernelSize: 63,
+};
+
+
+
+/**
  * Configuration for flow-guided blur
  */
 export interface GradientAlignedBlurConfig {
