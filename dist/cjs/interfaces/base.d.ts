@@ -69,6 +69,10 @@ export interface Disposable {
 export interface BackendIdentifiable {
     readonly backend: 'webgpu' | 'webgl' | 'cpu';
 }
+export interface EdgeAwareFilterCore<TParams> extends Disposable, BackendIdentifiable {
+    apply(input: ChannelImage, params: TParams): Promise<ChannelImage>;
+}
+export type EdgeAwareFilterCtor<TParams> = StrategyCtor<EdgeAwareFilterCore<TParams>>;
 /**
  * Abstract blur strategy interface
  * Implementations provide different blur algorithms (isotropic, flow-guided, etc.)
@@ -133,6 +137,20 @@ export interface Preprocessor extends Disposable, BackendIdentifiable {
  */
 export type PreprocessorCtor = StrategyCtor<Preprocessor>;
 /**
+ * Configuration for isotropic Gaussian blur
+ */
+export interface IsotropicBlurConfig {
+    sigma: number;
+    /**
+     * Kernel size multiplier relative to sigma (default: 6, meaning 3 * sigma on each side)
+     * Paper samples at 2x sigma for flow-aligned, 2.45x for structure tensor
+     */
+    kernelSizeMultiplier: number;
+    /** Maximum kernel size (default: 63) */
+    maxKernelSize: number;
+}
+export declare const DEFAULT_ISOTROPIC_BLUR_CONFIG: IsotropicBlurConfig;
+/**
  * Configuration for flow-guided blur
  */
 export interface GradientAlignedBlurConfig {
@@ -183,6 +201,7 @@ export interface BilateralFilterConfig {
     /** Kernel radius multiplier (default: 2, meaning radius = sigmaSpatial * 2) */
     radiusMultiplier?: number;
 }
+export declare const DEFAULT_BILATERAL_CONFIG: BilateralFilterConfig;
 /**
  * Configuration for median filter
  */
@@ -190,6 +209,7 @@ export interface MedianFilterConfig {
     /** Radius of the filter (default: 2, meaning 5x5 kernel) */
     radius: number;
 }
+export declare const DEFAULT_MEDIAN_CONFIG: MedianFilterConfig;
 /**
  * Configuration for Kuwahara filter
  */
@@ -197,6 +217,24 @@ export interface KuwaharaFilterConfig {
     /** Radius of the filter (default: 3) */
     radius: number;
 }
+export declare const DEFAULT_KUWAHARA_CONFIG: KuwaharaFilterConfig;
+export interface ContrastEnhancementConfig {
+    blackPoint: number;
+    whitePoint: number;
+}
+export declare const DEFAULT_CONTRAST_ENHANCEMENT_CONFIG: ContrastEnhancementConfig;
+export interface QuantizerConfig {
+    levels: number;
+}
+export declare const DEFAULT_QUANTIZER_CONFIG: {
+    levels: number;
+};
+export interface GaussianConfig {
+    sigma: number;
+}
+export declare const DEFAULT_GAUSSIAN_CONFIG: {
+    sigma: number;
+};
 /**
  * Configuration for Edge Tangent Flow computation
  *

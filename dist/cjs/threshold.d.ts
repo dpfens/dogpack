@@ -11,7 +11,7 @@ export declare class SoftThresholdStrategy implements ThresholdStrategy {
 }
 /**
  * Hard black/white threshold (step function).
- * Equivalent to phi → inf in SoftThresholdStrategy, and to ThresholdModes.hard
+ * Equivalent to phi -> inf in SoftThresholdStrategy, and to ThresholdModes.hard
  * in processor.ts, but expressed as a ThresholdStrategy so it can be plugged
  * into DoGConfig.thresholdStrategy (e.g. as ADoG's default, since the paper's
  * screentone output is binarized rather than soft-thresholded).

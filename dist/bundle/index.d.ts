@@ -290,7 +290,7 @@ declare class SoftThresholdStrategy implements ThresholdStrategy {
 }
 /**
  * Hard black/white threshold (step function).
- * Equivalent to phi → inf in SoftThresholdStrategy, and to ThresholdModes.hard
+ * Equivalent to phi -> inf in SoftThresholdStrategy, and to ThresholdModes.hard
  * in processor.ts, but expressed as a ThresholdStrategy so it can be plugged
  * into DoGConfig.thresholdStrategy (e.g. as ADoG's default, since the paper's
  * screentone output is binarized rather than soft-thresholded).
@@ -1324,10 +1324,6 @@ interface WebGLBlurConfig {
 declare class WebGLIsotropicBlur extends BaseWebGLStrategy implements BlurStrategy {
     private config;
     private resources;
-    private currentWidth;
-    private currentHeight;
-    private framebuffer;
-    private textures;
     constructor(config?: Partial<WebGLBlurConfig>);
     /**
      * Cheap synchronous-in-spirit check (wrapped in a resolved Promise to
@@ -1336,6 +1332,14 @@ declare class WebGLIsotropicBlur extends BaseWebGLStrategy implements BlurStrate
      */
     static isSupported(): Promise<boolean>;
     private initResources;
+    /**
+     * Textures and the framebuffer are allocated per-call (not cached on
+     * `this`) so concurrent blur() calls on the same instance -- e.g.
+     * DoGProcessor.process()'s Promise.all([blur(sigma), blur(sigma*k)]) --
+     * never share mutable GPU state. Mirrors the pattern already used by
+     * WebGPUIsotropicBlur. Always cleaned up in `finally`, even if a pass or
+     * readback throws.
+     */
     blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
     private blurPass;
     dispose(): void;
