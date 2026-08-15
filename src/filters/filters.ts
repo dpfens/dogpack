@@ -180,11 +180,11 @@ export class IsotropicBlurFilter extends ResilientEdgeAwareFilter<IsotropicBlurC
     CPUIsotropicFilter,
   ] satisfies EdgeAwareFilterCtor<IsotropicBlurConfig>[];
 
-  private constructor(resolved: { instance: EdgeAwareFilterCore<IsotropicBlurConfig>; ctor: EdgeAwareFilterCtor<IsotropicBlurConfig>}, config: IsotropicBlurConfig ) {
+  private constructor(resolved: { instance: EdgeAwareFilterCore<IsotropicBlurConfig>; ctor: EdgeAwareFilterCtor<IsotropicBlurConfig>}, config: Partial<IsotropicBlurConfig> ) {
     super(IsotropicBlurFilter.candidates, resolved, config);
   }
 
-  static async create(config: IsotropicBlurConfig, options?: BackendOptions): Promise<IsotropicBlurFilter> {
+  static async create(config: Partial<IsotropicBlurConfig>, options?: BackendOptions): Promise<IsotropicBlurFilter> {
     const resolved = await ResilientEdgeAwareFilter.resolve(
       pickCandidates(IsotropicBlurFilter.candidates, options),
       config

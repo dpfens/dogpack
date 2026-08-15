@@ -1,5 +1,5 @@
 export type { LocalVarianceConfig } from './cpu.js'
-export { LocalVarianceFilter } from './cpu.js'
+export * as cpu from './cpu.js'
 export type { BackendOptions } from './filters.js'
 export * from './filters.js'
 export * as webgl from './webgl.js'

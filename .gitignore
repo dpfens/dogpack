@@ -63,5 +63,6 @@ TEST-results.xml
 .eslintcache
 *v8.log
 /lib/
+/dist/
 *.wgsl.ts
 *.glsl.ts

@@ -1,12 +1,10 @@
 export {
-    CPUIsotropicBlur, WebGLIsotropicBlur, WebGPUIsotropicBlur, IsotropicBlur
-} from './isotropic.js';
-export type {
-    IsotropicBlurConfig
+    IsotropicBlur
 } from './isotropic.js';
 export {
     CPUFlowGuidedBlur, WebGLFlowGuidedBlur, WebGPUFlowGuidedBlur, FlowGuidedBlur
 } from './flow-guided.js';
+export {EdgeAwareBlurStrategy} from './edge-aware-blur.js'
 export type {
     FlowGuidedBlurConfig
 } from './flow-guided.js';

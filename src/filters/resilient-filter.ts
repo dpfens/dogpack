@@ -18,7 +18,7 @@ export abstract class ResilientEdgeAwareFilter<TOptions> implements EdgeAwareFil
   protected constructor(
     private readonly candidates: readonly EdgeAwareFilterCtor<TOptions>[],
     resolved: { instance: EdgeAwareFilterCore<TOptions>; ctor: EdgeAwareFilterCtor<TOptions> },
-    private readonly config: TOptions
+    private readonly config: Partial<TOptions>
   ) {
     this.instance = resolved.instance;
     this.currentCtor = resolved.ctor;
@@ -31,7 +31,7 @@ export abstract class ResilientEdgeAwareFilter<TOptions> implements EdgeAwareFil
    */
   protected static async resolve<TOptions>(
     candidates: readonly EdgeAwareFilterCtor<TOptions>[],
-    config: TOptions
+    config: Partial<TOptions>
   ): Promise<{ instance: EdgeAwareFilterCore<TOptions>; ctor: EdgeAwareFilterCtor<TOptions> }> {
     for (const Ctor of candidates) {
       if (await Ctor.isSupported()) {
@@ -53,7 +53,7 @@ export abstract class ResilientEdgeAwareFilter<TOptions> implements EdgeAwareFil
     this.instance.dispose();
   }
 
-  async apply(input: ChannelImage, options: TOptions): Promise<ChannelImage> {
+  async apply(input: ChannelImage, options: Partial<TOptions>): Promise<ChannelImage> {
     let current = this.instance;
     while (true) {
       try {
