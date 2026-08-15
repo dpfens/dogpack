@@ -108,15 +108,15 @@ export { DoGProcessor, ThresholdModes, applyCustomThreshold } from './processor.
 // Blur strategies (for custom configurations)
 export * as blur from './blur/index.js';
 export type {  
-  IsotropicBlurConfig,
   FlowGuidedBlurConfig
 } from './blur/index.js';
 
 // Edge Tangent Flow (for visualization or custom pipelines)
 export { EdgeTangentFlowComputer } from './etf/index.js';
 
-// Preprocessing
+export * as filters from './filters/index.js'
 
+// Preprocessing
 export * as preprocess from './preprocess/index.js'
 export type { LocalVarianceConfig, BackendOptions } from './preprocess/index.js'
 
@@ -139,6 +139,9 @@ export type {
   RGBImage,
   FlowField,
   ETFConfig,
+  ContrastEnhancementConfig,
+  IsotropicBlurConfig,
+  QuantizerConfig,
   BilateralFilterConfig,
   GradientAlignedBlurConfig,
   MedianFilterConfig,
@@ -147,7 +150,15 @@ export type {
 } from './interfaces/base.js';
 
 export {
-  DEFAULT_ETF_CONFIG
+  DEFAULT_ETF_CONFIG,
+  DEFAULT_BILATERAL_CONFIG,
+  DEFAULT_CONTRAST_ENHANCEMENT_CONFIG,
+  DEFAULT_GAUSSIAN_CONFIG,
+  DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG,
+  DEFAULT_ISOTROPIC_BLUR_CONFIG,
+  DEFAULT_KUWAHARA_CONFIG,
+  DEFAULT_MEDIAN_CONFIG,
+  DEFAULT_QUANTIZER_CONFIG
 } from './interfaces/base.js';
 
 // Utilities

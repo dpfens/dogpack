@@ -16,6 +16,6 @@ export declare class CPUIsotropicFilter extends BaseCPUStrategy implements EdgeA
     /** CPU is always available */
     static isSupported(): Promise<boolean>;
     dispose(): void;
-    apply(input: ChannelImage, config: IsotropicBlurConfig): Promise<ChannelImage>;
+    apply(input: ChannelImage, config: Partial<IsotropicBlurConfig>): Promise<ChannelImage>;
 }
 //# sourceMappingURL=cpu.d.ts.map

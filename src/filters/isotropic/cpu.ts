@@ -41,7 +41,7 @@ export class CPUIsotropicFilter extends BaseCPUStrategy implements EdgeAwareFilt
 
   dispose(): void {}
   
-  async apply(input: ChannelImage, config: IsotropicBlurConfig): Promise<ChannelImage> {
+  async apply(input: ChannelImage, config: Partial<IsotropicBlurConfig>): Promise<ChannelImage> {
     const cfg = {...DEFAULT_ISOTROPIC_BLUR_CONFIG, ...config};
     const {sigma} = cfg;
     if (sigma < 0.1) {

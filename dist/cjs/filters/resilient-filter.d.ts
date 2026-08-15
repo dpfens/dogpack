@@ -17,19 +17,19 @@ export declare abstract class ResilientEdgeAwareFilter<TOptions> implements Edge
     protected constructor(candidates: readonly EdgeAwareFilterCtor<TOptions>[], resolved: {
         instance: EdgeAwareFilterCore<TOptions>;
         ctor: EdgeAwareFilterCtor<TOptions>;
-    }, config: TOptions);
+    }, config: Partial<TOptions>);
     /**
      * Try each candidate in order, skipping unsupported ones. If a
      * candidate reports supported but throws on construction anyway
      * (isSupported() lied), move on to the next.
      */
-    protected static resolve<TOptions>(candidates: readonly EdgeAwareFilterCtor<TOptions>[], config: TOptions): Promise<{
+    protected static resolve<TOptions>(candidates: readonly EdgeAwareFilterCtor<TOptions>[], config: Partial<TOptions>): Promise<{
         instance: EdgeAwareFilterCore<TOptions>;
         ctor: EdgeAwareFilterCtor<TOptions>;
     }>;
     get backend(): "cpu" | "webgl" | "webgpu";
     dispose(): void;
-    apply(input: ChannelImage, options: TOptions): Promise<ChannelImage>;
+    apply(input: ChannelImage, options: Partial<TOptions>): Promise<ChannelImage>;
     private demoteAndFindNext;
 }
 //# sourceMappingURL=resilient-filter.d.ts.map

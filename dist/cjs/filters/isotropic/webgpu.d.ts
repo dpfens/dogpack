@@ -29,7 +29,7 @@ export declare class WebGPUIsotropicFilter extends BaseWebGPUStrategy implements
      * outputBuffer/currentBufferSize/currentKernelSize instance fields and
      * ensureBuffers() method; they're no longer needed.
      */
-    apply(input: ChannelImage, config: IsotropicBlurConfig): Promise<ChannelImage>;
+    apply(input: ChannelImage, config: Partial<IsotropicBlurConfig>): Promise<ChannelImage>;
     /**
      * dispose() no longer needs to clean up shared buffers -- only the
      * cached pipeline/layout resources from initResources() remain.

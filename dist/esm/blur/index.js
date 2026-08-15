@@ -1,4 +1,5 @@
-export { CPUIsotropicBlur, WebGLIsotropicBlur, WebGPUIsotropicBlur, IsotropicBlur } from './isotropic.js';
+export { IsotropicBlur } from './isotropic.js';
 export { CPUFlowGuidedBlur, WebGLFlowGuidedBlur, WebGPUFlowGuidedBlur, FlowGuidedBlur } from './flow-guided.js';
+export { EdgeAwareBlurStrategy } from './edge-aware-blur.js';
 export { GradientAlignedBlur } from './gradient-aligned/index.js';
 //# sourceMappingURL=index.js.map

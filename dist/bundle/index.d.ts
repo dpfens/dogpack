@@ -54,6 +54,10 @@ interface Disposable {
 interface BackendIdentifiable {
     readonly backend: 'webgpu' | 'webgl' | 'cpu';
 }
+interface EdgeAwareFilterCore<TParams> extends Disposable, BackendIdentifiable {
+    apply(input: ChannelImage, params: Partial<TParams>): Promise<ChannelImage>;
+}
+type EdgeAwareFilterCtor<TParams> = StrategyCtor<EdgeAwareFilterCore<TParams>>;
 /**
  * Abstract blur strategy interface
  * Implementations provide different blur algorithms (isotropic, flow-guided, etc.)
@@ -114,6 +118,20 @@ interface Preprocessor extends Disposable, BackendIdentifiable {
  */
 type PreprocessorCtor = StrategyCtor<Preprocessor>;
 /**
+ * Configuration for isotropic Gaussian blur
+ */
+interface IsotropicBlurConfig {
+    sigma: number;
+    /**
+     * Kernel size multiplier relative to sigma (default: 6, meaning 3 * sigma on each side)
+     * Paper samples at 2x sigma for flow-aligned, 2.45x for structure tensor
+     */
+    kernelSizeMultiplier: number;
+    /** Maximum kernel size (default: 63) */
+    maxKernelSize: number;
+}
+declare const DEFAULT_ISOTROPIC_BLUR_CONFIG: IsotropicBlurConfig;
+/**
  * Configuration for flow-guided blur
  */
 interface GradientAlignedBlurConfig {
@@ -127,6 +145,7 @@ interface GradientAlignedBlurConfig {
      */
     stepSize: number;
 }
+declare const DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG: GradientAlignedBlurConfig;
 /**
  * Flow field representing edge tangent directions at each pixel, along
  * with the structure-tensor-derived confidence data for that direction.
@@ -163,6 +182,7 @@ interface BilateralFilterConfig {
     /** Kernel radius multiplier (default: 2, meaning radius = sigmaSpatial * 2) */
     radiusMultiplier?: number;
 }
+declare const DEFAULT_BILATERAL_CONFIG: BilateralFilterConfig;
 /**
  * Configuration for median filter
  */
@@ -170,6 +190,7 @@ interface MedianFilterConfig {
     /** Radius of the filter (default: 2, meaning 5x5 kernel) */
     radius: number;
 }
+declare const DEFAULT_MEDIAN_CONFIG: MedianFilterConfig;
 /**
  * Configuration for Kuwahara filter
  */
@@ -177,6 +198,24 @@ interface KuwaharaFilterConfig {
     /** Radius of the filter (default: 3) */
     radius: number;
 }
+declare const DEFAULT_KUWAHARA_CONFIG: KuwaharaFilterConfig;
+interface ContrastEnhancementConfig {
+    blackPoint: number;
+    whitePoint: number;
+}
+declare const DEFAULT_CONTRAST_ENHANCEMENT_CONFIG: ContrastEnhancementConfig;
+interface QuantizerConfig {
+    levels: number;
+}
+declare const DEFAULT_QUANTIZER_CONFIG: {
+    levels: number;
+};
+interface GaussianConfig {
+    sigma: number;
+}
+declare const DEFAULT_GAUSSIAN_CONFIG: {
+    sigma: number;
+};
 /**
  * Configuration for Edge Tangent Flow computation
  *
@@ -1008,51 +1047,51 @@ declare class HDoG implements DoGImplementation {
  */
 declare function hdog(input: ChannelImage, config?: Partial<HDoGConfig>): Promise<ChannelImage>;
 
-declare const index$5_ADOG_PARAM_RANGES: typeof ADOG_PARAM_RANGES;
-declare const index$5_ADOG_STYLE_PRESETS: typeof ADOG_STYLE_PRESETS;
-type index$5_ADoG = ADoG;
-declare const index$5_ADoG: typeof ADoG;
-type index$5_ADoGConfig = ADoGConfig;
-type index$5_ADoGProcessingResult = ADoGProcessingResult;
-type index$5_ADogConfigParamType = ADogConfigParamType;
-declare const index$5_DEFAULT_ADOG_CONFIG: typeof DEFAULT_ADOG_CONFIG;
-declare const index$5_DEFAULT_DOG_CONFIG: typeof DEFAULT_DOG_CONFIG;
-declare const index$5_DEFAULT_FDOG_CONFIG: typeof DEFAULT_FDOG_CONFIG;
-declare const index$5_DEFAULT_HDOG_CONFIG: typeof DEFAULT_HDOG_CONFIG;
-declare const index$5_DOG_PARAM_RANGES: typeof DOG_PARAM_RANGES;
-type index$5_DoGConfig = DoGConfig;
-type index$5_DoGImplementation = DoGImplementation;
-type index$5_DogConfigParamType = DogConfigParamType;
-declare const index$5_FDOG_CONFIDENCE_WEIGHT_PARAM_RANGES: typeof FDOG_CONFIDENCE_WEIGHT_PARAM_RANGES;
-declare const index$5_FDOG_PARAM_RANGES: typeof FDOG_PARAM_RANGES;
-declare const index$5_FDOG_STYLE_PRESETS: typeof FDOG_STYLE_PRESETS;
-type index$5_FDoG = FDoG;
-declare const index$5_FDoG: typeof FDoG;
-type index$5_FDoGConfidenceWeightingConfig = FDoGConfidenceWeightingConfig;
-type index$5_FDoGConfig = FDoGConfig;
-type index$5_FDogConfidenceWeightConfigParamType = FDogConfidenceWeightConfigParamType;
-type index$5_FDogConfigParamType = FDogConfigParamType;
-declare const index$5_HDOG_PARAM_RANGES: typeof HDOG_PARAM_RANGES;
-declare const index$5_HDOG_STYLE_PRESETS: typeof HDOG_STYLE_PRESETS;
-type index$5_HDoG = HDoG;
-declare const index$5_HDoG: typeof HDoG;
-type index$5_HDoGConfig = HDoGConfig;
-type index$5_HDoGProcessingResult = HDoGProcessingResult;
-type index$5_HDogConfigParamType = HDogConfigParamType;
-type index$5_ParamRange = ParamRange;
-declare const index$5_STYLE_PRESETS: typeof STYLE_PRESETS;
-declare const index$5_XDOG_PARAM_RANGES: typeof XDOG_PARAM_RANGES;
-type index$5_XDoG = XDoG;
-declare const index$5_XDoG: typeof XDoG;
-type index$5_XDoGConfig = XDoGConfig;
-type index$5_XDogConfigParamType = XDogConfigParamType;
-declare const index$5_adog: typeof adog;
-declare const index$5_fdog: typeof fdog;
-declare const index$5_hdog: typeof hdog;
-declare const index$5_xdog: typeof xdog;
-declare namespace index$5 {
-  export { index$5_ADOG_PARAM_RANGES as ADOG_PARAM_RANGES, index$5_ADOG_STYLE_PRESETS as ADOG_STYLE_PRESETS, index$5_ADoG as ADoG, index$5_DEFAULT_ADOG_CONFIG as DEFAULT_ADOG_CONFIG, index$5_DEFAULT_DOG_CONFIG as DEFAULT_DOG_CONFIG, index$5_DEFAULT_FDOG_CONFIG as DEFAULT_FDOG_CONFIG, index$5_DEFAULT_HDOG_CONFIG as DEFAULT_HDOG_CONFIG, index$5_DOG_PARAM_RANGES as DOG_PARAM_RANGES, index$5_FDOG_CONFIDENCE_WEIGHT_PARAM_RANGES as FDOG_CONFIDENCE_WEIGHT_PARAM_RANGES, index$5_FDOG_PARAM_RANGES as FDOG_PARAM_RANGES, index$5_FDOG_STYLE_PRESETS as FDOG_STYLE_PRESETS, index$5_FDoG as FDoG, index$5_HDOG_PARAM_RANGES as HDOG_PARAM_RANGES, index$5_HDOG_STYLE_PRESETS as HDOG_STYLE_PRESETS, index$5_HDoG as HDoG, index$5_STYLE_PRESETS as STYLE_PRESETS, index$5_XDOG_PARAM_RANGES as XDOG_PARAM_RANGES, index$5_XDoG as XDoG, index$5_adog as adog, index$5_fdog as fdog, index$5_hdog as hdog, index$5_xdog as xdog };
-  export type { index$5_ADoGConfig as ADoGConfig, index$5_ADoGProcessingResult as ADoGProcessingResult, index$5_ADogConfigParamType as ADogConfigParamType, index$5_DoGConfig as DoGConfig, index$5_DoGImplementation as DoGImplementation, index$5_DogConfigParamType as DogConfigParamType, index$5_FDoGConfidenceWeightingConfig as FDoGConfidenceWeightingConfig, index$5_FDoGConfig as FDoGConfig, index$5_FDogConfidenceWeightConfigParamType as FDogConfidenceWeightConfigParamType, index$5_FDogConfigParamType as FDogConfigParamType, index$5_HDoGConfig as HDoGConfig, index$5_HDoGProcessingResult as HDoGProcessingResult, index$5_HDogConfigParamType as HDogConfigParamType, index$5_ParamRange as ParamRange, index$5_XDoGConfig as XDoGConfig, index$5_XDogConfigParamType as XDogConfigParamType };
+declare const index$6_ADOG_PARAM_RANGES: typeof ADOG_PARAM_RANGES;
+declare const index$6_ADOG_STYLE_PRESETS: typeof ADOG_STYLE_PRESETS;
+type index$6_ADoG = ADoG;
+declare const index$6_ADoG: typeof ADoG;
+type index$6_ADoGConfig = ADoGConfig;
+type index$6_ADoGProcessingResult = ADoGProcessingResult;
+type index$6_ADogConfigParamType = ADogConfigParamType;
+declare const index$6_DEFAULT_ADOG_CONFIG: typeof DEFAULT_ADOG_CONFIG;
+declare const index$6_DEFAULT_DOG_CONFIG: typeof DEFAULT_DOG_CONFIG;
+declare const index$6_DEFAULT_FDOG_CONFIG: typeof DEFAULT_FDOG_CONFIG;
+declare const index$6_DEFAULT_HDOG_CONFIG: typeof DEFAULT_HDOG_CONFIG;
+declare const index$6_DOG_PARAM_RANGES: typeof DOG_PARAM_RANGES;
+type index$6_DoGConfig = DoGConfig;
+type index$6_DoGImplementation = DoGImplementation;
+type index$6_DogConfigParamType = DogConfigParamType;
+declare const index$6_FDOG_CONFIDENCE_WEIGHT_PARAM_RANGES: typeof FDOG_CONFIDENCE_WEIGHT_PARAM_RANGES;
+declare const index$6_FDOG_PARAM_RANGES: typeof FDOG_PARAM_RANGES;
+declare const index$6_FDOG_STYLE_PRESETS: typeof FDOG_STYLE_PRESETS;
+type index$6_FDoG = FDoG;
+declare const index$6_FDoG: typeof FDoG;
+type index$6_FDoGConfidenceWeightingConfig = FDoGConfidenceWeightingConfig;
+type index$6_FDoGConfig = FDoGConfig;
+type index$6_FDogConfidenceWeightConfigParamType = FDogConfidenceWeightConfigParamType;
+type index$6_FDogConfigParamType = FDogConfigParamType;
+declare const index$6_HDOG_PARAM_RANGES: typeof HDOG_PARAM_RANGES;
+declare const index$6_HDOG_STYLE_PRESETS: typeof HDOG_STYLE_PRESETS;
+type index$6_HDoG = HDoG;
+declare const index$6_HDoG: typeof HDoG;
+type index$6_HDoGConfig = HDoGConfig;
+type index$6_HDoGProcessingResult = HDoGProcessingResult;
+type index$6_HDogConfigParamType = HDogConfigParamType;
+type index$6_ParamRange = ParamRange;
+declare const index$6_STYLE_PRESETS: typeof STYLE_PRESETS;
+declare const index$6_XDOG_PARAM_RANGES: typeof XDOG_PARAM_RANGES;
+type index$6_XDoG = XDoG;
+declare const index$6_XDoG: typeof XDoG;
+type index$6_XDoGConfig = XDoGConfig;
+type index$6_XDogConfigParamType = XDogConfigParamType;
+declare const index$6_adog: typeof adog;
+declare const index$6_fdog: typeof fdog;
+declare const index$6_hdog: typeof hdog;
+declare const index$6_xdog: typeof xdog;
+declare namespace index$6 {
+  export { index$6_ADOG_PARAM_RANGES as ADOG_PARAM_RANGES, index$6_ADOG_STYLE_PRESETS as ADOG_STYLE_PRESETS, index$6_ADoG as ADoG, index$6_DEFAULT_ADOG_CONFIG as DEFAULT_ADOG_CONFIG, index$6_DEFAULT_DOG_CONFIG as DEFAULT_DOG_CONFIG, index$6_DEFAULT_FDOG_CONFIG as DEFAULT_FDOG_CONFIG, index$6_DEFAULT_HDOG_CONFIG as DEFAULT_HDOG_CONFIG, index$6_DOG_PARAM_RANGES as DOG_PARAM_RANGES, index$6_FDOG_CONFIDENCE_WEIGHT_PARAM_RANGES as FDOG_CONFIDENCE_WEIGHT_PARAM_RANGES, index$6_FDOG_PARAM_RANGES as FDOG_PARAM_RANGES, index$6_FDOG_STYLE_PRESETS as FDOG_STYLE_PRESETS, index$6_FDoG as FDoG, index$6_HDOG_PARAM_RANGES as HDOG_PARAM_RANGES, index$6_HDOG_STYLE_PRESETS as HDOG_STYLE_PRESETS, index$6_HDoG as HDoG, index$6_STYLE_PRESETS as STYLE_PRESETS, index$6_XDOG_PARAM_RANGES as XDOG_PARAM_RANGES, index$6_XDoG as XDoG, index$6_adog as adog, index$6_fdog as fdog, index$6_hdog as hdog, index$6_xdog as xdog };
+  export type { index$6_ADoGConfig as ADoGConfig, index$6_ADoGProcessingResult as ADoGProcessingResult, index$6_ADogConfigParamType as ADogConfigParamType, index$6_DoGConfig as DoGConfig, index$6_DoGImplementation as DoGImplementation, index$6_DogConfigParamType as DogConfigParamType, index$6_FDoGConfidenceWeightingConfig as FDoGConfidenceWeightingConfig, index$6_FDoGConfig as FDoGConfig, index$6_FDogConfidenceWeightConfigParamType as FDogConfidenceWeightConfigParamType, index$6_FDogConfigParamType as FDogConfigParamType, index$6_HDoGConfig as HDoGConfig, index$6_HDoGProcessingResult as HDoGProcessingResult, index$6_HDogConfigParamType as HDogConfigParamType, index$6_ParamRange as ParamRange, index$6_XDoGConfig as XDoGConfig, index$6_XDogConfigParamType as XDogConfigParamType };
 }
 
 /**
@@ -1203,6 +1242,35 @@ declare const ThresholdModes: {
  */
 declare function applyCustomThreshold(input: ChannelImage, thresholdFn: (value: number) => number): ChannelImage;
 
+/**
+ * Blur strategies for DoG processing
+ *
+ * Provides both isotropic (standard) and anisotropic (flow-guided) blur
+ * implementations for use in XDoG and FDoG pipelines.
+ *
+ * Supports parallel/concurrent blur operations
+ */
+
+/**
+ * Backend-agnostic isotropic blur. Picks the best backend this device
+ * actually supports for *this algorithm* (not a global session-wide
+ * choice), and falls back to the next-best backend if the active one
+ * fails mid-session (lost context, driver crash, etc.).
+ *
+ * Construction is async (`IsotropicBlur.create()`) because backend
+ * detection is inherently async; constructors can't be async, so a
+ * private constructor plus a static factory forces detection to
+ * complete before the instance is usable.
+ */
+declare class IsotropicBlur implements BlurStrategy {
+    private filter;
+    private constructor();
+    static create(config?: Partial<IsotropicBlurConfig>): Promise<IsotropicBlur>;
+    get backend(): "webgpu" | "webgl" | "cpu";
+    dispose(): void;
+    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
+}
+
 declare class BaseCPUStrategy {
     readonly backend: "cpu";
     dispose(): void;
@@ -1275,156 +1343,6 @@ declare class BaseWebGPUStrategy {
      * webgpu.ts for why try/catch alone misses these.
      */
     protected runGuarded<T>(device: GPUDevice, fn: () => T | Promise<T>): Promise<T>;
-}
-
-/**
- * Blur strategies for DoG processing
- *
- * Provides both isotropic (standard) and anisotropic (flow-guided) blur
- * implementations for use in XDoG and FDoG pipelines.
- *
- * Supports parallel/concurrent blur operations
- */
-
-/**
- * Configuration for isotropic Gaussian blur
- */
-interface BaseIsotropicBlurConfig {
-    /**
-     * Kernel size multiplier relative to sigma (default: 6, meaning 3 * sigma on each side)
-     * Paper samples at 2x sigma for flow-aligned, 2.45x for structure tensor
-     */
-    kernelSizeMultiplier: number;
-}
-/**
- * Standard isotropic Gaussian blur using separable convolution
- * This is the blur used in basic XDoG
- */
-declare class CPUIsotropicBlur extends BaseCPUStrategy implements BlurStrategy {
-    private config;
-    constructor(config?: Partial<BaseIsotropicBlurConfig>);
-    /** CPU is always available */
-    static isSupported(): Promise<boolean>;
-    dispose(): void;
-    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
-}
-/**
- * Configuration for WebGL blur
- */
-interface WebGLBlurConfig {
-    /** Kernel size multiplier relative to sigma (default: 6) */
-    kernelSizeMultiplier: number;
-    /** Maximum kernel size (default: 63, limited by shader uniform array) */
-    maxKernelSize: number;
-}
-/**
- * WebGL2-accelerated isotropic Gaussian blur
- * Uses separable convolution with two passes (horizontal + vertical)
- */
-declare class WebGLIsotropicBlur extends BaseWebGLStrategy implements BlurStrategy {
-    private config;
-    private resources;
-    constructor(config?: Partial<WebGLBlurConfig>);
-    /**
-     * Cheap synchronous-in-spirit check (wrapped in a resolved Promise to
-     * satisfy `BlurStrategyCtor`) Excludes software
-     * rasterizers, which are too slow to be a useful GPU fallback.
-     */
-    static isSupported(): Promise<boolean>;
-    private initResources;
-    /**
-     * Textures and the framebuffer are allocated per-call (not cached on
-     * `this`) so concurrent blur() calls on the same instance -- e.g.
-     * DoGProcessor.process()'s Promise.all([blur(sigma), blur(sigma*k)]) --
-     * never share mutable GPU state. Mirrors the pattern already used by
-     * WebGPUIsotropicBlur. Always cleaned up in `finally`, even if a pass or
-     * readback throws.
-     */
-    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
-    private blurPass;
-    dispose(): void;
-}
-/**
- * WebGPU configuration
- */
-interface WebGPUBlurConfig {
-    /** Kernel size multiplier relative to sigma (default: 6) */
-    kernelSizeMultiplier: number;
-    /** Maximum kernel size (default: 63) */
-    maxKernelSize: number;
-}
-/**
- * WebGPU-accelerated isotropic Gaussian blur
- * Uses compute shaders with separable convolution
- *
- * Supports concurrent/parallel blur calls by creating
- * separate staging buffers for each operation instead of reusing one.
- */
-declare class WebGPUIsotropicBlur extends BaseWebGPUStrategy implements BlurStrategy {
-    private config;
-    private resources;
-    constructor(config?: Partial<WebGPUBlurConfig>);
-    /**
-     * Confirms an adapter is actually obtainable, not just that
-     * `navigator.gpu` exists as an API surface.
-     */
-    static isSupported(): Promise<boolean>;
-    /**
-     * Initialize WebGPU resources
-     */
-    private initResources;
-    /**
-     * Fix for WebGPUIsotropicBlur: allocate buffers per call instead of
-     * reusing instance-level ones, so concurrent blur() calls (as issued by
-     * DoGProcessor.process()'s Promise.all([blur(sigma), blur(sigma*k)]))
-     * never share mutable GPU state. Mirrors the pattern already used by
-     * WebGPUFlowGuidedBlur and WebGPUGradientAlignedBlur.
-     *
-     * Delete the old paramsBuffer/kernelBuffer/inputBuffer/tempBuffer/
-     * outputBuffer/currentBufferSize/currentKernelSize instance fields and
-     * ensureBuffers() method; they're no longer needed.
-     */
-    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
-    /**
-     * dispose() no longer needs to clean up shared buffers -- only the
-     * cached pipeline/layout resources from initResources() remain.
-     */
-    dispose(): void;
-}
-type IsotropicBlurConfig = BaseIsotropicBlurConfig | WebGLBlurConfig | WebGPUBlurConfig;
-/**
- * Backend-agnostic isotropic blur. Picks the best backend this device
- * actually supports for *this algorithm* (not a global session-wide
- * choice), and falls back to the next-best backend if the active one
- * fails mid-session (lost context, driver crash, etc.).
- *
- * Construction is async (`IsotropicBlur.create()`) because backend
- * detection is inherently async; constructors can't be async, so a
- * private constructor plus a static factory forces detection to
- * complete before the instance is usable.
- */
-declare class IsotropicBlur implements BlurStrategy {
-    private instance;
-    private currentCtor;
-    private config;
-    private failedBackends;
-    private constructor();
-    private static readonly candidates;
-    static create(config?: Partial<IsotropicBlurConfig>): Promise<IsotropicBlur>;
-    get backend(): "webgpu" | "webgl" | "cpu";
-    dispose(): void;
-    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
-    /**
-     * Demotes the current backend and activates the next untried, supported
-     * candidate. A single-step retry, not a cascading loop through every
-     * remaining backend: cascading on one call risks masking a real input
-     * bug (e.g. a bad sigma) as a backend problem.
-     *
-     * `failedBackends` is per-instance, not module-global so a transient
-     * driver hiccup shouldn't permanently blacklist a backend for the whole
-     * session.
-     */
-    private demoteAndFindNext;
 }
 
 /**
@@ -1605,6 +1523,15 @@ declare class FlowGuidedBlur implements BlurStrategy, FlowGuidedBlurStrategy {
     private demoteAndFindNext;
 }
 
+declare class EdgeAwareBlurStrategy<TConfig> implements BlurStrategy {
+    private filter;
+    private toConfig;
+    constructor(filter: EdgeAwareFilterCore<TConfig>, toConfig: (sigma: number) => TConfig);
+    blur(input: ChannelImage, sigma: number): Promise<ChannelImage>;
+    get backend(): "webgpu" | "webgl" | "cpu";
+    dispose(): void;
+}
+
 declare class GradientAlignedBlur implements BlurStrategy {
     private instance;
     private currentCtor;
@@ -1628,29 +1555,24 @@ declare class GradientAlignedBlur implements BlurStrategy {
     private demoteAndFindNext;
 }
 
-type index$4_CPUFlowGuidedBlur = CPUFlowGuidedBlur;
-declare const index$4_CPUFlowGuidedBlur: typeof CPUFlowGuidedBlur;
-type index$4_CPUIsotropicBlur = CPUIsotropicBlur;
-declare const index$4_CPUIsotropicBlur: typeof CPUIsotropicBlur;
-type index$4_FlowGuidedBlur = FlowGuidedBlur;
-declare const index$4_FlowGuidedBlur: typeof FlowGuidedBlur;
-type index$4_FlowGuidedBlurConfig = FlowGuidedBlurConfig;
-type index$4_GradientAlignedBlur = GradientAlignedBlur;
-declare const index$4_GradientAlignedBlur: typeof GradientAlignedBlur;
-type index$4_IsotropicBlur = IsotropicBlur;
-declare const index$4_IsotropicBlur: typeof IsotropicBlur;
-type index$4_IsotropicBlurConfig = IsotropicBlurConfig;
-type index$4_WebGLFlowGuidedBlur = WebGLFlowGuidedBlur;
-declare const index$4_WebGLFlowGuidedBlur: typeof WebGLFlowGuidedBlur;
-type index$4_WebGLIsotropicBlur = WebGLIsotropicBlur;
-declare const index$4_WebGLIsotropicBlur: typeof WebGLIsotropicBlur;
-type index$4_WebGPUFlowGuidedBlur = WebGPUFlowGuidedBlur;
-declare const index$4_WebGPUFlowGuidedBlur: typeof WebGPUFlowGuidedBlur;
-type index$4_WebGPUIsotropicBlur = WebGPUIsotropicBlur;
-declare const index$4_WebGPUIsotropicBlur: typeof WebGPUIsotropicBlur;
-declare namespace index$4 {
-  export { index$4_CPUFlowGuidedBlur as CPUFlowGuidedBlur, index$4_CPUIsotropicBlur as CPUIsotropicBlur, index$4_FlowGuidedBlur as FlowGuidedBlur, index$4_GradientAlignedBlur as GradientAlignedBlur, index$4_IsotropicBlur as IsotropicBlur, index$4_WebGLFlowGuidedBlur as WebGLFlowGuidedBlur, index$4_WebGLIsotropicBlur as WebGLIsotropicBlur, index$4_WebGPUFlowGuidedBlur as WebGPUFlowGuidedBlur, index$4_WebGPUIsotropicBlur as WebGPUIsotropicBlur };
-  export type { index$4_FlowGuidedBlurConfig as FlowGuidedBlurConfig, index$4_IsotropicBlurConfig as IsotropicBlurConfig };
+type index$5_CPUFlowGuidedBlur = CPUFlowGuidedBlur;
+declare const index$5_CPUFlowGuidedBlur: typeof CPUFlowGuidedBlur;
+type index$5_EdgeAwareBlurStrategy<TConfig> = EdgeAwareBlurStrategy<TConfig>;
+declare const index$5_EdgeAwareBlurStrategy: typeof EdgeAwareBlurStrategy;
+type index$5_FlowGuidedBlur = FlowGuidedBlur;
+declare const index$5_FlowGuidedBlur: typeof FlowGuidedBlur;
+type index$5_FlowGuidedBlurConfig = FlowGuidedBlurConfig;
+type index$5_GradientAlignedBlur = GradientAlignedBlur;
+declare const index$5_GradientAlignedBlur: typeof GradientAlignedBlur;
+type index$5_IsotropicBlur = IsotropicBlur;
+declare const index$5_IsotropicBlur: typeof IsotropicBlur;
+type index$5_WebGLFlowGuidedBlur = WebGLFlowGuidedBlur;
+declare const index$5_WebGLFlowGuidedBlur: typeof WebGLFlowGuidedBlur;
+type index$5_WebGPUFlowGuidedBlur = WebGPUFlowGuidedBlur;
+declare const index$5_WebGPUFlowGuidedBlur: typeof WebGPUFlowGuidedBlur;
+declare namespace index$5 {
+  export { index$5_CPUFlowGuidedBlur as CPUFlowGuidedBlur, index$5_EdgeAwareBlurStrategy as EdgeAwareBlurStrategy, index$5_FlowGuidedBlur as FlowGuidedBlur, index$5_GradientAlignedBlur as GradientAlignedBlur, index$5_IsotropicBlur as IsotropicBlur, index$5_WebGLFlowGuidedBlur as WebGLFlowGuidedBlur, index$5_WebGPUFlowGuidedBlur as WebGPUFlowGuidedBlur };
+  export type { index$5_FlowGuidedBlurConfig as FlowGuidedBlurConfig };
 }
 
 /**
@@ -1680,6 +1602,562 @@ declare class EdgeTangentFlowComputer implements ETFComputer {
     computeMultiChannel(inputs: ChannelImage[], config?: Partial<ETFConfig>, sigmaC?: number): Promise<FlowField>;
     callWithFallback<T>(op: (computer: ETFComputer) => Promise<T>): Promise<T>;
     private demoteAndFindNext;
+}
+
+/**
+ * Preprocessing module for XDoG/FDoG
+ *
+ * Provides filters to prepare images before line detection.
+ * These help reduce noise and texture while preserving important edges.
+ *
+ * Section 3.2 of the paper discusses the importance of bilateral
+ * preprocessing for "indication" - attenuating weak edges while
+ * preserving strong edges.
+ */
+
+/**
+ * Bilateral Filter
+ *
+ * Edge-preserving smoothing filter that averages pixels based on both
+ * spatial proximity AND intensity similarity. This smooths out texture
+ * (like grass) while keeping strong edges (like the car outline) sharp.
+ *
+ * This is the recommended preprocessing for most images.
+ *
+ * As mentioned in Section 3.2, bilateral filtering can serve as a
+ * "prioritization mechanism" for indication - attenuating weak edges
+ * while supporting strong edges.
+ *
+ * CPU is always available (BaseCPUStrategy.isSupported() / dispose() /
+ * backend all apply unchanged). This is the universal fallback.
+ */
+declare class BilateralFilter$2 extends BaseCPUStrategy implements EdgeAwareFilterCore<BilateralFilterConfig> {
+    apply(input: ChannelImage, config: Partial<BilateralFilterConfig>): Promise<ChannelImage>;
+}
+/**
+ * Median Filter
+ *
+ * Replaces each pixel with the median of its neighborhood.
+ * Excellent for removing salt-and-pepper noise and small texture details.
+ */
+declare class MedianFilter$2 extends BaseCPUStrategy implements EdgeAwareFilterCore<MedianFilterConfig> {
+    apply(input: ChannelImage, config: Partial<MedianFilterConfig>): Promise<ChannelImage>;
+}
+/**
+ * Kuwahara Filter
+ *
+ * Artistic smoothing filter that creates a painterly effect.
+ * Divides the neighborhood into 4 quadrants, finds the one with
+ * lowest variance, and uses its mean. Creates flat regions with
+ * preserved edges - great for a more stylized look.
+ */
+declare class KuwaharaFilter$2 extends BaseCPUStrategy implements EdgeAwareFilterCore<KuwaharaFilterConfig> {
+    apply(input: ChannelImage, config: Partial<KuwaharaFilterConfig>): Promise<ChannelImage>;
+}
+/**
+ * Gaussian Blur
+ *
+ * Simple Gaussian smoothing. Less edge-preserving than bilateral,
+ * but faster. Good for very noisy images or when used with small sigma.
+ */
+declare class GaussianBlur$2 extends BaseCPUStrategy implements EdgeAwareFilterCore<GaussianConfig> {
+    apply(input: ChannelImage, config: Partial<GaussianConfig>): Promise<ChannelImage>;
+}
+/**
+ * Contrast Enhancement
+ *
+ * Stretches the histogram to use the full 0-1 range.
+ * Can help make edges more distinct before processing.
+ */
+declare class ContrastEnhancer$2 extends BaseCPUStrategy implements EdgeAwareFilterCore<ContrastEnhancementConfig> {
+    apply(input: ChannelImage, config: Partial<ContrastEnhancementConfig>): Promise<ChannelImage>;
+}
+/**
+ * Quantize to reduce color levels
+ *
+ * Reduces the number of intensity levels, creating a posterized effect.
+ * Can help reduce noise by grouping similar intensities together.
+ */
+declare class Quantizer$2 extends BaseCPUStrategy implements EdgeAwareFilterCore<QuantizerConfig> {
+    apply(input: ChannelImage, config: Partial<QuantizerConfig>): Promise<ChannelImage>;
+}
+/**
+ * Configuration for Local Variance Texture Detection
+ *
+ * These parameters control how texture is detected. They are independent
+ * from XDoG/FDoG/HDoG parameters - you tune them separately based on the
+ * image characteristics you're working with.
+ */
+interface LocalVarianceConfig$1 {
+    /**
+     * Window radius for variance computation
+     * Examples:
+     * - 1 = 3x3 window (fast, fine detail)
+     * - 2 = 5x5 window (recommended, balanced)
+     * - 3 = 7x7 window (slower, coarser texture detection)
+     */
+    windowRadius: number;
+    /**
+     * Normalize by local gradient to distinguish texture from structure edges
+     *
+     * Without normalization:
+     *   - High variance alone indicates texture
+     *   - Problem: Subtle structural edges with variance get suppressed
+     *
+     * With normalization:
+     *   - High variance + low gradient = texture (keep)
+     *   - High variance + high gradient = edge (reduce texture score)
+     *   - Formula: texture *= 1 / (1 + gradient^2)
+     *
+     * Recommended: true
+     */
+    normalizeByGradient: boolean;
+    /**
+     * Scale factor for raw variance values
+     * Typical range: 1.0 - 3.0
+     * Higher = more sensitive to texture variations
+     * Output is clamped to [0, 1] after scaling
+     */
+    varianceScale: number;
+    /**
+     * Optional hard cap on variance values (before normalization)
+     * Prevents outliers from dominating
+     * If undefined, no capping is applied
+     */
+    maxVariance?: number;
+}
+/**
+ * Computes local variance as texture detection preprocessing
+ *
+ * STANDALONE PREPROCESSING: This class only detects texture.
+ * It does NOT perform edge detection.
+ *
+ * Input: ChannelImage (typically grayscale image)
+ * Output: ChannelImage with same dimensions where each pixel value
+ *         represents texture strength (0 = pure structure, 1 = pure texture)
+ *
+ * The output can be:
+ * 1. Passed to your XDoG/FDoG/HDoG implementation to modulate parameters
+ * 2. Combined with other texture detection methods (Spectral, Patch-based)
+ * 3. Visualized for debugging
+ * 4. Processed through additional preprocessing steps
+ *
+ * Example:
+ * ```
+ * const filter = new LocalVarianceFilter({
+ *   windowRadius: 2,
+ *   normalizeByGradient: true,
+ * });
+ *
+ * const textureMap = filter.apply(grayImage);
+ * // textureMap.data[i] = texture strength at pixel i
+ * // Now use textureMap with your own edge detection
+ * ```
+ */
+declare class LocalVarianceFilter implements EdgeAwareFilterCore<LocalVarianceConfig$1> {
+    /** CPU-only. No WebGL/WebGPU counterparts for this yet. */
+    readonly backend: "cpu";
+    defaultConfig: LocalVarianceConfig$1;
+    dispose(): void;
+    /**
+     * Process using separable convolution (faster for large windows)
+     * Variance = E[X^2] - E[X]^2
+     * Compute box blur of X and X^2 separately, then combine
+     */
+    apply(image: ChannelImage, config: Partial<LocalVarianceConfig$1>): Promise<ChannelImage>;
+    /**
+     * Fast box blur using separable convolution + a sliding-window running sum.
+     *
+     * @remarks
+     * Each pass is O(width * height): the window sum is updated incrementally
+     * as it slides one pixel over (`sum += incoming - outgoing`) rather than
+     * being re-summed from scratch at every position, so cost no longer grows
+     * with `radius`. Edge pixels use clamp-to-edge boundary handling.
+     *
+     * Trade-off: because each sum is derived from the previous one instead of
+     * being recomputed from scratch, floating-point error can accumulate along
+     * a scan line, unlike the resum-per-pixel approach this replaces. This is
+     * negligible in practice for 0-1 normalized pixel values and the small
+     * radii (1-4) this filter supports.
+     *
+     * @private
+     */
+    private boxBlur;
+    /**
+     * Compute gradient map using Sobel filter (separable for efficiency)
+     * @private
+     */
+    private computeGradientMap;
+}
+/**
+ * Preset preprocessing pipelines for common use cases
+ */
+declare const EdgeAwareFilterPresets: {
+    /**
+     * Light preprocessing - minimal smoothing
+     * Good for: Clean studio photos, illustrations
+     */
+    light: (input: ChannelImage) => Promise<ChannelImage>;
+    /**
+     * Standard preprocessing - balanced smoothing
+     * Good for: Most outdoor photos, portraits
+     */
+    standard: (input: ChannelImage) => Promise<ChannelImage>;
+    /**
+     * Heavy preprocessing - aggressive noise removal
+     * Good for: Very textured images (grass, foliage, fabric)
+     */
+    heavy: (input: ChannelImage) => Promise<ChannelImage>;
+    /**
+     * Artistic preprocessing - painterly smoothing
+     * Good for: Stylized/artistic output
+     */
+    artistic: (input: ChannelImage) => Promise<ChannelImage>;
+    /**
+     * Photo preprocessing - for photos with grass/nature
+     * Good for: Landscape, outdoor scenes
+     */
+    nature: (input: ChannelImage) => Promise<ChannelImage>;
+};
+
+declare const cpu_EdgeAwareFilterPresets: typeof EdgeAwareFilterPresets;
+type cpu_LocalVarianceFilter = LocalVarianceFilter;
+declare const cpu_LocalVarianceFilter: typeof LocalVarianceFilter;
+declare namespace cpu {
+  export { BilateralFilter$2 as BilateralFilter, ContrastEnhancer$2 as ContrastEnhancer, cpu_EdgeAwareFilterPresets as EdgeAwareFilterPresets, GaussianBlur$2 as GaussianBlur, KuwaharaFilter$2 as KuwaharaFilter, cpu_LocalVarianceFilter as LocalVarianceFilter, MedianFilter$2 as MedianFilter, Quantizer$2 as Quantizer };
+  export type { LocalVarianceConfig$1 as LocalVarianceConfig };
+}
+
+/**
+ * Shared machinery for "pick the best supported backend, fall back
+ * gracefully if it fails later" filters.
+ */
+
+declare abstract class ResilientEdgeAwareFilter<TOptions> implements EdgeAwareFilterCore<TOptions> {
+    private readonly candidates;
+    private readonly config;
+    private readonly failedBackends;
+    private instance;
+    private currentCtor;
+    /**
+     * Subclasses resolve their instance via `resolve()` *before* calling
+     * this (in their own async static `create()`), then hand the result in
+     * here. The constructor itself stays synchronous, as constructors must.
+     */
+    protected constructor(candidates: readonly EdgeAwareFilterCtor<TOptions>[], resolved: {
+        instance: EdgeAwareFilterCore<TOptions>;
+        ctor: EdgeAwareFilterCtor<TOptions>;
+    }, config: Partial<TOptions>);
+    /**
+     * Try each candidate in order, skipping unsupported ones. If a
+     * candidate reports supported but throws on construction anyway
+     * (isSupported() lied), move on to the next.
+     */
+    protected static resolve<TOptions>(candidates: readonly EdgeAwareFilterCtor<TOptions>[], config: Partial<TOptions>): Promise<{
+        instance: EdgeAwareFilterCore<TOptions>;
+        ctor: EdgeAwareFilterCtor<TOptions>;
+    }>;
+    get backend(): "webgpu" | "webgl" | "cpu";
+    dispose(): void;
+    apply(input: ChannelImage, options: Partial<TOptions>): Promise<ChannelImage>;
+    private demoteAndFindNext;
+}
+
+/**
+ * WebGL-Accelerated Preprocessing Module for XDoG/FDoG
+ *
+ * High-performance GPU implementations of image preprocessing filters.
+ * Achieves 50-100x speedup over CPU implementations for large images.
+ */
+
+declare class BilateralFilterWebGL$1 extends BaseWebGLStrategy implements EdgeAwareFilterCore<BilateralFilterConfig> {
+    static isSupported(): Promise<boolean>;
+    static getUnsupportedReason(): Promise<string | undefined>;
+    apply(input: ChannelImage, config: Partial<BilateralFilterConfig>): Promise<ChannelImage>;
+}
+declare class GaussianBlurWebGL$1 extends BaseWebGLStrategy implements EdgeAwareFilterCore<GaussianConfig> {
+    static isSupported(): Promise<boolean>;
+    static getUnsupportedReason(): Promise<string | undefined>;
+    apply(input: ChannelImage, config: Partial<GaussianConfig>): Promise<ChannelImage>;
+}
+declare class MedianFilterWebGL$1 extends BaseWebGLStrategy implements EdgeAwareFilterCore<MedianFilterConfig> {
+    static isSupported(): Promise<boolean>;
+    static getUnsupportedReason(): Promise<string | undefined>;
+    apply(input: ChannelImage, config?: Partial<MedianFilterConfig>): Promise<ChannelImage>;
+}
+declare class KuwaharaFilterWebGL$1 extends BaseWebGLStrategy implements EdgeAwareFilterCore<KuwaharaFilterConfig> {
+    static isSupported(): Promise<boolean>;
+    static getUnsupportedReason(): Promise<string | undefined>;
+    apply(input: ChannelImage, config?: Partial<KuwaharaFilterConfig>): Promise<ChannelImage>;
+}
+declare class ContrastEnhancerWebGL$1 extends BaseWebGLStrategy implements EdgeAwareFilterCore<ContrastEnhancementConfig> {
+    static isSupported(): Promise<boolean>;
+    static getUnsupportedReason(): Promise<string | undefined>;
+    apply(input: ChannelImage, config: Partial<ContrastEnhancementConfig>): Promise<ChannelImage>;
+}
+declare class QuantizerWebGL$1 extends BaseWebGLStrategy implements EdgeAwareFilterCore<QuantizerConfig> {
+    static isSupported(): Promise<boolean>;
+    static getUnsupportedReason(): Promise<string | undefined>;
+    apply(input: ChannelImage, config: Partial<QuantizerConfig>): Promise<ChannelImage>;
+}
+/**
+ * Check if WebGL 2.0 is available
+ */
+declare function isWebGLAvailable$1(): boolean;
+/**
+ * Cleanup all WebGL resources
+ */
+declare function disposeWebGL$1(): void;
+
+declare namespace webgl$1 {
+  export {
+    BilateralFilterWebGL$1 as BilateralFilter,
+    BilateralFilterWebGL$1 as BilateralFilterWebGL,
+    ContrastEnhancerWebGL$1 as ContrastEnhancer,
+    ContrastEnhancerWebGL$1 as ContrastEnhancerWebGL,
+    GaussianBlurWebGL$1 as GaussianBlur,
+    GaussianBlurWebGL$1 as GaussianBlurWebGL,
+    KuwaharaFilterWebGL$1 as KuwaharaFilter,
+    KuwaharaFilterWebGL$1 as KuwaharaFilterWebGL,
+    MedianFilterWebGL$1 as MedianFilter,
+    MedianFilterWebGL$1 as MedianFilterWebGL,
+    QuantizerWebGL$1 as Quantizer,
+    QuantizerWebGL$1 as QuantizerWebGL,
+    disposeWebGL$1 as disposeWebGL,
+    isWebGLAvailable$1 as isWebGLAvailable,
+  };
+}
+
+/**
+ * WebGPU-accelerated preprocessing module for XDoG/FDoG
+ *
+ * Even faster than WebGL implementations
+ */
+
+/**
+ * Deeper async check: confirms an adapter is actually obtainable, not
+ * just that `navigator.gpu` exists.
+ */
+declare function getWebGPUUnsupportedReason(): Promise<string | undefined>;
+/** Release the cached device. Mainly useful for tests / hot reload. */
+declare function disposeWebGPU$1(): void;
+declare function clearShaderCaches(): void;
+/**
+ * The `rowOffset` field lets a single dispatch cover only a band of rows
+ * of a much taller image (see the chunking loop in `process()` below).
+ * `spatialWeights` is a precomputed (2*radius+1)^2 lookup table for the
+ * spatial term of the bilateral weight, which depends only on (dx, dy)
+ * and is identical for every pixel. Computing it on the CPU once instead
+ * of calling `exp()` for it on every shader invocation roughly halves the
+ * transcendental-function work in the inner loop.
+ */
+declare class GPUBilateralFilter extends BaseWebGPUStrategy implements EdgeAwareFilterCore<BilateralFilterConfig> {
+    static isSupported(): Promise<boolean>;
+    static getUnsupportedReason(): Promise<string | undefined>;
+    apply(input: ChannelImage, config: Partial<BilateralFilterConfig>): Promise<ChannelImage>;
+}
+declare class GPUMedianFilter extends BaseWebGPUStrategy implements EdgeAwareFilterCore<MedianFilterConfig> {
+    static isSupported(): Promise<boolean>;
+    static getUnsupportedReason(): Promise<string | undefined>;
+    apply(input: ChannelImage, config: Partial<MedianFilterConfig>): Promise<ChannelImage>;
+}
+declare class GPUKuwaharaFilter extends BaseWebGPUStrategy implements EdgeAwareFilterCore<KuwaharaFilterConfig> {
+    static isSupported(): Promise<boolean>;
+    static getUnsupportedReason(): Promise<string | undefined>;
+    apply(input: ChannelImage, config: Partial<KuwaharaFilterConfig>): Promise<ChannelImage>;
+}
+declare class GPUGaussianBlur extends BaseWebGPUStrategy implements EdgeAwareFilterCore<GaussianConfig> {
+    static isSupported(): Promise<boolean>;
+    static getUnsupportedReason(): Promise<string | undefined>;
+    apply(input: ChannelImage, config: Partial<GaussianConfig>): Promise<ChannelImage>;
+}
+declare class GPUContrastEnhancer extends BaseWebGPUStrategy implements EdgeAwareFilterCore<ContrastEnhancementConfig> {
+    static isSupported(): Promise<boolean>;
+    static getUnsupportedReason(): Promise<string | undefined>;
+    /**
+     * The CPU version sorts every pixel to find exact percentiles. Sorting
+     * is a poor fit for a GPU compute pass, so this builds a 256-bin
+     * histogram instead (one atomicAdd per pixel), reads the 1KB histogram
+     * back to the CPU to locate the percentile bins, then runs a second,
+     * fully GPU-resident pass to apply the stretch. This trades a small
+     * amount of precision (bin width 1/255) for O(n) work instead of an
+     * O(n log n) sort, at the cost of one small CPU/GPU sync point.
+     *
+     * The two GPU round-trips (histogram pass, then stretch pass) are each
+     * wrapped in their own runGuarded scope rather than one scope spanning
+     * both. The CPU-side histogram bucketing that happens between them
+     * isn't GPU work, so it shouldn't sit inside a WebGPU error scope.
+     */
+    apply(input: ChannelImage, config: Partial<ContrastEnhancementConfig>): Promise<ChannelImage>;
+}
+declare class GPUQuantizer extends BaseWebGPUStrategy implements EdgeAwareFilterCore<QuantizerConfig> {
+    static isSupported(): Promise<boolean>;
+    static getUnsupportedReason(): Promise<string | undefined>;
+    apply(input: ChannelImage, config: Partial<QuantizerConfig>): Promise<ChannelImage>;
+}
+/**
+ * Preset preprocessing pipelines for common use cases.
+ * async GPU equivalents of `PreprocessingPresets` in cpu.ts.
+ */
+declare const GPUPreprocessingPresets: {
+    /** Light preprocessing - minimal smoothing. Good for clean studio photos, illustrations. */
+    light: (input: ChannelImage) => Promise<ChannelImage>;
+    /** Standard preprocessing - balanced smoothing. Good for most outdoor photos, portraits. */
+    standard: (input: ChannelImage) => Promise<ChannelImage>;
+    /** Heavy preprocessing - aggressive noise removal. Good for very textured images. */
+    heavy: (input: ChannelImage) => Promise<ChannelImage>;
+    /** Artistic preprocessing - painterly smoothing. Good for stylized/artistic output. */
+    artistic: (input: ChannelImage) => Promise<ChannelImage>;
+    /** Photo preprocessing - for photos with grass/nature. Good for landscape, outdoor scenes. */
+    nature: (input: ChannelImage) => Promise<ChannelImage>;
+};
+
+type webgpu_GPUBilateralFilter = GPUBilateralFilter;
+declare const webgpu_GPUBilateralFilter: typeof GPUBilateralFilter;
+type webgpu_GPUContrastEnhancer = GPUContrastEnhancer;
+declare const webgpu_GPUContrastEnhancer: typeof GPUContrastEnhancer;
+type webgpu_GPUGaussianBlur = GPUGaussianBlur;
+declare const webgpu_GPUGaussianBlur: typeof GPUGaussianBlur;
+type webgpu_GPUKuwaharaFilter = GPUKuwaharaFilter;
+declare const webgpu_GPUKuwaharaFilter: typeof GPUKuwaharaFilter;
+type webgpu_GPUMedianFilter = GPUMedianFilter;
+declare const webgpu_GPUMedianFilter: typeof GPUMedianFilter;
+declare const webgpu_GPUPreprocessingPresets: typeof GPUPreprocessingPresets;
+type webgpu_GPUQuantizer = GPUQuantizer;
+declare const webgpu_GPUQuantizer: typeof GPUQuantizer;
+declare const webgpu_clearShaderCaches: typeof clearShaderCaches;
+declare const webgpu_getWebGPUUnsupportedReason: typeof getWebGPUUnsupportedReason;
+declare namespace webgpu {
+  export {
+    webgpu_GPUBilateralFilter as GPUBilateralFilter,
+    webgpu_GPUContrastEnhancer as GPUContrastEnhancer,
+    webgpu_GPUGaussianBlur as GPUGaussianBlur,
+    webgpu_GPUKuwaharaFilter as GPUKuwaharaFilter,
+    webgpu_GPUMedianFilter as GPUMedianFilter,
+    webgpu_GPUPreprocessingPresets as GPUPreprocessingPresets,
+    webgpu_GPUQuantizer as GPUQuantizer,
+    webgpu_clearShaderCaches as clearShaderCaches,
+    disposeWebGPU$1 as disposeWebGPU,
+    webgpu_getWebGPUUnsupportedReason as getWebGPUUnsupportedReason,
+  };
+}
+
+/**
+ * Composed Preprocessing Module for XDoG/FDoG
+ *
+ * This module is the single entry point the rest of the codebase should
+ * import from. Each exported class resolves its OWN best-supported
+ * backend independently (WebGPU > WebGL > CPU), the first time it's
+ * created:
+ *
+ *   BilateralFilter.create(...)  // may end up WebGPU on this device
+ *   MedianFilter.create(...)     // may end up WebGL on this device, if
+ *                                // e.g. it needs a storage texture format
+ *                                // WebGPU can't provide here
+ *
+ * A device can support WebGPU for one algorithm and not another, so
+ * resolution happens per class, not once globally for the whole module.
+ * This follows the same pattern used for BlurStrategy/ETFComputer.
+ *
+ * If a backend fails mid-session (driver crash, lost context), each
+ * instance demotes itself to the next supported candidate once and
+ * retries the call that failed; that shared retry/demote machinery lives
+ * in `ResilientEdgeAwareFilter`, not duplicated per filter.
+ */
+
+interface BackendOptions$1 {
+    /** Force CPU even if WebGL/WebGPU are available. Default: false. */
+    forceCPU?: boolean;
+}
+/**
+ * Edge-preserving smoothing filter. Resolves the best supported backend
+ * at creation time; falls back once if that backend fails later.
+ */
+declare class BilateralFilter$1 extends ResilientEdgeAwareFilter<Partial<BilateralFilterConfig>> {
+    private static readonly candidates;
+    private constructor();
+    static create(config?: Partial<BilateralFilterConfig>, options?: BackendOptions$1): Promise<BilateralFilter$1>;
+}
+/**
+ * Median filter for salt-and-pepper noise removal.
+ */
+declare class MedianFilter$1 extends ResilientEdgeAwareFilter<Partial<MedianFilterConfig>> {
+    private static readonly candidates;
+    private constructor();
+    static create(config?: Partial<MedianFilterConfig>, options?: BackendOptions$1): Promise<MedianFilter$1>;
+}
+/**
+ * Kuwahara filter for a painterly, stylized effect.
+ */
+declare class KuwaharaFilter$1 extends ResilientEdgeAwareFilter<Partial<KuwaharaFilterConfig>> {
+    private static readonly candidates;
+    private constructor();
+    static create(config?: Partial<KuwaharaFilterConfig>, options?: BackendOptions$1): Promise<KuwaharaFilter$1>;
+}
+/**
+ * Separable Isotropic blur.
+ */
+declare class IsotropicBlurFilter extends ResilientEdgeAwareFilter<IsotropicBlurConfig> {
+    private static readonly candidates;
+    private constructor();
+    static create(config: Partial<IsotropicBlurConfig>, options?: BackendOptions$1): Promise<IsotropicBlurFilter>;
+}
+/**
+ * Separable Gaussian blur.
+ */
+declare class GaussianBlur$1 extends ResilientEdgeAwareFilter<GaussianConfig> {
+    private static readonly candidates;
+    private constructor();
+    static create(config: GaussianConfig, options?: BackendOptions$1): Promise<GaussianBlur$1>;
+}
+declare class ContrastEnhancer$1 extends ResilientEdgeAwareFilter<ContrastEnhancementConfig> {
+    private static readonly candidates;
+    private constructor();
+    static create(blackPoint?: number, whitePoint?: number, options?: BackendOptions$1): Promise<ContrastEnhancer$1>;
+}
+/**
+ * Posterize/quantize intensity levels.
+ */
+declare class Quantizer$1 extends ResilientEdgeAwareFilter<QuantizerConfig> {
+    private static readonly candidates;
+    private constructor();
+    static create(config: QuantizerConfig, options?: BackendOptions$1): Promise<Quantizer$1>;
+}
+declare const PreprocessingPresets$1: {
+    /**
+     * Light preprocessing - minimal smoothing
+     * Good for: Clean studio photos, illustrations
+     */
+    light: (input: ChannelImage) => Promise<ChannelImage>;
+    /**
+     * Standard preprocessing - balanced smoothing
+     * Good for: Most outdoor photos, portraits
+     */
+    standard: (input: ChannelImage) => Promise<ChannelImage>;
+    /**
+     * Heavy preprocessing - aggressive noise removal
+     * Good for: Very textured images (grass, foliage, fabric)
+     */
+    heavy: (input: ChannelImage) => Promise<ChannelImage>;
+    /**
+     * Artistic preprocessing - painterly smoothing
+     * Good for: Stylized/artistic output
+     */
+    artistic: (input: ChannelImage) => Promise<ChannelImage>;
+    /**
+     * Photo preprocessing - for photos with grass/nature
+     * Good for: Landscape, outdoor scenes
+     */
+    nature: (input: ChannelImage) => Promise<ChannelImage>;
+};
+
+type index$4_IsotropicBlurFilter = IsotropicBlurFilter;
+declare const index$4_IsotropicBlurFilter: typeof IsotropicBlurFilter;
+declare const index$4_cpu: typeof cpu;
+declare const index$4_webgpu: typeof webgpu;
+declare namespace index$4 {
+  export { BilateralFilter$1 as BilateralFilter, ContrastEnhancer$1 as ContrastEnhancer, GaussianBlur$1 as GaussianBlur, index$4_IsotropicBlurFilter as IsotropicBlurFilter, KuwaharaFilter$1 as KuwaharaFilter, MedianFilter$1 as MedianFilter, PreprocessingPresets$1 as PreprocessingPresets, Quantizer$1 as Quantizer, index$4_cpu as cpu, disposeWebGL$1 as disposeWebGL, disposeWebGPU$1 as disposeWebGPU, isWebGLAvailable$1 as isWebGLAvailable, webgl$1 as webgl, index$4_webgpu as webgpu };
+  export type { BackendOptions$1 as BackendOptions, LocalVarianceConfig$1 as LocalVarianceConfig };
 }
 
 /**
@@ -3574,5 +4052,5 @@ declare namespace index {
   export type { index_AntiAliasingConfig as AntiAliasingConfig, index_BlendContext as BlendContext, index_BlendFunction as BlendFunction, index_BuiltinBlendMode as BuiltinBlendMode, index_Color as Color, index_ColorRetentionConfig as ColorRetentionConfig, index_ColorTransformFn as ColorTransformFn, index_DoGResult as DoGResult, index_ExtensionStrategy as ExtensionStrategy, index_HatchTexture as HatchTexture, index_HatchingConfig as HatchingConfig, index_MaskTransformFn as MaskTransformFn, index_MultiScaleConfig as MultiScaleConfig, index_MultiScaleLayer as MultiScaleLayer, index_NaturalMediaConfig as NaturalMediaConfig, index_NaturalMediaStyle as NaturalMediaStyle, index_PostProcessFn as PostProcessFn };
 }
 
-export { DEFAULT_ETF_CONFIG, DoGProcessor, EdgeTangentFlowComputer, ThresholdModes, applyCustomThreshold, index$4 as blur, index$5 as dog, index as extensions, index$2 as preprocess, threshold, index$1 as utilities };
-export type { ADoGConfig, ADoGProcessingResult, ADogConfigParamType, AntiAliasingConfig, BackendOptions, BilateralFilterConfig, BlendFunction, BlurStrategy, ChannelImage, ColorRetentionConfig, ColorTransformFn, DoGConfig, DoGImplementation, DoGResult, DogConfigParamType, ETFConfig, ExtensionStrategy, FDoGConfidenceWeightingConfig, FDoGConfig, FDogConfidenceWeightConfigParamType, FDogConfigParamType, FlowField, FlowGuidedBlurConfig, GradientAlignedBlurConfig, HDoGConfig, HDoGProcessingResult, HDogConfigParamType, HatchTexture, HatchingConfig, IsotropicBlurConfig, KuwaharaFilterConfig, LocalBaselineOptions, LocalVarianceConfig, MagnitudeAdaptiveOptions, MaskTransformFn, MedianFilterConfig, MultiScaleConfig, MultiScaleLayer, NaturalMediaConfig, NaturalMediaStyle, ParamRange, PostProcessFn, Preprocessor, RGBImage$1 as RGBImage, ThresholdConfig, ThresholdStrategy, ToneAdaptiveAutoOptions, ToneAdaptiveOptions, VarianceAdaptiveOptions, Vec2, XDoGConfig };
+export { DEFAULT_BILATERAL_CONFIG, DEFAULT_CONTRAST_ENHANCEMENT_CONFIG, DEFAULT_ETF_CONFIG, DEFAULT_GAUSSIAN_CONFIG, DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, DEFAULT_ISOTROPIC_BLUR_CONFIG, DEFAULT_KUWAHARA_CONFIG, DEFAULT_MEDIAN_CONFIG, DEFAULT_QUANTIZER_CONFIG, DoGProcessor, EdgeTangentFlowComputer, ThresholdModes, applyCustomThreshold, index$5 as blur, index$6 as dog, index as extensions, index$4 as filters, index$2 as preprocess, threshold, index$1 as utilities };
+export type { ADoGConfig, ADoGProcessingResult, ADogConfigParamType, AntiAliasingConfig, BackendOptions, BilateralFilterConfig, BlendFunction, BlurStrategy, ChannelImage, ColorRetentionConfig, ColorTransformFn, ContrastEnhancementConfig, DoGConfig, DoGImplementation, DoGResult, DogConfigParamType, ETFConfig, ExtensionStrategy, FDoGConfidenceWeightingConfig, FDoGConfig, FDogConfidenceWeightConfigParamType, FDogConfigParamType, FlowField, FlowGuidedBlurConfig, GradientAlignedBlurConfig, HDoGConfig, HDoGProcessingResult, HDogConfigParamType, HatchTexture, HatchingConfig, IsotropicBlurConfig, KuwaharaFilterConfig, LocalBaselineOptions, LocalVarianceConfig, MagnitudeAdaptiveOptions, MaskTransformFn, MedianFilterConfig, MultiScaleConfig, MultiScaleLayer, NaturalMediaConfig, NaturalMediaStyle, ParamRange, PostProcessFn, Preprocessor, QuantizerConfig, RGBImage$1 as RGBImage, ThresholdConfig, ThresholdStrategy, ToneAdaptiveAutoOptions, ToneAdaptiveOptions, VarianceAdaptiveOptions, Vec2, XDoGConfig };

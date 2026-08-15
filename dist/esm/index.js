@@ -89,10 +89,11 @@ export { DoGProcessor, ThresholdModes, applyCustomThreshold } from './processor.
 export * as blur from './blur/index.js';
 // Edge Tangent Flow (for visualization or custom pipelines)
 export { EdgeTangentFlowComputer } from './etf/index.js';
+export * as filters from './filters/index.js';
 // Preprocessing
 export * as preprocess from './preprocess/index.js';
 export * as threshold from './threshold.js';
-export { DEFAULT_ETF_CONFIG } from './interfaces/base.js';
+export { DEFAULT_ETF_CONFIG, DEFAULT_BILATERAL_CONFIG, DEFAULT_CONTRAST_ENHANCEMENT_CONFIG, DEFAULT_GAUSSIAN_CONFIG, DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, DEFAULT_ISOTROPIC_BLUR_CONFIG, DEFAULT_KUWAHARA_CONFIG, DEFAULT_MEDIAN_CONFIG, DEFAULT_QUANTIZER_CONFIG } from './interfaces/base.js';
 // Utilities
 export * as utilities from './utils/index.js';
 export * as extensions from './extensions/index.js';

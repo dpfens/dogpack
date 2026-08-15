@@ -94,7 +94,7 @@ export class WebGPUIsotropicFilter extends BaseWebGPUStrategy implements EdgeAwa
    * outputBuffer/currentBufferSize/currentKernelSize instance fields and
    * ensureBuffers() method; they're no longer needed.
    */
-  async apply(input: ChannelImage, config: IsotropicBlurConfig): Promise<ChannelImage> {
+  async apply(input: ChannelImage, config: Partial<IsotropicBlurConfig>): Promise<ChannelImage> {
     const cfg = { ...DEFAULT_ISOTROPIC_BLUR_CONFIG, ...config };
     const {sigma} = cfg;
     if (sigma < 0.1) {

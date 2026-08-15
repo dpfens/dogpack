@@ -83,7 +83,7 @@
  * ```
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.extensions = exports.utilities = exports.DEFAULT_ETF_CONFIG = exports.threshold = exports.preprocess = exports.EdgeTangentFlowComputer = exports.blur = exports.applyCustomThreshold = exports.ThresholdModes = exports.DoGProcessor = exports.dog = void 0;
+exports.extensions = exports.utilities = exports.DEFAULT_QUANTIZER_CONFIG = exports.DEFAULT_MEDIAN_CONFIG = exports.DEFAULT_KUWAHARA_CONFIG = exports.DEFAULT_ISOTROPIC_BLUR_CONFIG = exports.DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG = exports.DEFAULT_GAUSSIAN_CONFIG = exports.DEFAULT_CONTRAST_ENHANCEMENT_CONFIG = exports.DEFAULT_BILATERAL_CONFIG = exports.DEFAULT_ETF_CONFIG = exports.threshold = exports.preprocess = exports.filters = exports.EdgeTangentFlowComputer = exports.blur = exports.applyCustomThreshold = exports.ThresholdModes = exports.DoGProcessor = exports.dog = void 0;
 // High-level API
 exports.dog = require("./dog/index.js");
 // Core processor (for advanced usage)
@@ -96,11 +96,20 @@ exports.blur = require("./blur/index.js");
 // Edge Tangent Flow (for visualization or custom pipelines)
 var index_js_1 = require("./etf/index.js");
 Object.defineProperty(exports, "EdgeTangentFlowComputer", { enumerable: true, get: function () { return index_js_1.EdgeTangentFlowComputer; } });
+exports.filters = require("./filters/index.js");
 // Preprocessing
 exports.preprocess = require("./preprocess/index.js");
 exports.threshold = require("./threshold.js");
 var base_js_1 = require("./interfaces/base.js");
 Object.defineProperty(exports, "DEFAULT_ETF_CONFIG", { enumerable: true, get: function () { return base_js_1.DEFAULT_ETF_CONFIG; } });
+Object.defineProperty(exports, "DEFAULT_BILATERAL_CONFIG", { enumerable: true, get: function () { return base_js_1.DEFAULT_BILATERAL_CONFIG; } });
+Object.defineProperty(exports, "DEFAULT_CONTRAST_ENHANCEMENT_CONFIG", { enumerable: true, get: function () { return base_js_1.DEFAULT_CONTRAST_ENHANCEMENT_CONFIG; } });
+Object.defineProperty(exports, "DEFAULT_GAUSSIAN_CONFIG", { enumerable: true, get: function () { return base_js_1.DEFAULT_GAUSSIAN_CONFIG; } });
+Object.defineProperty(exports, "DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG", { enumerable: true, get: function () { return base_js_1.DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG; } });
+Object.defineProperty(exports, "DEFAULT_ISOTROPIC_BLUR_CONFIG", { enumerable: true, get: function () { return base_js_1.DEFAULT_ISOTROPIC_BLUR_CONFIG; } });
+Object.defineProperty(exports, "DEFAULT_KUWAHARA_CONFIG", { enumerable: true, get: function () { return base_js_1.DEFAULT_KUWAHARA_CONFIG; } });
+Object.defineProperty(exports, "DEFAULT_MEDIAN_CONFIG", { enumerable: true, get: function () { return base_js_1.DEFAULT_MEDIAN_CONFIG; } });
+Object.defineProperty(exports, "DEFAULT_QUANTIZER_CONFIG", { enumerable: true, get: function () { return base_js_1.DEFAULT_QUANTIZER_CONFIG; } });
 // Utilities
 exports.utilities = require("./utils/index.js");
 exports.extensions = require("./extensions/index.js");

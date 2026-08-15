@@ -59,7 +59,7 @@ export declare class KuwaharaFilter extends ResilientEdgeAwareFilter<Partial<Kuw
 export declare class IsotropicBlurFilter extends ResilientEdgeAwareFilter<IsotropicBlurConfig> {
     private static readonly candidates;
     private constructor();
-    static create(config: IsotropicBlurConfig, options?: BackendOptions): Promise<IsotropicBlurFilter>;
+    static create(config: Partial<IsotropicBlurConfig>, options?: BackendOptions): Promise<IsotropicBlurFilter>;
 }
 /**
  * Separable Gaussian blur.

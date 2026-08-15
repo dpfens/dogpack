@@ -78,7 +78,7 @@ export interface BackendIdentifiable {
 }
 
 export interface EdgeAwareFilterCore<TParams> extends Disposable, BackendIdentifiable {
-  apply(input: ChannelImage, params: TParams): Promise<ChannelImage>;
+  apply(input: ChannelImage, params: Partial<TParams>): Promise<ChannelImage>;
 }
 export type EdgeAwareFilterCtor<TParams> = StrategyCtor<EdgeAwareFilterCore<TParams>>
 
