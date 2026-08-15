@@ -763,15 +763,15 @@ const DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG = {
     stepSize: 1.0,
 };
 // Default config values (mirrors the CPU implementation in cpu.ts)
-const DEFAULT_BILATERAL_CONFIG$3 = {
+const DEFAULT_BILATERAL_CONFIG = {
     sigmaSpatial: 3,
     sigmaRange: 0.1,
     radiusMultiplier: 2,
 };
-const DEFAULT_MEDIAN_CONFIG$3 = {
+const DEFAULT_MEDIAN_CONFIG = {
     radius: 2,
 };
-const DEFAULT_KUWAHARA_CONFIG$3 = {
+const DEFAULT_KUWAHARA_CONFIG = {
     radius: 3,
 };
 const DEFAULT_CONTRAST_ENHANCEMENT_CONFIG = {
@@ -1343,7 +1343,7 @@ class BaseWebGPUStrategy {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: filters/shaders/webgl/bilateral.glsl
 // Regenerate with `npm run build:shaders`.
-const source$R = `#version 300 es
+const source$C = `#version 300 es
 precision highp float;
 precision highp sampler2D;
 
@@ -1388,7 +1388,7 @@ void main() {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: filters/shaders/webgl/contrast.glsl
 // Regenerate with `npm run build:shaders`.
-const source$Q = `#version 300 es
+const source$B = `#version 300 es
 precision highp float;
 precision highp sampler2D;
 
@@ -1413,7 +1413,7 @@ void main() {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: filters/shaders/webgl/guassian-horizontal.glsl
 // Regenerate with `npm run build:shaders`.
-const source$P = `#version 300 es
+const source$A = `#version 300 es
 precision highp float;
 precision highp sampler2D;
 
@@ -1444,7 +1444,7 @@ void main() {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: filters/shaders/webgl/guassian-vertical.glsl
 // Regenerate with `npm run build:shaders`.
-const source$O = `#version 300 es
+const source$z = `#version 300 es
 precision highp float;
 precision highp sampler2D;
 
@@ -1475,7 +1475,7 @@ void main() {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: filters/shaders/webgl/kuwahara.glsl
 // Regenerate with `npm run build:shaders`.
-const source$N = `#version 300 es
+const source$y = `#version 300 es
 precision highp float;
 precision highp sampler2D;
 
@@ -1531,7 +1531,7 @@ void main() {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: filters/shaders/webgl/median-small.glsl
 // Regenerate with `npm run build:shaders`.
-const source$M = `// For small radius, use direct sorting approach (more accurate)
+const source$x = `// For small radius, use direct sorting approach (more accurate)
 #version 300 es
 precision highp float;
 precision highp sampler2D;
@@ -1580,7 +1580,7 @@ void main() {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: filters/shaders/webgl/median.glsl
 // Regenerate with `npm run build:shaders`.
-const source$L = `// True median requires sorting which isn't efficient in shaders.
+const source$w = `// True median requires sorting which isn't efficient in shaders.
 // We use a weighted percentile approximation that's very close to median.
 #version 300 es
 precision highp float;
@@ -1636,7 +1636,7 @@ void main() {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: filters/shaders/webgl/quantize.glsl
 // Regenerate with `npm run build:shaders`.
-const source$K = `#version 300 es
+const source$v = `#version 300 es
 precision highp float;
 precision highp sampler2D;
 
@@ -1651,2362 +1651,6 @@ void main() {
   float step = 1.0 / (u_levels - 1.0);
   float result = floor(value / step + 0.5) * step;
   fragColor = vec4(clamp(result, 0.0, 1.0), 0.0, 0.0, 1.0);
-}`;
-
-/**
- * WebGL-Accelerated Preprocessing Module for XDoG/FDoG
- *
- * High-performance GPU implementations of image preprocessing filters.
- * Achieves 50-100x speedup over CPU implementations for large images.
- */
-// ============================================================================
-// WebGL Context Management
-// ============================================================================
-let gl$2 = null;
-let canvas$2 = null;
-// Shader program cache
-const programCache$2 = new Map();
-// Reusable geometry buffers
-let quadVAO$2 = null;
-/**
- * Check if running in a WebWorker context
- */
-function isWorkerContext$2() {
-    return typeof document === 'undefined';
-}
-/**
- * Initialize or get WebGL context
- */
-function getGL$2() {
-    if (gl$2)
-        return gl$2;
-    try {
-        let glCanvas;
-        // Use OffscreenCanvas in WebWorker, HTMLCanvasElement in main thread
-        if (isWorkerContext$2()) {
-            glCanvas = new OffscreenCanvas(1, 1);
-        }
-        else {
-            glCanvas = document.createElement('canvas');
-        }
-        glCanvas.width = 1;
-        glCanvas.height = 1;
-        gl$2 = glCanvas.getContext('webgl2', {
-            alpha: false,
-            antialias: false,
-            depth: false,
-            stencil: false,
-            powerPreference: 'high-performance',
-            preserveDrawingBuffer: false,
-        });
-        if (!gl$2) {
-            console.warn('WebGL 2.0 not available');
-            return null;
-        }
-        // Enable required extensions for float textures
-        const ext1 = gl$2.getExtension('EXT_color_buffer_float');
-        if (!ext1) {
-            console.warn('EXT_color_buffer_float not available, some features may be limited');
-        }
-        canvas$2 = glCanvas;
-        // Setup reusable quad geometry
-        setupQuadGeometry$2();
-        return gl$2;
-    }
-    catch (err) {
-        console.error('WebGL initialization failed:', err);
-        return null;
-    }
-}
-/**
- * Setup fullscreen quad VAO (reused for all render passes)
- */
-function setupQuadGeometry$2() {
-    if (!gl$2)
-        return;
-    quadVAO$2 = gl$2.createVertexArray();
-    gl$2.bindVertexArray(quadVAO$2);
-    // Positions: fullscreen quad in clip space
-    const positions = new Float32Array([
-        -1, -1,
-        1, -1,
-        -1, 1,
-        1, 1,
-    ]);
-    // Texture coordinates
-    const texCoords = new Float32Array([
-        0, 0,
-        1, 0,
-        0, 1,
-        1, 1,
-    ]);
-    const posBuffer = gl$2.createBuffer();
-    gl$2.bindBuffer(gl$2.ARRAY_BUFFER, posBuffer);
-    gl$2.bufferData(gl$2.ARRAY_BUFFER, positions, gl$2.STATIC_DRAW);
-    gl$2.enableVertexAttribArray(0);
-    gl$2.vertexAttribPointer(0, 2, gl$2.FLOAT, false, 0, 0);
-    const texBuffer = gl$2.createBuffer();
-    gl$2.bindBuffer(gl$2.ARRAY_BUFFER, texBuffer);
-    gl$2.bufferData(gl$2.ARRAY_BUFFER, texCoords, gl$2.STATIC_DRAW);
-    gl$2.enableVertexAttribArray(1);
-    gl$2.vertexAttribPointer(1, 2, gl$2.FLOAT, false, 0, 0);
-    gl$2.bindVertexArray(null);
-}
-// ============================================================================
-// Shader Compilation Utilities
-// ============================================================================
-const VERTEX_SHADER$2 = `#version 300 es
-layout(location = 0) in vec2 a_position;
-layout(location = 1) in vec2 a_texCoord;
-out vec2 v_texCoord;
-
-void main() {
-  gl_Position = vec4(a_position, 0.0, 1.0);
-  v_texCoord = a_texCoord;
-}
-`;
-function compileShader$4(source, type) {
-    if (!gl$2)
-        return null;
-    const shader = gl$2.createShader(type);
-    if (!shader)
-        return null;
-    gl$2.shaderSource(shader, source);
-    gl$2.compileShader(shader);
-    if (!gl$2.getShaderParameter(shader, gl$2.COMPILE_STATUS)) {
-        console.error('Shader compile error:', gl$2.getShaderInfoLog(shader));
-        gl$2.deleteShader(shader);
-        return null;
-    }
-    return shader;
-}
-function createProgram$5(fragmentSource, cacheKey) {
-    if (!gl$2)
-        return null;
-    // Check cache first
-    const cached = programCache$2.get(cacheKey);
-    if (cached)
-        return cached;
-    const vertShader = compileShader$4(VERTEX_SHADER$2, gl$2.VERTEX_SHADER);
-    const fragShader = compileShader$4(fragmentSource, gl$2.FRAGMENT_SHADER);
-    if (!vertShader || !fragShader)
-        return null;
-    const program = gl$2.createProgram();
-    if (!program)
-        return null;
-    gl$2.attachShader(program, vertShader);
-    gl$2.attachShader(program, fragShader);
-    gl$2.linkProgram(program);
-    if (!gl$2.getProgramParameter(program, gl$2.LINK_STATUS)) {
-        console.error('Program link error:', gl$2.getProgramInfoLog(program));
-        gl$2.deleteProgram(program);
-        return null;
-    }
-    // Cleanup shaders (they're now part of the program)
-    gl$2.deleteShader(vertShader);
-    gl$2.deleteShader(fragShader);
-    // Cache the program
-    programCache$2.set(cacheKey, program);
-    return program;
-}
-// ============================================================================
-// Texture and Framebuffer Utilities
-// ============================================================================
-function createInputTexture$2(data, width, height) {
-    if (!gl$2)
-        return null;
-    const texture = gl$2.createTexture();
-    gl$2.bindTexture(gl$2.TEXTURE_2D, texture);
-    // Upload grayscale data as R32F
-    gl$2.texImage2D(gl$2.TEXTURE_2D, 0, gl$2.R32F, width, height, 0, gl$2.RED, gl$2.FLOAT, data);
-    gl$2.texParameteri(gl$2.TEXTURE_2D, gl$2.TEXTURE_WRAP_S, gl$2.CLAMP_TO_EDGE);
-    gl$2.texParameteri(gl$2.TEXTURE_2D, gl$2.TEXTURE_WRAP_T, gl$2.CLAMP_TO_EDGE);
-    gl$2.texParameteri(gl$2.TEXTURE_2D, gl$2.TEXTURE_MIN_FILTER, gl$2.NEAREST);
-    gl$2.texParameteri(gl$2.TEXTURE_2D, gl$2.TEXTURE_MAG_FILTER, gl$2.NEAREST);
-    return texture;
-}
-function createFramebuffer$3(width, height) {
-    if (!gl$2)
-        return null;
-    const fb = gl$2.createFramebuffer();
-    const tex = gl$2.createTexture();
-    if (!fb || !tex)
-        return null;
-    gl$2.bindTexture(gl$2.TEXTURE_2D, tex);
-    gl$2.texImage2D(gl$2.TEXTURE_2D, 0, gl$2.RGBA32F, width, height, 0, gl$2.RGBA, gl$2.FLOAT, null);
-    gl$2.texParameteri(gl$2.TEXTURE_2D, gl$2.TEXTURE_WRAP_S, gl$2.CLAMP_TO_EDGE);
-    gl$2.texParameteri(gl$2.TEXTURE_2D, gl$2.TEXTURE_WRAP_T, gl$2.CLAMP_TO_EDGE);
-    gl$2.texParameteri(gl$2.TEXTURE_2D, gl$2.TEXTURE_MIN_FILTER, gl$2.NEAREST);
-    gl$2.texParameteri(gl$2.TEXTURE_2D, gl$2.TEXTURE_MAG_FILTER, gl$2.NEAREST);
-    gl$2.bindFramebuffer(gl$2.FRAMEBUFFER, fb);
-    gl$2.framebufferTexture2D(gl$2.FRAMEBUFFER, gl$2.COLOR_ATTACHMENT0, gl$2.TEXTURE_2D, tex, 0);
-    const status = gl$2.checkFramebufferStatus(gl$2.FRAMEBUFFER);
-    if (status !== gl$2.FRAMEBUFFER_COMPLETE) {
-        console.error('Framebuffer incomplete:', status);
-        gl$2.deleteFramebuffer(fb);
-        gl$2.deleteTexture(tex);
-        return null;
-    }
-    gl$2.bindFramebuffer(gl$2.FRAMEBUFFER, null);
-    return { fb, tex };
-}
-function readResult$2(fb, width, height) {
-    if (!gl$2)
-        return new Float32Array(0);
-    gl$2.bindFramebuffer(gl$2.FRAMEBUFFER, fb);
-    const pixels = new Float32Array(width * height * 4);
-    gl$2.readPixels(0, 0, width, height, gl$2.RGBA, gl$2.FLOAT, pixels);
-    // Extract red channel only
-    const result = new Float32Array(width * height);
-    for (let i = 0; i < width * height; i++) {
-        result[i] = pixels[i * 4];
-    }
-    gl$2.bindFramebuffer(gl$2.FRAMEBUFFER, null);
-    return result;
-}
-function renderPass$2(program, inputTex, outputFb, width, height, uniforms) {
-    if (!gl$2 || !quadVAO$2)
-        return;
-    gl$2.useProgram(program);
-    gl$2.bindFramebuffer(gl$2.FRAMEBUFFER, outputFb);
-    gl$2.viewport(0, 0, width, height);
-    // Bind input texture
-    gl$2.activeTexture(gl$2.TEXTURE0);
-    gl$2.bindTexture(gl$2.TEXTURE_2D, inputTex);
-    gl$2.uniform1i(gl$2.getUniformLocation(program, 'u_image'), 0);
-    // Set uniforms
-    for (const [name, value] of Object.entries(uniforms)) {
-        const loc = gl$2.getUniformLocation(program, name);
-        if (loc === null)
-            continue;
-        if (Array.isArray(value)) {
-            if (value.length === 2)
-                gl$2.uniform2fv(loc, value);
-            else if (value.length === 3)
-                gl$2.uniform3fv(loc, value);
-            else if (value.length === 4)
-                gl$2.uniform4fv(loc, value);
-        }
-        else if (Number.isInteger(value)) {
-            gl$2.uniform1i(loc, value);
-        }
-        else {
-            gl$2.uniform1f(loc, value);
-        }
-    }
-    // Draw
-    gl$2.bindVertexArray(quadVAO$2);
-    gl$2.drawArrays(gl$2.TRIANGLE_STRIP, 0, 4);
-    gl$2.bindVertexArray(null);
-}
-// ============================================================================
-// BILATERAL FILTER - WebGL Implementation
-// ============================================================================
-let BilateralFilterWebGL$1 = class BilateralFilterWebGL extends BaseWebGLStrategy {
-    static async isSupported() {
-        return isWebGLAvailable$2();
-    }
-    static async getUnsupportedReason() {
-        return isWebGLAvailable$2() ? undefined : 'WebGL 2.0 is not available in this environment';
-    }
-    async apply(input, config) {
-        const cfg = { ...DEFAULT_BILATERAL_CONFIG$3, ...config };
-        const gl = getGL$2();
-        if (!gl) {
-            throw new Error('BilateralFilterWebGL: WebGL 2.0 is not available in this environment.');
-        }
-        const { width, height, data } = input;
-        const sigmaSpatial = cfg.sigmaSpatial;
-        const sigmaRange = cfg.sigmaRange;
-        const radiusMultiplier = cfg.radiusMultiplier ?? 2;
-        const radius = Math.ceil(sigmaSpatial * radiusMultiplier);
-        // Resize canvas if needed
-        if (canvas$2.width !== width || canvas$2.height !== height) {
-            canvas$2.width = width;
-            canvas$2.height = height;
-        }
-        return this.runGuarded(gl, () => {
-            const program = createProgram$5(source$R, 'bilateral');
-            if (!program) {
-                throw new Error('BilateralFilterWebGL: failed to compile/link shader program.');
-            }
-            const inputTex = createInputTexture$2(data, width, height);
-            const output = createFramebuffer$3(width, height);
-            if (!inputTex || !output) {
-                if (inputTex)
-                    gl.deleteTexture(inputTex);
-                throw new Error('BilateralFilterWebGL: failed to create input texture or framebuffer.');
-            }
-            renderPass$2(program, inputTex, output.fb, width, height, {
-                u_texelSize: [1.0 / width, 1.0 / height],
-                u_sigmaSpatial2: 2.0 * sigmaSpatial * sigmaSpatial,
-                u_sigmaRange2: 2.0 * sigmaRange * sigmaRange,
-                u_radius: radius,
-            });
-            const result = readResult$2(output.fb, width, height);
-            // Cleanup
-            gl.deleteTexture(inputTex);
-            gl.deleteTexture(output.tex);
-            gl.deleteFramebuffer(output.fb);
-            return { data: result, width, height };
-        });
-    }
-};
-// ============================================================================
-// GAUSSIAN BLUR - Separable WebGL Implementation (Very Fast)
-// ============================================================================
-let GaussianBlurWebGL$1 = class GaussianBlurWebGL extends BaseWebGLStrategy {
-    static async isSupported() {
-        return isWebGLAvailable$2();
-    }
-    static async getUnsupportedReason() {
-        return isWebGLAvailable$2() ? undefined : 'WebGL 2.0 is not available in this environment';
-    }
-    async apply(input, config) {
-        const sigma = config.sigma ?? DEFAULT_GAUSSIAN_CONFIG.sigma;
-        if (sigma < 0.1) {
-            return { data: new Float32Array(input.data), width: input.width, height: input.height };
-        }
-        const gl = getGL$2();
-        if (!gl) {
-            throw new Error('GaussianBlurWebGL: WebGL 2.0 is not available in this environment.');
-        }
-        const { width, height, data } = input;
-        const radius = Math.ceil(sigma * 3);
-        const sigma2 = 2.0 * sigma * sigma;
-        if (canvas$2.width !== width || canvas$2.height !== height) {
-            canvas$2.width = width;
-            canvas$2.height = height;
-        }
-        return this.runGuarded(gl, () => {
-            const hProgram = createProgram$5(source$P, 'gaussianH');
-            const vProgram = createProgram$5(source$O, 'gaussianV');
-            if (!hProgram || !vProgram) {
-                throw new Error('GaussianBlurWebGL: failed to compile/link shader program.');
-            }
-            const inputTex = createInputTexture$2(data, width, height);
-            const tempFb = createFramebuffer$3(width, height);
-            const outputFb = createFramebuffer$3(width, height);
-            if (!inputTex || !tempFb || !outputFb) {
-                if (inputTex)
-                    gl.deleteTexture(inputTex);
-                if (tempFb) {
-                    gl.deleteFramebuffer(tempFb.fb);
-                    gl.deleteTexture(tempFb.tex);
-                }
-                throw new Error('GaussianBlurWebGL: failed to create input texture or framebuffer.');
-            }
-            // Horizontal pass
-            renderPass$2(hProgram, inputTex, tempFb.fb, width, height, {
-                u_texelSizeX: 1.0 / width,
-                u_radius: radius,
-                u_sigma2: sigma2,
-            });
-            // Vertical pass
-            renderPass$2(vProgram, tempFb.tex, outputFb.fb, width, height, {
-                u_texelSizeY: 1.0 / height,
-                u_radius: radius,
-                u_sigma2: sigma2,
-            });
-            const result = readResult$2(outputFb.fb, width, height);
-            // Cleanup
-            gl.deleteTexture(inputTex);
-            gl.deleteTexture(tempFb.tex);
-            gl.deleteFramebuffer(tempFb.fb);
-            gl.deleteTexture(outputFb.tex);
-            gl.deleteFramebuffer(outputFb.fb);
-            return { data: result, width, height };
-        });
-    }
-};
-// ============================================================================
-// MEDIAN FILTER - WebGL Approximation using Weighted Histogram
-// ============================================================================
-let MedianFilterWebGL$1 = class MedianFilterWebGL extends BaseWebGLStrategy {
-    static async isSupported() {
-        return isWebGLAvailable$2();
-    }
-    static async getUnsupportedReason() {
-        return isWebGLAvailable$2() ? undefined : 'WebGL 2.0 is not available in this environment';
-    }
-    async apply(input, config = {}) {
-        const cfg = { ...DEFAULT_MEDIAN_CONFIG$3, ...config };
-        const gl = getGL$2();
-        if (!gl) {
-            throw new Error('MedianFilterWebGL: WebGL 2.0 is not available in this environment.');
-        }
-        const { width, height, data } = input;
-        const radius = cfg.radius;
-        if (canvas$2.width !== width || canvas$2.height !== height) {
-            canvas$2.width = width;
-            canvas$2.height = height;
-        }
-        return this.runGuarded(gl, () => {
-            // Use exact sorting for small kernels, histogram for large
-            const shaderSource = radius <= 2 ? source$M : source$L;
-            const cacheKey = radius <= 2 ? 'medianSmall' : 'medianLarge';
-            const program = createProgram$5(shaderSource, cacheKey);
-            if (!program) {
-                throw new Error('MedianFilterWebGL: failed to compile/link shader program.');
-            }
-            const inputTex = createInputTexture$2(data, width, height);
-            const output = createFramebuffer$3(width, height);
-            if (!inputTex || !output) {
-                if (inputTex)
-                    gl.deleteTexture(inputTex);
-                throw new Error('MedianFilterWebGL: failed to create input texture or framebuffer.');
-            }
-            renderPass$2(program, inputTex, output.fb, width, height, {
-                u_texelSize: [1.0 / width, 1.0 / height],
-                u_radius: radius,
-            });
-            const result = readResult$2(output.fb, width, height);
-            // Cleanup
-            gl.deleteTexture(inputTex);
-            gl.deleteTexture(output.tex);
-            gl.deleteFramebuffer(output.fb);
-            return { data: result, width, height };
-        });
-    }
-};
-// ============================================================================
-// KUWAHARA FILTER - WebGL Implementation
-// ============================================================================
-let KuwaharaFilterWebGL$1 = class KuwaharaFilterWebGL extends BaseWebGLStrategy {
-    static async isSupported() {
-        return isWebGLAvailable$2();
-    }
-    static async getUnsupportedReason() {
-        return isWebGLAvailable$2() ? undefined : 'WebGL 2.0 is not available in this environment';
-    }
-    async apply(input, config = {}) {
-        const cfg = { ...DEFAULT_KUWAHARA_CONFIG$3, ...config };
-        const gl = getGL$2();
-        if (!gl) {
-            throw new Error('KuwaharaFilterWebGL: WebGL 2.0 is not available in this environment.');
-        }
-        const { width, height, data } = input;
-        const radius = cfg.radius;
-        if (canvas$2.width !== width || canvas$2.height !== height) {
-            canvas$2.width = width;
-            canvas$2.height = height;
-        }
-        return this.runGuarded(gl, () => {
-            const program = createProgram$5(source$N, 'kuwahara');
-            if (!program) {
-                throw new Error('KuwaharaFilterWebGL: failed to compile/link shader program.');
-            }
-            const inputTex = createInputTexture$2(data, width, height);
-            const output = createFramebuffer$3(width, height);
-            if (!inputTex || !output) {
-                if (inputTex)
-                    gl.deleteTexture(inputTex);
-                throw new Error('KuwaharaFilterWebGL: failed to create input texture or framebuffer.');
-            }
-            renderPass$2(program, inputTex, output.fb, width, height, {
-                u_texelSize: [1.0 / width, 1.0 / height],
-                u_radius: radius,
-            });
-            const result = readResult$2(output.fb, width, height);
-            // Cleanup
-            gl.deleteTexture(inputTex);
-            gl.deleteTexture(output.tex);
-            gl.deleteFramebuffer(output.fb);
-            return { data: result, width, height };
-        });
-    }
-};
-// ============================================================================
-// CONTRAST ENHANCEMENT - WebGL Implementation
-// ============================================================================
-let ContrastEnhancerWebGL$1 = class ContrastEnhancerWebGL extends BaseWebGLStrategy {
-    static async isSupported() {
-        return isWebGLAvailable$2();
-    }
-    static async getUnsupportedReason() {
-        return isWebGLAvailable$2() ? undefined : 'WebGL 2.0 is not available in this environment';
-    }
-    async apply(input, config) {
-        const { blackPoint, whitePoint } = { ...DEFAULT_CONTRAST_ENHANCEMENT_CONFIG, ...config };
-        const gl = getGL$2();
-        if (!gl) {
-            throw new Error('ContrastEnhancerWebGL: WebGL 2.0 is not available in this environment.');
-        }
-        const { width, height, data } = input;
-        // Calculate percentiles on CPU (fast enough, O(n log n)) - this is
-        // inherent to the algorithm, not a fallback path.
-        const sorted = new Float32Array(data).sort((a, b) => a - b);
-        const minVal = sorted[Math.floor(data.length * blackPoint)];
-        const maxVal = sorted[Math.floor(data.length * whitePoint)];
-        if (canvas$2.width !== width || canvas$2.height !== height) {
-            canvas$2.width = width;
-            canvas$2.height = height;
-        }
-        return this.runGuarded(gl, () => {
-            const program = createProgram$5(source$Q, 'contrast');
-            if (!program) {
-                throw new Error('ContrastEnhancerWebGL: failed to compile/link shader program.');
-            }
-            const inputTex = createInputTexture$2(data, width, height);
-            const output = createFramebuffer$3(width, height);
-            if (!inputTex || !output) {
-                if (inputTex)
-                    gl.deleteTexture(inputTex);
-                throw new Error('ContrastEnhancerWebGL: failed to create input texture or framebuffer.');
-            }
-            renderPass$2(program, inputTex, output.fb, width, height, {
-                u_minVal: minVal,
-                u_maxVal: maxVal,
-            });
-            const result = readResult$2(output.fb, width, height);
-            // Cleanup
-            gl.deleteTexture(inputTex);
-            gl.deleteTexture(output.tex);
-            gl.deleteFramebuffer(output.fb);
-            return { data: result, width, height };
-        });
-    }
-};
-// ============================================================================
-// QUANTIZATION - WebGL Implementation
-// ============================================================================
-let QuantizerWebGL$1 = class QuantizerWebGL extends BaseWebGLStrategy {
-    static async isSupported() {
-        return isWebGLAvailable$2();
-    }
-    static async getUnsupportedReason() {
-        return isWebGLAvailable$2() ? undefined : 'WebGL 2.0 is not available in this environment';
-    }
-    async apply(input, config) {
-        const levels = config.levels ?? DEFAULT_QUANTIZER_CONFIG.levels;
-        const gl = getGL$2();
-        if (!gl) {
-            throw new Error('QuantizerWebGL: WebGL 2.0 is not available in this environment.');
-        }
-        const { width, height, data } = input;
-        if (canvas$2.width !== width || canvas$2.height !== height) {
-            canvas$2.width = width;
-            canvas$2.height = height;
-        }
-        return this.runGuarded(gl, () => {
-            const program = createProgram$5(source$K, 'quantize');
-            if (!program) {
-                throw new Error('QuantizerWebGL: failed to compile/link shader program.');
-            }
-            const inputTex = createInputTexture$2(data, width, height);
-            const output = createFramebuffer$3(width, height);
-            if (!inputTex || !output) {
-                if (inputTex)
-                    gl.deleteTexture(inputTex);
-                throw new Error('QuantizerWebGL: failed to create input texture or framebuffer.');
-            }
-            renderPass$2(program, inputTex, output.fb, width, height, {
-                u_levels: levels,
-            });
-            const result = readResult$2(output.fb, width, height);
-            // Cleanup
-            gl.deleteTexture(inputTex);
-            gl.deleteTexture(output.tex);
-            gl.deleteFramebuffer(output.fb);
-            return { data: result, width, height };
-        });
-    }
-};
-// ============================================================================
-// UTILITY EXPORTS
-// ============================================================================
-/**
- * Check if WebGL 2.0 is available
- */
-function isWebGLAvailable$2() {
-    return getGL$2() !== null;
-}
-/**
- * Cleanup all WebGL resources
- */
-function disposeWebGL$1() {
-    if (!gl$2)
-        return;
-    // Delete cached programs
-    programCache$2.forEach(program => gl$2.deleteProgram(program));
-    programCache$2.clear();
-    // Delete VAO
-    if (quadVAO$2) {
-        gl$2.deleteVertexArray(quadVAO$2);
-        quadVAO$2 = null;
-    }
-    gl$2 = null;
-    canvas$2 = null;
-}
-
-var webgl$1 = /*#__PURE__*/Object.freeze({
-    __proto__: null,
-    BilateralFilter: BilateralFilterWebGL$1,
-    BilateralFilterWebGL: BilateralFilterWebGL$1,
-    ContrastEnhancer: ContrastEnhancerWebGL$1,
-    ContrastEnhancerWebGL: ContrastEnhancerWebGL$1,
-    GaussianBlur: GaussianBlurWebGL$1,
-    GaussianBlurWebGL: GaussianBlurWebGL$1,
-    KuwaharaFilter: KuwaharaFilterWebGL$1,
-    KuwaharaFilterWebGL: KuwaharaFilterWebGL$1,
-    MedianFilter: MedianFilterWebGL$1,
-    MedianFilterWebGL: MedianFilterWebGL$1,
-    Quantizer: QuantizerWebGL$1,
-    QuantizerWebGL: QuantizerWebGL$1,
-    disposeWebGL: disposeWebGL$1,
-    isWebGLAvailable: isWebGLAvailable$2
-});
-
-// AUTO-GENERATED FILE — DO NOT EDIT.
-// Source: filters/shaders/webgpu/bilateral.wgsl
-// Regenerate with `npm run build:shaders`.
-const source$J = `struct Params {
-  width: u32,
-  height: u32,
-  radius: u32,
-  rowOffset: u32,
-  sigmaSpatial2: f32,
-  sigmaRange2: f32,
-  _pad1: f32,
-  _pad2: f32,
-};
-
-// Pipeline-overridable — real value supplied via
-// GPUComputePipelineDescriptor.compute.constants (see getPipeline() in
-// webgpu.ts, which injects it for every pipeline by default).
-override WORKGROUP_SIZE: u32 = 8u;
-
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
-@group(0) @binding(2) var<storage, read_write> outputImage: array<f32>;
-@group(0) @binding(3) var<storage, read> spatialWeights: array<f32>;
-
-fn samplePixel(x: i32, y: i32) -> f32 {
-  let cx = clamp(x, 0, i32(params.width) - 1);
-  let cy = clamp(y, 0, i32(params.height) - 1);
-  return inputImage[cy * i32(params.width) + cx];
-}
-
-@compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let x = i32(gid.x);
-  // gid.y is relative to the current chunk; rowOffset shifts it back into
-  // the coordinate space of the full image.
-  let y = i32(gid.y) + i32(params.rowOffset);
-  if (x >= i32(params.width) || y >= i32(params.height)) {
-    return;
-  }
-
-  let r = i32(params.radius);
-  let center = samplePixel(x, y);
-
-  var sum: f32 = 0.0;
-  var weightSum: f32 = 0.0;
-  var idx: u32 = 0u;
-
-  for (var dy = -r; dy <= r; dy = dy + 1) {
-    for (var dx = -r; dx <= r; dx = dx + 1) {
-      let neighbor = samplePixel(x + dx, y + dy);
-      let diff = neighbor - center;
-      let rangeWeight = exp(-(diff * diff) / params.sigmaRange2);
-      let weight = spatialWeights[idx] * rangeWeight;
-      sum = sum + neighbor * weight;
-      weightSum = weightSum + weight;
-      idx = idx + 1u;
-    }
-  }
-
-  outputImage[y * i32(params.width) + x] = select(center, sum / weightSum, weightSum > 0.0);
-}
-`;
-
-// AUTO-GENERATED FILE — DO NOT EDIT.
-// Source: filters/shaders/webgpu/kuwahara.wgsl
-// Regenerate with `npm run build:shaders`.
-const source$I = `struct Params {
-  width: u32,
-  height: u32,
-  radius: u32,
-  _pad: u32,
-};
-
-override WORKGROUP_SIZE: u32 = 8u;
-
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
-@group(0) @binding(2) var<storage, read_write> outputImage: array<f32>;
-
-fn samplePixel(x: i32, y: i32) -> f32 {
-  let cx = clamp(x, 0, i32(params.width) - 1);
-  let cy = clamp(y, 0, i32(params.height) - 1);
-  return inputImage[cy * i32(params.width) + cx];
-}
-
-fn quadrantStats(x: i32, y: i32, x0: i32, x1: i32, y0: i32, y1: i32) -> vec2<f32> {
-  var sum: f32 = 0.0;
-  var sumSq: f32 = 0.0;
-  var count: f32 = 0.0;
-  for (var dy = y0; dy <= y1; dy = dy + 1) {
-    for (var dx = x0; dx <= x1; dx = dx + 1) {
-      let v = samplePixel(x + dx, y + dy);
-      sum = sum + v;
-      sumSq = sumSq + v * v;
-      count = count + 1.0;
-    }
-  }
-  let mean = sum / count;
-  let variance = (sumSq / count) - (mean * mean);
-  return vec2<f32>(mean, variance);
-}
-
-@compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= i32(params.width) || y >= i32(params.height)) {
-    return;
-  }
-
-  let r = i32(params.radius);
-
-  // Four quadrants: top-left, top-right, bottom-left, bottom-right.
-  let q0 = quadrantStats(x, y, -r, 0, -r, 0);
-  let q1 = quadrantStats(x, y, 0, r, -r, 0);
-  let q2 = quadrantStats(x, y, -r, 0, 0, r);
-  let q3 = quadrantStats(x, y, 0, r, 0, r);
-
-  var bestMean = q0.x;
-  var minVariance = q0.y;
-
-  if (q1.y < minVariance) { minVariance = q1.y; bestMean = q1.x; }
-  if (q2.y < minVariance) { minVariance = q2.y; bestMean = q2.x; }
-  if (q3.y < minVariance) { minVariance = q3.y; bestMean = q3.x; }
-
-  outputImage[y * i32(params.width) + x] = bestMean;
-}
-`;
-
-// AUTO-GENERATED FILE — DO NOT EDIT.
-// Source: filters/shaders/webgpu/gaussian.wgsl
-// Regenerate with `npm run build:shaders`.
-const source$H = `struct Params {
-  width: u32,
-  height: u32,
-  radius: u32,
-  _pad: u32,
-};
-
-override WORKGROUP_SIZE: u32 = 8u;
-
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
-@group(0) @binding(2) var<storage, read> kernelWeights: array<f32>;
-@group(0) @binding(3) var<storage, read_write> outputImage: array<f32>;
-
-@compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
-fn main_h(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= i32(params.width) || y >= i32(params.height)) {
-    return;
-  }
-  let r = i32(params.radius);
-  var sum: f32 = 0.0;
-  for (var k = 0; k <= 2 * r; k = k + 1) {
-    let sx = clamp(x + k - r, 0, i32(params.width) - 1);
-    sum = sum + inputImage[y * i32(params.width) + sx] * kernelWeights[k];
-  }
-  outputImage[y * i32(params.width) + x] = sum;
-}
-
-@compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
-fn main_v(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= i32(params.width) || y >= i32(params.height)) {
-    return;
-  }
-  let r = i32(params.radius);
-  var sum: f32 = 0.0;
-  for (var k = 0; k <= 2 * r; k = k + 1) {
-    let sy = clamp(y + k - r, 0, i32(params.height) - 1);
-    sum = sum + inputImage[sy * i32(params.width) + x] * kernelWeights[k];
-  }
-  outputImage[y * i32(params.width) + x] = sum;
-}
-`;
-
-// AUTO-GENERATED FILE — DO NOT EDIT.
-// Source: filters/shaders/webgpu/histogram.wgsl
-// Regenerate with `npm run build:shaders`.
-const source$G = `struct Params {
-  width: u32,
-  height: u32,
-  _pad0: u32,
-  _pad1: u32,
-};
-
-override WORKGROUP_SIZE: u32 = 8u;
-
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
-@group(0) @binding(2) var<storage, read_write> histogram: array<atomic<u32>>;
-
-@compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= i32(params.width) || y >= i32(params.height)) {
-    return;
-  }
-  let v = clamp(inputImage[y * i32(params.width) + x], 0.0, 1.0);
-  let bin = u32(v * 255.0 + 0.5);
-  atomicAdd(&histogram[min(bin, 255u)], 1u);
-}
-`;
-
-// AUTO-GENERATED FILE — DO NOT EDIT.
-// Source: filters/shaders/webgpu/stretch.wgsl
-// Regenerate with `npm run build:shaders`.
-const source$F = `struct Params {
-  width: u32,
-  height: u32,
-  minVal: f32,
-  range: f32,
-};
-
-override WORKGROUP_SIZE: u32 = 8u;
-
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
-@group(0) @binding(2) var<storage, read_write> outputImage: array<f32>;
-
-@compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= i32(params.width) || y >= i32(params.height)) {
-    return;
-  }
-  let idx = y * i32(params.width) + x;
-  let v = (inputImage[idx] - params.minVal) / params.range;
-  outputImage[idx] = clamp(v, 0.0, 1.0);
-}
-`;
-
-// AUTO-GENERATED FILE — DO NOT EDIT.
-// Source: filters/shaders/webgpu/quantize.wgsl
-// Regenerate with `npm run build:shaders`.
-const source$E = `struct Params {
-  width: u32,
-  height: u32,
-  step: f32,
-  _pad: f32,
-};
-
-override WORKGROUP_SIZE: u32 = 8u;
-
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
-@group(0) @binding(2) var<storage, read_write> outputImage: array<f32>;
-
-@compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= i32(params.width) || y >= i32(params.height)) {
-    return;
-  }
-  let idx = y * i32(params.width) + x;
-  outputImage[idx] = round(inputImage[idx] / params.step) * params.step;
-}
-`;
-
-// AUTO-GENERATED FILE — DO NOT EDIT.
-// Source: filters/shaders/webgpu/median.wgsl
-// Regenerate with `npm run build:shaders`.
-const source$D = `struct Params {
-  width: u32,
-  height: u32,
-  radius: u32,
-  _pad: u32,
-};
-
-override WORKGROUP_SIZE: u32 = 8u;
-
-// N (the per-pixel neighborhood size, (2*radius+1)^2) sizes a plain
-// function-local \`var\`, not a \`var<workgroup>\` one — WGSL's override-as-
-// array-size exception only covers the latter, so N can't become an
-// \`override\`. It has to stay a real \`const\`, resolved at shader-module
-// creation. That means it genuinely can't be fixed at build time; a new
-// module is compiled per distinct radius, same as before. __N__ is
-// substituted at runtime in medianShaderSource() (webgpu.ts) — the one
-// remaining spot in this codebase that still needs string templating,
-// and for a language-level reason rather than convenience.
-const N: u32 = __N__u;
-
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
-@group(0) @binding(2) var<storage, read_write> outputImage: array<f32>;
-
-fn samplePixel(x: i32, y: i32) -> f32 {
-  let cx = clamp(x, 0, i32(params.width) - 1);
-  let cy = clamp(y, 0, i32(params.height) - 1);
-  return inputImage[cy * i32(params.width) + cx];
-}
-
-@compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= i32(params.width) || y >= i32(params.height)) {
-    return;
-  }
-
-  let r = i32(params.radius);
-  var vals: array<f32, N>;
-  var idx: u32 = 0u;
-  for (var dy = -r; dy <= r; dy = dy + 1) {
-    for (var dx = -r; dx <= r; dx = dx + 1) {
-      vals[idx] = samplePixel(x + dx, y + dy);
-      idx = idx + 1u;
-    }
-  }
-
-  // Insertion sort: O(n^2), fine for the small neighborhoods used here
-  // (n = (2*radius+1)^2, e.g. 25 at radius 2).
-  for (var i = 1u; i < N; i = i + 1u) {
-    let key = vals[i];
-    var j = i;
-    while (j > 0u && vals[j - 1u] > key) {
-      vals[j] = vals[j - 1u];
-      j = j - 1u;
-    }
-    vals[j] = key;
-  }
-
-  outputImage[y * i32(params.width) + x] = vals[N / 2u];
-}
-`;
-
-/**
- * WebGPU-accelerated preprocessing module for XDoG/FDoG
- *
- * Even faster than WebGL implementations
- */
-/* ==================================================================== */
-/* GPU device management                                                */
-/* ==================================================================== */
-let cachedDevice$1 = null;
-let deviceInitPromise$1 = null;
-/**
- * Deeper async check: confirms an adapter is actually obtainable, not
- * just that `navigator.gpu` exists.
- */
-async function getWebGPUUnsupportedReason$1() {
-    if (typeof navigator === 'undefined' || !navigator.gpu) {
-        return 'navigator.gpu is not available in this environment';
-    }
-    try {
-        const adapter = await navigator.gpu.requestAdapter();
-        if (!adapter) {
-            return 'No suitable GPU adapter was found';
-        }
-    }
-    catch (err) {
-        return `Failed to request a GPU adapter: ${err.message}`;
-    }
-    return undefined;
-}
-async function getWebGPUDevice$1() {
-    if (cachedDevice$1)
-        return cachedDevice$1;
-    if (deviceInitPromise$1)
-        return deviceInitPromise$1;
-    deviceInitPromise$1 = (async () => {
-        if (!isWebGLComputeSupported()) {
-            throw new Error('WebGPU is not supported in this environment (navigator.gpu is missing)');
-        }
-        const adapter = await navigator.gpu.requestAdapter();
-        if (!adapter) {
-            throw new Error('Failed to acquire a WebGPU adapter');
-        }
-        const device = await adapter.requestDevice();
-        device.lost.then((info) => {
-            // Invalidate the cache so the next call reinitializes a fresh device.
-            cachedDevice$1 = null;
-            deviceInitPromise$1 = null;
-            clearShaderCaches$1();
-            console.warn(`WebGPU device lost: ${info.message}`);
-        });
-        cachedDevice$1 = device;
-        return device;
-    })();
-    return deviceInitPromise$1;
-}
-/** Release the cached device. Mainly useful for tests / hot reload. */
-function disposeWebGPU$1() {
-    cachedDevice$1?.destroy();
-    cachedDevice$1 = null;
-    deviceInitPromise$1 = null;
-}
-/* ==================================================================== */
-/* Low-level GPU helpers                                                 */
-/* ==================================================================== */
-const WORKGROUP_SIZE$3 = 8;
-function workgroupCount$1(size) {
-    return Math.ceil(size / WORKGROUP_SIZE$3);
-}
-function createUniformBuffer$1(device, data) {
-    const buffer = device.createBuffer({
-        size: data.byteLength,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        mappedAtCreation: true,
-    });
-    new Uint8Array(buffer.getMappedRange()).set(new Uint8Array(data));
-    buffer.unmap();
-    return buffer;
-}
-function createReadOnlyStorageBuffer$1(device, data) {
-    const buffer = device.createBuffer({
-        size: data.byteLength,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-        mappedAtCreation: true,
-    });
-    new Float32Array(buffer.getMappedRange()).set(data);
-    buffer.unmap();
-    return buffer;
-}
-function createOutputStorageBuffer$1(device, byteLength) {
-    return device.createBuffer({
-        size: byteLength,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-    });
-}
-async function readFloat32Buffer$1(device, buffer, length) {
-    const byteLength = length * 4;
-    const staging = device.createBuffer({
-        size: byteLength,
-        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-    });
-    const encoder = device.createCommandEncoder();
-    encoder.copyBufferToBuffer(buffer, 0, staging, 0, byteLength);
-    device.queue.submit([encoder.finish()]);
-    await staging.mapAsync(GPUMapMode.READ);
-    const copy = new Float32Array(staging.getMappedRange().slice(0));
-    staging.unmap();
-    staging.destroy();
-    return copy;
-}
-// Shader modules are cached by cacheKey so pipelines that share a module
-// (e.g. the two Gaussian blur passes) don't recompile it twice.
-const moduleCache$1 = new Map();
-const pipelineCache$1 = new Map();
-function getShaderModule$1(device, cacheKey, code) {
-    let module = moduleCache$1.get(cacheKey);
-    if (!module) {
-        module = device.createShaderModule({ code });
-        moduleCache$1.set(cacheKey, module);
-    }
-    return module;
-}
-// in webgpu.ts, near moduleCache/pipelineCache
-function clearShaderCaches$1() {
-    moduleCache$1.clear();
-    pipelineCache$1.clear();
-}
-function getPipeline$1(device, cacheKey, code, entryPoint) {
-    const key = `${cacheKey}::${entryPoint}`;
-    let pipeline = pipelineCache$1.get(key);
-    if (!pipeline) {
-        const module = getShaderModule$1(device, cacheKey, code);
-        pipeline = device.createComputePipeline({
-            layout: 'auto',
-            compute: { module, entryPoint, constants: { WORKGROUP_SIZE: WORKGROUP_SIZE$3 } },
-        });
-        pipelineCache$1.set(key, pipeline);
-    }
-    return pipeline;
-}
-function dispatch$1(device, pipeline, bindGroup, width, height) {
-    const encoder = device.createCommandEncoder();
-    const pass = encoder.beginComputePass();
-    pass.setPipeline(pipeline);
-    pass.setBindGroup(0, bindGroup);
-    pass.dispatchWorkgroups(workgroupCount$1(width), workgroupCount$1(height));
-    pass.end();
-    device.queue.submit([encoder.finish()]);
-}
-/* ==================================================================== */
-/* Bilateral Filter                                                      */
-/* ==================================================================== */
-/**
- * The `rowOffset` field lets a single dispatch cover only a band of rows
- * of a much taller image (see the chunking loop in `process()` below).
- * `spatialWeights` is a precomputed (2*radius+1)^2 lookup table for the
- * spatial term of the bilateral weight, which depends only on (dx, dy)
- * and is identical for every pixel. Computing it on the CPU once instead
- * of calling `exp()` for it on every shader invocation roughly halves the
- * transcendental-function work in the inner loop.
- */
-let GPUBilateralFilter$1 = class GPUBilateralFilter extends BaseWebGPUStrategy {
-    static async isSupported() {
-        return isWebGLComputeSupported() && (await getWebGPUUnsupportedReason$1()) === undefined;
-    }
-    static getUnsupportedReason() {
-        return getWebGPUUnsupportedReason$1();
-    }
-    async apply(input, config) {
-        const device = await getWebGPUDevice$1();
-        const { width, height } = input;
-        const cfg = { ...DEFAULT_BILATERAL_CONFIG$3, ...config };
-        const radius = Math.ceil(cfg.sigmaSpatial * (cfg.radiusMultiplier ?? 2));
-        const side = 2 * radius + 1;
-        if (radius > 15) {
-            console.warn(`GPUBilateralFilter: radius=${radius} (from sigmaSpatial=${cfg.sigmaSpatial}) means ` +
-                `${side * side} samples/pixel. On large images this can still be expensive enough ` +
-                `to run long even chunked; consider a smaller sigmaSpatial/radiusMultiplier if you ` +
-                `see slowdowns or device loss.`);
-        }
-        // Precompute the spatial weight term (depends only on dx, dy - identical
-        // for every pixel) once on the CPU instead of recomputing it with exp()
-        // on every shader invocation for every pixel.
-        const spatialLUT = new Float32Array(side * side);
-        {
-            const sigmaSpatial2 = 2 * cfg.sigmaSpatial * cfg.sigmaSpatial;
-            let li = 0;
-            for (let dy = -radius; dy <= radius; dy++) {
-                for (let dx = -radius; dx <= radius; dx++) {
-                    spatialLUT[li++] = Math.exp(-(dx * dx + dy * dy) / sigmaSpatial2);
-                }
-            }
-        }
-        const uniformData = new ArrayBuffer(32);
-        const u32View = new Uint32Array(uniformData);
-        const f32View = new Float32Array(uniformData);
-        u32View[0] = width;
-        u32View[1] = height;
-        u32View[2] = radius;
-        u32View[3] = 0; // rowOffset - updated per chunk in the loop below
-        f32View[4] = 2 * cfg.sigmaSpatial * cfg.sigmaSpatial;
-        f32View[5] = 2 * cfg.sigmaRange * cfg.sigmaRange;
-        return this.runGuarded(device, async () => {
-            const uniformBuffer = createUniformBuffer$1(device, uniformData);
-            const inputBuffer = createReadOnlyStorageBuffer$1(device, input.data);
-            const outputBuffer = createOutputStorageBuffer$1(device, input.data.byteLength);
-            const spatialWeightsBuffer = createReadOnlyStorageBuffer$1(device, spatialLUT);
-            const pipeline = getPipeline$1(device, 'bilateral', source$J, 'main');
-            const bindGroup = device.createBindGroup({
-                layout: pipeline.getBindGroupLayout(0),
-                entries: [
-                    { binding: 0, resource: { buffer: uniformBuffer } },
-                    { binding: 1, resource: { buffer: inputBuffer } },
-                    { binding: 2, resource: { buffer: outputBuffer } },
-                    { binding: 3, resource: { buffer: spatialWeightsBuffer } },
-                ],
-            });
-            // Large images combined with large radii make width * height *
-            // (2*radius+1)^2 samples in a single dispatch, which can run long
-            // enough to exceed the GPU driver's watchdog timeout and bring down
-            // the whole device (VK_ERROR_DEVICE_LOST) instead of just failing
-            // this operation. Splitting the work into row bands, each submitted
-            // and awaited independently, keeps any single submission short.
-            // ROWS_PER_CHUNK is sized so that each chunk does roughly the same
-            // amount of total sampling work regardless of image width or radius.
-            const ROWS_PER_CHUNK = Math.max(1, Math.floor(4_000_000 / (width * side * side)));
-            for (let y0 = 0; y0 < height; y0 += ROWS_PER_CHUNK) {
-                const rows = Math.min(ROWS_PER_CHUNK, height - y0);
-                device.queue.writeBuffer(uniformBuffer, 12, new Uint32Array([y0]));
-                const encoder = device.createCommandEncoder();
-                const pass = encoder.beginComputePass();
-                pass.setPipeline(pipeline);
-                pass.setBindGroup(0, bindGroup);
-                pass.dispatchWorkgroups(workgroupCount$1(width), workgroupCount$1(rows));
-                pass.end();
-                device.queue.submit([encoder.finish()]);
-            }
-            const resultData = await readFloat32Buffer$1(device, outputBuffer, width * height);
-            uniformBuffer.destroy();
-            inputBuffer.destroy();
-            outputBuffer.destroy();
-            spatialWeightsBuffer.destroy();
-            return { data: resultData, width, height };
-        });
-    }
-};
-/* ==================================================================== */
-/* Median Filter                                                         */
-/* ==================================================================== */
-// N (the per-pixel neighborhood size) sizes a function-local `var`, not a
-// `var<workgroup>` one, so it can't become a WGSL `override`. The
-// override-as-array-size exception only covers workgroup-address-space
-// arrays (see median.wgsl's comment for the full explanation). It's a
-// genuine `const`, so it still has to be baked per radius at the string
-// level; a new shader module is compiled (and cached by getPipeline's
-// cacheKey) for each distinct radius, same as before this migration.
-function medianShaderSource$1(radius) {
-    const side = 2 * radius + 1;
-    const n = side * side;
-    return source$D.replace('__N__', String(n));
-}
-let GPUMedianFilter$1 = class GPUMedianFilter extends BaseWebGPUStrategy {
-    static async isSupported() {
-        return isWebGLComputeSupported() && (await getWebGPUUnsupportedReason$1()) === undefined;
-    }
-    static getUnsupportedReason() {
-        return getWebGPUUnsupportedReason$1();
-    }
-    async apply(input, config) {
-        const cfg = { ...DEFAULT_MEDIAN_CONFIG$3, ...config };
-        if (cfg.radius > 6) {
-            console.warn(`GPUMedianFilter: radius=${cfg.radius} means a per-pixel ` +
-                `neighborhood array of ${(2 * cfg.radius + 1) ** 2} elements, ` +
-                `sorted in-shader with an O(n^2) insertion sort. This can get slow ` +
-                `and register-heavy fast; consider a smaller radius on GPU.`);
-        }
-        const device = await getWebGPUDevice$1();
-        const { width, height } = input;
-        const radius = cfg.radius;
-        const uniformData = new ArrayBuffer(16);
-        const u32View = new Uint32Array(uniformData);
-        u32View[0] = width;
-        u32View[1] = height;
-        u32View[2] = radius;
-        return this.runGuarded(device, async () => {
-            const uniformBuffer = createUniformBuffer$1(device, uniformData);
-            const inputBuffer = createReadOnlyStorageBuffer$1(device, input.data);
-            const outputBuffer = createOutputStorageBuffer$1(device, input.data.byteLength);
-            const cacheKey = `median-r${radius}`;
-            const pipeline = getPipeline$1(device, cacheKey, medianShaderSource$1(radius), 'main');
-            const bindGroup = device.createBindGroup({
-                layout: pipeline.getBindGroupLayout(0),
-                entries: [
-                    { binding: 0, resource: { buffer: uniformBuffer } },
-                    { binding: 1, resource: { buffer: inputBuffer } },
-                    { binding: 2, resource: { buffer: outputBuffer } },
-                ],
-            });
-            dispatch$1(device, pipeline, bindGroup, width, height);
-            const resultData = await readFloat32Buffer$1(device, outputBuffer, width * height);
-            uniformBuffer.destroy();
-            inputBuffer.destroy();
-            outputBuffer.destroy();
-            return { data: resultData, width, height };
-        });
-    }
-};
-/* ==================================================================== */
-/* Kuwahara Filter                                                       */
-/* ==================================================================== */
-let GPUKuwaharaFilter$1 = class GPUKuwaharaFilter extends BaseWebGPUStrategy {
-    static async isSupported() {
-        return isWebGLComputeSupported() && (await getWebGPUUnsupportedReason$1()) === undefined;
-    }
-    static getUnsupportedReason() {
-        return getWebGPUUnsupportedReason$1();
-    }
-    async apply(input, config) {
-        const cfg = { ...DEFAULT_KUWAHARA_CONFIG$3, ...config };
-        const device = await getWebGPUDevice$1();
-        const { width, height } = input;
-        const radius = cfg.radius;
-        const uniformData = new ArrayBuffer(16);
-        const u32View = new Uint32Array(uniformData);
-        u32View[0] = width;
-        u32View[1] = height;
-        u32View[2] = radius;
-        return this.runGuarded(device, async () => {
-            const uniformBuffer = createUniformBuffer$1(device, uniformData);
-            const inputBuffer = createReadOnlyStorageBuffer$1(device, input.data);
-            const outputBuffer = createOutputStorageBuffer$1(device, input.data.byteLength);
-            const pipeline = getPipeline$1(device, 'kuwahara', source$I, 'main');
-            const bindGroup = device.createBindGroup({
-                layout: pipeline.getBindGroupLayout(0),
-                entries: [
-                    { binding: 0, resource: { buffer: uniformBuffer } },
-                    { binding: 1, resource: { buffer: inputBuffer } },
-                    { binding: 2, resource: { buffer: outputBuffer } },
-                ],
-            });
-            dispatch$1(device, pipeline, bindGroup, width, height);
-            const resultData = await readFloat32Buffer$1(device, outputBuffer, width * height);
-            uniformBuffer.destroy();
-            inputBuffer.destroy();
-            outputBuffer.destroy();
-            return { data: resultData, width, height };
-        });
-    }
-};
-/* ==================================================================== */
-/* Gaussian Blur (separable, two compute passes)                        */
-/* ==================================================================== */
-let GPUGaussianBlur$1 = class GPUGaussianBlur extends BaseWebGPUStrategy {
-    static async isSupported() {
-        return isWebGLComputeSupported() && (await getWebGPUUnsupportedReason$1()) === undefined;
-    }
-    static getUnsupportedReason() {
-        return getWebGPUUnsupportedReason$1();
-    }
-    async apply(input, config) {
-        const { width, height } = input;
-        const cfg = { ...DEFAULT_GAUSSIAN_CONFIG, ...config };
-        if (cfg.sigma < 0.1) {
-            return { data: new Float32Array(input.data), width, height };
-        }
-        const device = await getWebGPUDevice$1();
-        const radius = Math.ceil(cfg.sigma * 3);
-        const kernelSize = radius * 2 + 1;
-        const kernel = generateGaussianKernel$1(cfg.sigma, kernelSize);
-        const uniformData = new ArrayBuffer(16);
-        const u32View = new Uint32Array(uniformData);
-        u32View[0] = width;
-        u32View[1] = height;
-        u32View[2] = radius;
-        return this.runGuarded(device, async () => {
-            const uniformBuffer = createUniformBuffer$1(device, uniformData);
-            const inputBuffer = createReadOnlyStorageBuffer$1(device, input.data);
-            const kernelBuffer = createReadOnlyStorageBuffer$1(device, new Float32Array(kernel));
-            const tempBuffer = createOutputStorageBuffer$1(device, input.data.byteLength);
-            const outputBuffer = createOutputStorageBuffer$1(device, input.data.byteLength);
-            const pipelineH = getPipeline$1(device, 'gaussian', source$H, 'main_h');
-            const pipelineV = getPipeline$1(device, 'gaussian', source$H, 'main_v');
-            const bindGroupH = device.createBindGroup({
-                layout: pipelineH.getBindGroupLayout(0),
-                entries: [
-                    { binding: 0, resource: { buffer: uniformBuffer } },
-                    { binding: 1, resource: { buffer: inputBuffer } },
-                    { binding: 2, resource: { buffer: kernelBuffer } },
-                    { binding: 3, resource: { buffer: tempBuffer } },
-                ],
-            });
-            const bindGroupV = device.createBindGroup({
-                layout: pipelineV.getBindGroupLayout(0),
-                entries: [
-                    { binding: 0, resource: { buffer: uniformBuffer } },
-                    { binding: 1, resource: { buffer: tempBuffer } },
-                    { binding: 2, resource: { buffer: kernelBuffer } },
-                    { binding: 3, resource: { buffer: outputBuffer } },
-                ],
-            });
-            // Both passes are recorded on one command encoder before submission,
-            // so the vertical pass reliably waits for the horizontal pass's writes
-            // to tempBuffer (WebGPU commands within one queue submission execute
-            // in program order with respect to buffer dependencies).
-            const encoder = device.createCommandEncoder();
-            let pass = encoder.beginComputePass();
-            pass.setPipeline(pipelineH);
-            pass.setBindGroup(0, bindGroupH);
-            pass.dispatchWorkgroups(workgroupCount$1(width), workgroupCount$1(height));
-            pass.end();
-            pass = encoder.beginComputePass();
-            pass.setPipeline(pipelineV);
-            pass.setBindGroup(0, bindGroupV);
-            pass.dispatchWorkgroups(workgroupCount$1(width), workgroupCount$1(height));
-            pass.end();
-            device.queue.submit([encoder.finish()]);
-            const resultData = await readFloat32Buffer$1(device, outputBuffer, width * height);
-            uniformBuffer.destroy();
-            inputBuffer.destroy();
-            kernelBuffer.destroy();
-            tempBuffer.destroy();
-            outputBuffer.destroy();
-            return { data: resultData, width, height };
-        });
-    }
-};
-/* ==================================================================== */
-/* Contrast Enhancement (histogram-based percentile approximation)      */
-/* ==================================================================== */
-let GPUContrastEnhancer$1 = class GPUContrastEnhancer extends BaseWebGPUStrategy {
-    static async isSupported() {
-        return isWebGLComputeSupported() && (await getWebGPUUnsupportedReason$1()) === undefined;
-    }
-    static getUnsupportedReason() {
-        return getWebGPUUnsupportedReason$1();
-    }
-    /**
-     * The CPU version sorts every pixel to find exact percentiles. Sorting
-     * is a poor fit for a GPU compute pass, so this builds a 256-bin
-     * histogram instead (one atomicAdd per pixel), reads the 1KB histogram
-     * back to the CPU to locate the percentile bins, then runs a second,
-     * fully GPU-resident pass to apply the stretch. This trades a small
-     * amount of precision (bin width 1/255) for O(n) work instead of an
-     * O(n log n) sort, at the cost of one small CPU/GPU sync point.
-     *
-     * The two GPU round-trips (histogram pass, then stretch pass) are each
-     * wrapped in their own runGuarded scope rather than one scope spanning
-     * both. The CPU-side histogram bucketing that happens between them
-     * isn't GPU work, so it shouldn't sit inside a WebGPU error scope.
-     */
-    async apply(input, config) {
-        const { blackPoint, whitePoint } = { ...DEFAULT_CONTRAST_ENHANCEMENT_CONFIG, ...config };
-        const device = await getWebGPUDevice$1();
-        const { width, height } = input;
-        const size = width * height;
-        const histUniform = new ArrayBuffer(16);
-        new Uint32Array(histUniform).set([width, height, 0, 0]);
-        const histogramU32 = await this.runGuarded(device, async () => {
-            const histUniformBuffer = createUniformBuffer$1(device, histUniform);
-            const histInputBuffer = createReadOnlyStorageBuffer$1(device, input.data);
-            const histogramBuffer = device.createBuffer({
-                size: 256 * 4,
-                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
-            });
-            device.queue.writeBuffer(histogramBuffer, 0, new Uint32Array(256));
-            const histPipeline = getPipeline$1(device, 'histogram', source$G, 'main');
-            const histBindGroup = device.createBindGroup({
-                layout: histPipeline.getBindGroupLayout(0),
-                entries: [
-                    { binding: 0, resource: { buffer: histUniformBuffer } },
-                    { binding: 1, resource: { buffer: histInputBuffer } },
-                    { binding: 2, resource: { buffer: histogramBuffer } },
-                ],
-            });
-            dispatch$1(device, histPipeline, histBindGroup, width, height);
-            const result = await readUint32Buffer$1(device, histogramBuffer, 256);
-            histUniformBuffer.destroy();
-            histInputBuffer.destroy();
-            histogramBuffer.destroy();
-            return result;
-        });
-        const blackCount = blackPoint * size;
-        const whiteCount = whitePoint * size;
-        let cumulative = 0;
-        let minBin = 0;
-        let maxBin = 255;
-        let foundMin = false;
-        for (let bin = 0; bin < 256; bin++) {
-            cumulative += histogramU32[bin];
-            if (!foundMin && cumulative >= blackCount) {
-                minBin = bin;
-                foundMin = true;
-            }
-            if (cumulative >= whiteCount) {
-                maxBin = bin;
-                break;
-            }
-        }
-        const minVal = minBin / 255;
-        const maxVal = maxBin / 255;
-        const range = maxVal - minVal;
-        if (range < 0.01) {
-            return { data: new Float32Array(input.data), width, height };
-        }
-        const stretchUniform = new ArrayBuffer(16);
-        const stretchU32 = new Uint32Array(stretchUniform);
-        const stretchF32 = new Float32Array(stretchUniform);
-        stretchU32[0] = width;
-        stretchU32[1] = height;
-        stretchF32[2] = minVal;
-        stretchF32[3] = range;
-        return this.runGuarded(device, async () => {
-            const stretchUniformBuffer = createUniformBuffer$1(device, stretchUniform);
-            const stretchInputBuffer = createReadOnlyStorageBuffer$1(device, input.data);
-            const outputBuffer = createOutputStorageBuffer$1(device, input.data.byteLength);
-            const stretchPipeline = getPipeline$1(device, 'stretch', source$F, 'main');
-            const stretchBindGroup = device.createBindGroup({
-                layout: stretchPipeline.getBindGroupLayout(0),
-                entries: [
-                    { binding: 0, resource: { buffer: stretchUniformBuffer } },
-                    { binding: 1, resource: { buffer: stretchInputBuffer } },
-                    { binding: 2, resource: { buffer: outputBuffer } },
-                ],
-            });
-            dispatch$1(device, stretchPipeline, stretchBindGroup, width, height);
-            const resultData = await readFloat32Buffer$1(device, outputBuffer, width * height);
-            stretchUniformBuffer.destroy();
-            stretchInputBuffer.destroy();
-            outputBuffer.destroy();
-            return { data: resultData, width, height };
-        });
-    }
-};
-async function readUint32Buffer$1(device, buffer, length) {
-    const byteLength = length * 4;
-    const staging = device.createBuffer({
-        size: byteLength,
-        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-    });
-    const encoder = device.createCommandEncoder();
-    encoder.copyBufferToBuffer(buffer, 0, staging, 0, byteLength);
-    device.queue.submit([encoder.finish()]);
-    await staging.mapAsync(GPUMapMode.READ);
-    const copy = new Uint32Array(staging.getMappedRange().slice(0));
-    staging.unmap();
-    staging.destroy();
-    return copy;
-}
-/* ==================================================================== */
-/* Quantizer                                                             */
-/* ==================================================================== */
-let GPUQuantizer$1 = class GPUQuantizer extends BaseWebGPUStrategy {
-    static async isSupported() {
-        return isWebGLComputeSupported() && (await getWebGPUUnsupportedReason$1()) === undefined;
-    }
-    static getUnsupportedReason() {
-        return getWebGPUUnsupportedReason$1();
-    }
-    async apply(input, config) {
-        const cfg = { ...DEFAULT_QUANTIZER_CONFIG, ...config };
-        const device = await getWebGPUDevice$1();
-        const { width, height } = input;
-        const step = 1 / (cfg.levels - 1);
-        const uniformData = new ArrayBuffer(16);
-        const u32View = new Uint32Array(uniformData);
-        const f32View = new Float32Array(uniformData);
-        u32View[0] = width;
-        u32View[1] = height;
-        f32View[2] = step;
-        return this.runGuarded(device, async () => {
-            const uniformBuffer = createUniformBuffer$1(device, uniformData);
-            const inputBuffer = createReadOnlyStorageBuffer$1(device, input.data);
-            const outputBuffer = createOutputStorageBuffer$1(device, input.data.byteLength);
-            const pipeline = getPipeline$1(device, 'quantize', source$E, 'main');
-            const bindGroup = device.createBindGroup({
-                layout: pipeline.getBindGroupLayout(0),
-                entries: [
-                    { binding: 0, resource: { buffer: uniformBuffer } },
-                    { binding: 1, resource: { buffer: inputBuffer } },
-                    { binding: 2, resource: { buffer: outputBuffer } },
-                ],
-            });
-            dispatch$1(device, pipeline, bindGroup, width, height);
-            const resultData = await readFloat32Buffer$1(device, outputBuffer, width * height);
-            uniformBuffer.destroy();
-            inputBuffer.destroy();
-            outputBuffer.destroy();
-            return { data: resultData, width, height };
-        });
-    }
-};
-/* ==================================================================== */
-/* Presets and pipeline (async-native equivalents of cpu.ts's)           */
-/* ==================================================================== */
-/**
- * Preset preprocessing pipelines for common use cases.
- * async GPU equivalents of `PreprocessingPresets` in cpu.ts.
- */
-const GPUPreprocessingPresets = {
-    /** Light preprocessing - minimal smoothing. Good for clean studio photos, illustrations. */
-    light: (input) => new GPUBilateralFilter$1().apply(input, { sigmaSpatial: 2, sigmaRange: 0.08 }),
-    /** Standard preprocessing - balanced smoothing. Good for most outdoor photos, portraits. */
-    standard: (input) => new GPUBilateralFilter$1().apply(input, { sigmaSpatial: 4, sigmaRange: 0.1 }),
-    /** Heavy preprocessing - aggressive noise removal. Good for very textured images. */
-    heavy: async (input) => {
-        let result = await new GPUBilateralFilter$1().apply(input, { sigmaSpatial: 5, sigmaRange: 0.12 });
-        result = await new GPUBilateralFilter$1().apply(result, { sigmaSpatial: 3, sigmaRange: 0.1 });
-        return result;
-    },
-    /** Artistic preprocessing - painterly smoothing. Good for stylized/artistic output. */
-    artistic: async (input) => {
-        let result = await new GPUKuwaharaFilter$1().apply(input, { radius: 4 });
-        result = await new GPUBilateralFilter$1().apply(result, { sigmaSpatial: 2, sigmaRange: 0.08 });
-        return result;
-    },
-    /** Photo preprocessing - for photos with grass/nature. Good for landscape, outdoor scenes. */
-    nature: async (input) => {
-        let result = await new GPUBilateralFilter$1().apply(input, { sigmaSpatial: 6, sigmaRange: 0.15 });
-        result = await new GPUBilateralFilter$1().apply(result, { sigmaSpatial: 3, sigmaRange: 0.08 });
-        return result;
-    },
-};
-
-var webgpu = /*#__PURE__*/Object.freeze({
-    __proto__: null,
-    GPUBilateralFilter: GPUBilateralFilter$1,
-    GPUContrastEnhancer: GPUContrastEnhancer$1,
-    GPUGaussianBlur: GPUGaussianBlur$1,
-    GPUKuwaharaFilter: GPUKuwaharaFilter$1,
-    GPUMedianFilter: GPUMedianFilter$1,
-    GPUPreprocessingPresets: GPUPreprocessingPresets,
-    GPUQuantizer: GPUQuantizer$1,
-    clearShaderCaches: clearShaderCaches$1,
-    disposeWebGPU: disposeWebGPU$1,
-    getWebGPUUnsupportedReason: getWebGPUUnsupportedReason$1
-});
-
-/**
- * Preprocessing module for XDoG/FDoG
- *
- * Provides filters to prepare images before line detection.
- * These help reduce noise and texture while preserving important edges.
- *
- * Section 3.2 of the paper discusses the importance of bilateral
- * preprocessing for "indication" - attenuating weak edges while
- * preserving strong edges.
- */
-/**
- * Bilateral Filter
- *
- * Edge-preserving smoothing filter that averages pixels based on both
- * spatial proximity AND intensity similarity. This smooths out texture
- * (like grass) while keeping strong edges (like the car outline) sharp.
- *
- * This is the recommended preprocessing for most images.
- *
- * As mentioned in Section 3.2, bilateral filtering can serve as a
- * "prioritization mechanism" for indication - attenuating weak edges
- * while supporting strong edges.
- *
- * CPU is always available (BaseCPUStrategy.isSupported() / dispose() /
- * backend all apply unchanged). This is the universal fallback.
- */
-let BilateralFilter$3 = class BilateralFilter extends BaseCPUStrategy {
-    async apply(input, config) {
-        const cfg = { ...DEFAULT_BILATERAL_CONFIG$3, ...config };
-        const { width, height } = input;
-        const output = createChannelImage$1(width, height);
-        const radius = Math.ceil(cfg.sigmaSpatial * (cfg.radiusMultiplier ?? 2));
-        const sigmaSpatial2 = 2 * cfg.sigmaSpatial * cfg.sigmaSpatial;
-        const sigmaRange2 = 2 * cfg.sigmaRange * cfg.sigmaRange;
-        // Precompute spatial weights
-        const spatialWeights = [];
-        for (let dy = -radius; dy <= radius; dy++) {
-            for (let dx = -radius; dx <= radius; dx++) {
-                const dist2 = dx * dx + dy * dy;
-                spatialWeights.push(Math.exp(-dist2 / sigmaSpatial2));
-            }
-        }
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                const centerValue = getPixel(input, x, y);
-                let sum = 0;
-                let weightSum = 0;
-                let idx = 0;
-                for (let dy = -radius; dy <= radius; dy++) {
-                    for (let dx = -radius; dx <= radius; dx++) {
-                        const nx = x + dx;
-                        const ny = y + dy;
-                        const neighborValue = getPixel(input, nx, ny);
-                        // Range weight based on intensity difference
-                        const intensityDiff = neighborValue - centerValue;
-                        const rangeWeight = Math.exp(-(intensityDiff * intensityDiff) / sigmaRange2);
-                        // Combined weight
-                        const weight = spatialWeights[idx] * rangeWeight;
-                        sum += neighborValue * weight;
-                        weightSum += weight;
-                        idx++;
-                    }
-                }
-                output.data[y * width + x] = weightSum > 0 ? sum / weightSum : centerValue;
-            }
-        }
-        return output;
-    }
-};
-/**
- * Median Filter
- *
- * Replaces each pixel with the median of its neighborhood.
- * Excellent for removing salt-and-pepper noise and small texture details.
- */
-let MedianFilter$3 = class MedianFilter extends BaseCPUStrategy {
-    async apply(input, config) {
-        const cfg = { ...DEFAULT_MEDIAN_CONFIG$3, ...config };
-        const { width, height } = input;
-        const output = createChannelImage$1(width, height);
-        const radius = cfg.radius;
-        const kernelSize = (2 * radius + 1) * (2 * radius + 1);
-        const values = new Array(kernelSize);
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                let idx = 0;
-                for (let dy = -radius; dy <= radius; dy++) {
-                    for (let dx = -radius; dx <= radius; dx++) {
-                        values[idx++] = getPixel(input, x + dx, y + dy);
-                    }
-                }
-                // Sort and take median
-                values.sort((a, b) => a - b);
-                output.data[y * width + x] = values[Math.floor(kernelSize / 2)];
-            }
-        }
-        return output;
-    }
-};
-/**
- * Kuwahara Filter
- *
- * Artistic smoothing filter that creates a painterly effect.
- * Divides the neighborhood into 4 quadrants, finds the one with
- * lowest variance, and uses its mean. Creates flat regions with
- * preserved edges - great for a more stylized look.
- */
-let KuwaharaFilter$3 = class KuwaharaFilter extends BaseCPUStrategy {
-    async apply(input, config) {
-        const cfg = { ...DEFAULT_KUWAHARA_CONFIG$3, ...config };
-        const { width, height } = input;
-        const output = createChannelImage$1(width, height);
-        const r = cfg.radius;
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                // Four quadrants: top-left, top-right, bottom-left, bottom-right
-                const quadrants = [
-                    { startX: -r, endX: 0, startY: -r, endY: 0 },
-                    { startX: 0, endX: r, startY: -r, endY: 0 },
-                    { startX: -r, endX: 0, startY: 0, endY: r },
-                    { startX: 0, endX: r, startY: 0, endY: r },
-                ];
-                let minVariance = Infinity;
-                let bestMean = getPixel(input, x, y);
-                for (const q of quadrants) {
-                    let sum = 0;
-                    let sumSq = 0;
-                    let count = 0;
-                    for (let dy = q.startY; dy <= q.endY; dy++) {
-                        for (let dx = q.startX; dx <= q.endX; dx++) {
-                            const val = getPixel(input, x + dx, y + dy);
-                            sum += val;
-                            sumSq += val * val;
-                            count++;
-                        }
-                    }
-                    const mean = sum / count;
-                    const variance = (sumSq / count) - (mean * mean);
-                    if (variance < minVariance) {
-                        minVariance = variance;
-                        bestMean = mean;
-                    }
-                }
-                output.data[y * width + x] = bestMean;
-            }
-        }
-        return output;
-    }
-};
-/**
- * Gaussian Blur
- *
- * Simple Gaussian smoothing. Less edge-preserving than bilateral,
- * but faster. Good for very noisy images or when used with small sigma.
- */
-let GaussianBlur$3 = class GaussianBlur extends BaseCPUStrategy {
-    async apply(input, config) {
-        const { width, height } = input;
-        const sigma = config.sigma ?? DEFAULT_GAUSSIAN_CONFIG.sigma;
-        if (sigma < 0.1) {
-            return { data: new Float32Array(input.data), width, height };
-        }
-        const radius = Math.ceil(sigma * 3);
-        const kernelSize = radius * 2 + 1;
-        const kernel = generateGaussianKernel$1(sigma, kernelSize);
-        // Horizontal pass
-        const temp = createChannelImage$1(width, height);
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                let val = 0;
-                for (let k = 0; k < kernelSize; k++) {
-                    val += getPixel(input, x + k - radius, y) * kernel[k];
-                }
-                temp.data[y * width + x] = val;
-            }
-        }
-        // Vertical pass
-        const output = createChannelImage$1(width, height);
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                let val = 0;
-                for (let k = 0; k < kernelSize; k++) {
-                    val += getPixel(temp, x, y + k - radius) * kernel[k];
-                }
-                output.data[y * width + x] = val;
-            }
-        }
-        return output;
-    }
-};
-/**
- * Contrast Enhancement
- *
- * Stretches the histogram to use the full 0-1 range.
- * Can help make edges more distinct before processing.
- */
-let ContrastEnhancer$3 = class ContrastEnhancer extends BaseCPUStrategy {
-    async apply(input, config) {
-        const cfg = { ...DEFAULT_CONTRAST_ENHANCEMENT_CONFIG, ...config };
-        const { width, height, data } = input;
-        const output = createChannelImage$1(width, height);
-        const size = width * height;
-        // Find histogram percentiles
-        const sorted = new Float32Array(data).sort();
-        const minVal = sorted[Math.floor(size * cfg.blackPoint)];
-        const maxVal = sorted[Math.floor(size * cfg.whitePoint)];
-        const range = maxVal - minVal;
-        if (range < 0.01) {
-            return { data: new Float32Array(data), width, height };
-        }
-        for (let i = 0; i < size; i++) {
-            output.data[i] = Math.max(0, Math.min(1, (data[i] - minVal) / range));
-        }
-        return output;
-    }
-};
-/**
- * Quantize to reduce color levels
- *
- * Reduces the number of intensity levels, creating a posterized effect.
- * Can help reduce noise by grouping similar intensities together.
- */
-let Quantizer$3 = class Quantizer extends BaseCPUStrategy {
-    async apply(input, config) {
-        const cfg = { ...DEFAULT_QUANTIZER_CONFIG, ...config };
-        const { width, height, data } = input;
-        const output = createChannelImage$1(width, height);
-        const size = width * height;
-        const step = 1 / (cfg.levels - 1);
-        for (let i = 0; i < size; i++) {
-            output.data[i] = Math.round(data[i] / step) * step;
-        }
-        return output;
-    }
-};
-/**
- * Computes local variance as texture detection preprocessing
- *
- * STANDALONE PREPROCESSING: This class only detects texture.
- * It does NOT perform edge detection.
- *
- * Input: ChannelImage (typically grayscale image)
- * Output: ChannelImage with same dimensions where each pixel value
- *         represents texture strength (0 = pure structure, 1 = pure texture)
- *
- * The output can be:
- * 1. Passed to your XDoG/FDoG/HDoG implementation to modulate parameters
- * 2. Combined with other texture detection methods (Spectral, Patch-based)
- * 3. Visualized for debugging
- * 4. Processed through additional preprocessing steps
- *
- * Example:
- * ```
- * const filter = new LocalVarianceFilter({
- *   windowRadius: 2,
- *   normalizeByGradient: true,
- * });
- *
- * const textureMap = filter.apply(grayImage);
- * // textureMap.data[i] = texture strength at pixel i
- * // Now use textureMap with your own edge detection
- * ```
- */
-class LocalVarianceFilter {
-    /** CPU-only. No WebGL/WebGPU counterparts for this yet. */
-    backend = 'cpu';
-    defaultConfig = {
-        windowRadius: 2,
-        normalizeByGradient: true,
-        varianceScale: 1.0,
-        maxVariance: 1.0,
-    };
-    dispose() { }
-    /**
-     * Process using separable convolution (faster for large windows)
-     * Variance = E[X^2] - E[X]^2
-     * Compute box blur of X and X^2 separately, then combine
-     */
-    async apply(image, config) {
-        const { width, height, data } = image;
-        const cfg = { ...config, ...this.defaultConfig };
-        const { windowRadius, normalizeByGradient, varianceScale, maxVariance } = cfg;
-        // Step 1: Compute E[X] (mean) via box filter
-        const meanImage = this.boxBlur(data, width, height, windowRadius);
-        // Step 2: Compute E[X^2] via box filter on squared values
-        const squaredData = new Float32Array(data.length);
-        for (let i = 0; i < data.length; i++) {
-            squaredData[i] = data[i] * data[i];
-        }
-        const meanOfSquaresImage = this.boxBlur(squaredData, width, height, windowRadius);
-        // Step 3: Compute variance = E[X^2] - E[X]^2
-        const result = new Float32Array(data.length);
-        const gradientMap = normalizeByGradient ? this.computeGradientMap(data, width, height) : null;
-        for (let i = 0; i < data.length; i++) {
-            const mean = meanImage[i];
-            const variance = Math.max(0, meanOfSquaresImage[i] - mean * mean);
-            let textureStrength = variance * varianceScale;
-            if (normalizeByGradient && gradientMap) {
-                const gradient = gradientMap[i];
-                const gradientFactor = 1.0 / (1.0 + gradient * gradient);
-                textureStrength *= gradientFactor;
-            }
-            if (maxVariance !== undefined) {
-                textureStrength = Math.min(textureStrength, maxVariance);
-            }
-            result[i] = Math.min(1.0, textureStrength);
-        }
-        return { data: result, width, height };
-    }
-    /**
-     * Fast box blur using separable convolution + a sliding-window running sum.
-     *
-     * @remarks
-     * Each pass is O(width * height): the window sum is updated incrementally
-     * as it slides one pixel over (`sum += incoming - outgoing`) rather than
-     * being re-summed from scratch at every position, so cost no longer grows
-     * with `radius`. Edge pixels use clamp-to-edge boundary handling.
-     *
-     * Trade-off: because each sum is derived from the previous one instead of
-     * being recomputed from scratch, floating-point error can accumulate along
-     * a scan line, unlike the resum-per-pixel approach this replaces. This is
-     * negligible in practice for 0-1 normalized pixel values and the small
-     * radii (1-4) this filter supports.
-     *
-     * @private
-     */
-    boxBlur(data, width, height, radius) {
-        const windowSize = 2 * radius + 1;
-        // Horizontal pass: O(width) per row via a running sum, not O(width * radius).
-        const horizontal = new Float32Array(data.length);
-        for (let y = 0; y < height; y++) {
-            const rowOffset = y * width;
-            // Seed the window sum for x = 0 (the only O(radius) step per row).
-            let sum = 0;
-            for (let j = 0; j < windowSize; j++) {
-                const srcX = Math.max(0, Math.min(width - 1, j - radius));
-                sum += data[rowOffset + srcX];
-            }
-            horizontal[rowOffset] = sum / windowSize;
-            // Slide the window one column at a time: O(1) per step instead of O(radius).
-            for (let x = 1; x < width; x++) {
-                const outgoingX = Math.max(0, Math.min(width - 1, x - 1 - radius));
-                const incomingX = Math.max(0, Math.min(width - 1, x + radius));
-                sum += data[rowOffset + incomingX] - data[rowOffset + outgoingX];
-                horizontal[rowOffset + x] = sum / windowSize;
-            }
-        }
-        // Vertical pass: same sliding-window trick, now sliding down each column.
-        const result = new Float32Array(data.length);
-        for (let x = 0; x < width; x++) {
-            // Seed the window sum for y = 0.
-            let sum = 0;
-            for (let j = 0; j < windowSize; j++) {
-                const srcY = Math.max(0, Math.min(height - 1, j - radius));
-                sum += horizontal[srcY * width + x];
-            }
-            result[x] = sum / windowSize;
-            for (let y = 1; y < height; y++) {
-                const outgoingY = Math.max(0, Math.min(height - 1, y - 1 - radius));
-                const incomingY = Math.max(0, Math.min(height - 1, y + radius));
-                sum += horizontal[incomingY * width + x] - horizontal[outgoingY * width + x];
-                result[y * width + x] = sum / windowSize;
-            }
-        }
-        return result;
-    }
-    /**
-     * Compute gradient map using Sobel filter (separable for efficiency)
-     * @private
-     */
-    computeGradientMap(data, width, height) {
-        const result = new Float32Array(data.length);
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                if (x === 0 || x === width - 1 || y === 0 || y === height - 1) {
-                    result[y * width + x] = 0;
-                    continue;
-                }
-                const rowUp = (y - 1) * width;
-                const rowMid = y * width;
-                const rowDown = (y + 1) * width;
-                // Each neighbor read once and reused for both gx and gy
-                const tl = data[rowUp + x - 1];
-                const tm = data[rowUp + x];
-                const tr = data[rowUp + x + 1];
-                const ml = data[rowMid + x - 1];
-                const mr = data[rowMid + x + 1];
-                const bl = data[rowDown + x - 1];
-                const bm = data[rowDown + x];
-                const br = data[rowDown + x + 1];
-                // Sobel
-                const gx = (-tl + tr) - 2 * ml + 2 * mr - bl + br;
-                const gy = tl + 2 * tm + tr - bl - 2 * bm - br;
-                const magnitude = Math.sqrt(gx * gx + gy * gy);
-                result[y * width + x] = magnitude;
-            }
-        }
-        return result;
-    }
-}
-/**
- * Preset preprocessing pipelines for common use cases
- */
-const EdgeAwareFilterPresets = {
-    /**
-     * Light preprocessing - minimal smoothing
-     * Good for: Clean studio photos, illustrations
-     */
-    light: async (input) => {
-        return await new BilateralFilter$3().apply(input, { sigmaSpatial: 2, sigmaRange: 0.08 });
-    },
-    /**
-     * Standard preprocessing - balanced smoothing
-     * Good for: Most outdoor photos, portraits
-     */
-    standard: async (input) => {
-        return new BilateralFilter$3().apply(input, { sigmaSpatial: 4, sigmaRange: 0.1 });
-    },
-    /**
-     * Heavy preprocessing - aggressive noise removal
-     * Good for: Very textured images (grass, foliage, fabric)
-     */
-    heavy: async (input) => {
-        let result = await new BilateralFilter$3().apply(input, { sigmaSpatial: 5, sigmaRange: 0.12 });
-        result = await new BilateralFilter$3().apply(result, { sigmaSpatial: 3, sigmaRange: 0.1 });
-        return result;
-    },
-    /**
-     * Artistic preprocessing - painterly smoothing
-     * Good for: Stylized/artistic output
-     */
-    artistic: async (input) => {
-        let result = await new KuwaharaFilter$3().apply(input, { radius: 4 });
-        result = await new BilateralFilter$3().apply(result, { sigmaSpatial: 2, sigmaRange: 0.08 });
-        return result;
-    },
-    /**
-     * Photo preprocessing - for photos with grass/nature
-     * Good for: Landscape, outdoor scenes
-     */
-    nature: async (input) => {
-        // First pass: aggressive bilateral to smooth texture
-        let result = await new BilateralFilter$3().apply(input, { sigmaSpatial: 6, sigmaRange: 0.15 });
-        // Second pass: lighter bilateral to clean up
-        result = await new BilateralFilter$3().apply(result, { sigmaSpatial: 3, sigmaRange: 0.08 });
-        return result;
-    },
-};
-
-var cpu = /*#__PURE__*/Object.freeze({
-    __proto__: null,
-    BilateralFilter: BilateralFilter$3,
-    ContrastEnhancer: ContrastEnhancer$3,
-    EdgeAwareFilterPresets: EdgeAwareFilterPresets,
-    GaussianBlur: GaussianBlur$3,
-    KuwaharaFilter: KuwaharaFilter$3,
-    LocalVarianceFilter: LocalVarianceFilter,
-    MedianFilter: MedianFilter$3,
-    Quantizer: Quantizer$3
-});
-
-// AUTO-GENERATED FILE — DO NOT EDIT.
-// Source: filters/isotropic/shaders/webgpu-horizontal-blur.wgsl
-// Regenerate with `npm run build:shaders`.
-const source$C = `struct Params {
-  width: u32,
-  height: u32,
-  kernelSize: u32,
-  _pad: u32,
-}
-
-@group(0) @binding(0)
-var<uniform> params: Params;
-
-@group(0) @binding(1)
-var<storage, read> kernel: array<f32>;
-
-@group(0) @binding(2)
-var<storage, read> input: array<f32>;
-
-@group(0) @binding(3)
-var<storage, read_write> output: array<f32>;
-
-@compute @workgroup_size(16, 16)
-fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-  let x = global_id.x;
-  let y = global_id.y;
-  
-  if (x >= params.width || y >= params.height) {
-    return;
-  }
-  
-  let halfSize = i32(params.kernelSize) / 2;
-  var sum = 0.0;
-  
-  for (var k = 0; k < i32(params.kernelSize); k = k + 1) {
-    let sampleX = i32(x) + k - halfSize;
-    let clampedX = clamp(sampleX, 0, i32(params.width) - 1);
-    let sampleIdx = u32(clampedX) + y * params.width;
-    sum = sum + input[sampleIdx] * kernel[u32(k)];
-  }
-  
-  output[x + y * params.width] = sum;
-}`;
-
-// AUTO-GENERATED FILE — DO NOT EDIT.
-// Source: filters/isotropic/shaders/webgpu-vertical-blur.wgsl
-// Regenerate with `npm run build:shaders`.
-const source$B = `struct Params {
-  width: u32,
-  height: u32,
-  kernelSize: u32,
-  _pad: u32,
-}
-
-@group(0) @binding(0)
-var<uniform> params: Params;
-
-@group(0) @binding(1)
-var<storage, read> kernel: array<f32>;
-
-@group(0) @binding(2)
-var<storage, read> input: array<f32>;
-
-@group(0) @binding(3)
-var<storage, read_write> output: array<f32>;
-
-@compute @workgroup_size(16, 16)
-fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-  let x = global_id.x;
-  let y = global_id.y;
-  
-  if (x >= params.width || y >= params.height) {
-    return;
-  }
-  
-  let halfSize = i32(params.kernelSize) / 2;
-  var sum = 0.0;
-  
-  for (var k = 0; k < i32(params.kernelSize); k = k + 1) {
-    let sampleY = i32(y) + k - halfSize;
-    let clampedY = clamp(sampleY, 0, i32(params.height) - 1);
-    let sampleIdx = x + u32(clampedY) * params.width;
-    sum = sum + input[sampleIdx] * kernel[u32(k)];
-  }
-  
-  output[x + y * params.width] = sum;
-}`;
-
-/**
- * WebGPU-accelerated isotropic Gaussian blur
- * Uses compute shaders with separable convolution
- *
- * Supports concurrent/parallel blur calls by creating
- * separate staging buffers for each operation instead of reusing one.
- */
-class WebGPUIsotropicFilter extends BaseWebGPUStrategy {
-    resources = null;
-    /**
-     * Confirms an adapter is actually obtainable, not just that
-     * `navigator.gpu` exists as an API surface.
-     */
-    static async isSupported() {
-        return isWebGPUSupported();
-    }
-    /**
-     * Initialize WebGPU resources
-     */
-    async initResources() {
-        if (this.resources)
-            return this.resources;
-        const device = await WebGPUIsotropicFilter.getWebGPUDevice();
-        if (!device) {
-            throw new Error('WebGPU device not available');
-        }
-        // Create bind group layout
-        const bindGroupLayout = device.createBindGroupLayout({
-            entries: [
-                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
-                { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-                { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-                { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
-            ],
-        });
-        const pipelineLayout = device.createPipelineLayout({
-            bindGroupLayouts: [bindGroupLayout],
-        });
-        // Create compute pipelines
-        const horizontalPipeline = device.createComputePipeline({
-            layout: pipelineLayout,
-            compute: {
-                module: device.createShaderModule({ code: source$C }),
-                entryPoint: 'main',
-            },
-        });
-        const verticalPipeline = device.createComputePipeline({
-            layout: pipelineLayout,
-            compute: {
-                module: device.createShaderModule({ code: source$B }),
-                entryPoint: 'main',
-            },
-        });
-        return {
-            device,
-            horizontalPipeline,
-            verticalPipeline,
-            bindGroupLayout,
-        };
-    }
-    /**
-     * Fix for WebGPUIsotropicBlur: allocate buffers per call instead of
-     * reusing instance-level ones, so concurrent blur() calls (as issued by
-     * DoGProcessor.process()'s Promise.all([blur(sigma), blur(sigma*k)]))
-     * never share mutable GPU state. Mirrors the pattern already used by
-     * WebGPUFlowGuidedBlur and WebGPUGradientAlignedBlur.
-     *
-     * Delete the old paramsBuffer/kernelBuffer/inputBuffer/tempBuffer/
-     * outputBuffer/currentBufferSize/currentKernelSize instance fields and
-     * ensureBuffers() method; they're no longer needed.
-     */
-    async apply(input, config) {
-        const cfg = { ...DEFAULT_ISOTROPIC_BLUR_CONFIG, ...config };
-        const { sigma } = cfg;
-        if (sigma < 0.1) {
-            return {
-                data: new Float32Array(input.data),
-                width: input.width,
-                height: input.height,
-            };
-        }
-        const { device, horizontalPipeline, verticalPipeline, bindGroupLayout } = await this.initResources();
-        const { width, height } = input;
-        const pixelCount = width * height;
-        const bufferSize = pixelCount * 4;
-        const kernelSize = Math.min(cfg.maxKernelSize, Math.max(3, Math.floor(sigma * cfg.kernelSizeMultiplier) | 1));
-        const kernel = generateGaussianKernel$1(sigma, kernelSize);
-        // Per-call resources -- never shared with a concurrent blur() call on
-        // this same instance.
-        const paramsBuffer = device.createBuffer({
-            size: 16,
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        });
-        const kernelBuffer = device.createBuffer({
-            size: kernelSize * 4,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-        });
-        const inputBuffer = device.createBuffer({
-            size: bufferSize,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-        });
-        const tempBuffer = device.createBuffer({
-            size: bufferSize,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-        });
-        const outputBuffer = device.createBuffer({
-            size: bufferSize,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-        });
-        const stagingBuffer = device.createBuffer({
-            size: bufferSize,
-            usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
-        });
-        try {
-            device.queue.writeBuffer(paramsBuffer, 0, new Uint32Array([width, height, kernelSize, 0]));
-            device.queue.writeBuffer(kernelBuffer, 0, new Float32Array(kernel));
-            device.queue.writeBuffer(inputBuffer, 0, new Float32Array(input.data));
-            const horizontalBindGroup = device.createBindGroup({
-                layout: bindGroupLayout,
-                entries: [
-                    { binding: 0, resource: { buffer: paramsBuffer } },
-                    { binding: 1, resource: { buffer: kernelBuffer } },
-                    { binding: 2, resource: { buffer: inputBuffer } },
-                    { binding: 3, resource: { buffer: tempBuffer } },
-                ],
-            });
-            const verticalBindGroup = device.createBindGroup({
-                layout: bindGroupLayout,
-                entries: [
-                    { binding: 0, resource: { buffer: paramsBuffer } },
-                    { binding: 1, resource: { buffer: kernelBuffer } },
-                    { binding: 2, resource: { buffer: tempBuffer } },
-                    { binding: 3, resource: { buffer: outputBuffer } },
-                ],
-            });
-            const workgroupsX = Math.ceil(width / 16);
-            const workgroupsY = Math.ceil(height / 16);
-            const commandEncoder = device.createCommandEncoder();
-            const horizontalPass = commandEncoder.beginComputePass();
-            horizontalPass.setPipeline(horizontalPipeline);
-            horizontalPass.setBindGroup(0, horizontalBindGroup);
-            horizontalPass.dispatchWorkgroups(workgroupsX, workgroupsY);
-            horizontalPass.end();
-            const verticalPass = commandEncoder.beginComputePass();
-            verticalPass.setPipeline(verticalPipeline);
-            verticalPass.setBindGroup(0, verticalBindGroup);
-            verticalPass.dispatchWorkgroups(workgroupsX, workgroupsY);
-            verticalPass.end();
-            commandEncoder.copyBufferToBuffer(outputBuffer, 0, stagingBuffer, 0, bufferSize);
-            device.queue.submit([commandEncoder.finish()]);
-            await stagingBuffer.mapAsync(GPUMapMode.READ);
-            const resultData = new Float32Array(stagingBuffer.getMappedRange().slice(0));
-            stagingBuffer.unmap();
-            return { data: resultData, width, height };
-        }
-        finally {
-            // Always release per-call resources, even if a pass or readback
-            // throws, so concurrent/repeated calls don't leak GPU memory.
-            paramsBuffer.destroy();
-            kernelBuffer.destroy();
-            inputBuffer.destroy();
-            tempBuffer.destroy();
-            outputBuffer.destroy();
-            stagingBuffer.destroy();
-        }
-    }
-    /**
-     * dispose() no longer needs to clean up shared buffers -- only the
-     * cached pipeline/layout resources from initResources() remain.
-     */
-    dispose() { }
-}
-
-// AUTO-GENERATED FILE — DO NOT EDIT.
-// Source: filters/isotropic/shaders/guassian-horizontal.glsl
-// Regenerate with `npm run build:shaders`.
-const source$A = `#version 300 es
-precision highp float;
-precision highp sampler2D;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-uniform sampler2D u_image;
-uniform float u_texelSizeX;
-uniform int u_radius;
-uniform float u_sigma2;
-
-void main() {
-  float sum = 0.0;
-  float weightSum = 0.0;
-  
-  for (int dx = -u_radius; dx <= u_radius; dx++) {
-    float offset = float(dx) * u_texelSizeX;
-    float value = texture(u_image, v_texCoord + vec2(offset, 0.0)).r;
-    
-    float weight = exp(-float(dx * dx) / u_sigma2);
-    sum += value * weight;
-    weightSum += weight;
-  }
-  
-  fragColor = vec4(sum / weightSum, 0.0, 0.0, 1.0);
-}`;
-
-// AUTO-GENERATED FILE — DO NOT EDIT.
-// Source: filters/isotropic/shaders/guassian-vertical.glsl
-// Regenerate with `npm run build:shaders`.
-const source$z = `#version 300 es
-precision highp float;
-precision highp sampler2D;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-uniform sampler2D u_image;
-uniform float u_texelSizeY;
-uniform int u_radius;
-uniform float u_sigma2;
-
-void main() {
-  float sum = 0.0;
-  float weightSum = 0.0;
-  
-  for (int dy = -u_radius; dy <= u_radius; dy++) {
-    float offset = float(dy) * u_texelSizeY;
-    float value = texture(u_image, v_texCoord + vec2(0.0, offset)).r;
-    
-    float weight = exp(-float(dy * dy) / u_sigma2);
-    sum += value * weight;
-    weightSum += weight;
-  }
-  
-  fragColor = vec4(sum / weightSum, 0.0, 0.0, 1.0);
 }`;
 
 /**
@@ -4256,9 +1900,62 @@ function renderPass$1(program, inputTex, outputFb, width, height, uniforms) {
     gl$1.bindVertexArray(null);
 }
 // ============================================================================
-// Isometric BLUR - Separable WebGL Implementation (Very Fast)
+// BILATERAL FILTER - WebGL Implementation
 // ============================================================================
-class WebGLIsotropicFilter extends BaseWebGLStrategy {
+class BilateralFilterWebGL extends BaseWebGLStrategy {
+    static async isSupported() {
+        return isWebGLAvailable$1();
+    }
+    static async getUnsupportedReason() {
+        return isWebGLAvailable$1() ? undefined : 'WebGL 2.0 is not available in this environment';
+    }
+    async apply(input, config) {
+        const cfg = { ...DEFAULT_BILATERAL_CONFIG, ...config };
+        const gl = getGL$1();
+        if (!gl) {
+            throw new Error('BilateralFilterWebGL: WebGL 2.0 is not available in this environment.');
+        }
+        const { width, height, data } = input;
+        const sigmaSpatial = cfg.sigmaSpatial;
+        const sigmaRange = cfg.sigmaRange;
+        const radiusMultiplier = cfg.radiusMultiplier ?? 2;
+        const radius = Math.ceil(sigmaSpatial * radiusMultiplier);
+        // Resize canvas if needed
+        if (canvas$1.width !== width || canvas$1.height !== height) {
+            canvas$1.width = width;
+            canvas$1.height = height;
+        }
+        return this.runGuarded(gl, () => {
+            const program = createProgram$4(source$C, 'bilateral');
+            if (!program) {
+                throw new Error('BilateralFilterWebGL: failed to compile/link shader program.');
+            }
+            const inputTex = createInputTexture$1(data, width, height);
+            const output = createFramebuffer$2(width, height);
+            if (!inputTex || !output) {
+                if (inputTex)
+                    gl.deleteTexture(inputTex);
+                throw new Error('BilateralFilterWebGL: failed to create input texture or framebuffer.');
+            }
+            renderPass$1(program, inputTex, output.fb, width, height, {
+                u_texelSize: [1.0 / width, 1.0 / height],
+                u_sigmaSpatial2: 2.0 * sigmaSpatial * sigmaSpatial,
+                u_sigmaRange2: 2.0 * sigmaRange * sigmaRange,
+                u_radius: radius,
+            });
+            const result = readResult$1(output.fb, width, height);
+            // Cleanup
+            gl.deleteTexture(inputTex);
+            gl.deleteTexture(output.tex);
+            gl.deleteFramebuffer(output.fb);
+            return { data: result, width, height };
+        });
+    }
+}
+// ============================================================================
+// GAUSSIAN BLUR - Separable WebGL Implementation (Very Fast)
+// ============================================================================
+class GaussianBlurWebGL extends BaseWebGLStrategy {
     static async isSupported() {
         return isWebGLAvailable$1();
     }
@@ -4323,6 +2020,199 @@ class WebGLIsotropicFilter extends BaseWebGLStrategy {
     }
 }
 // ============================================================================
+// MEDIAN FILTER - WebGL Approximation using Weighted Histogram
+// ============================================================================
+class MedianFilterWebGL extends BaseWebGLStrategy {
+    static async isSupported() {
+        return isWebGLAvailable$1();
+    }
+    static async getUnsupportedReason() {
+        return isWebGLAvailable$1() ? undefined : 'WebGL 2.0 is not available in this environment';
+    }
+    async apply(input, config = {}) {
+        const cfg = { ...DEFAULT_MEDIAN_CONFIG, ...config };
+        const gl = getGL$1();
+        if (!gl) {
+            throw new Error('MedianFilterWebGL: WebGL 2.0 is not available in this environment.');
+        }
+        const { width, height, data } = input;
+        const radius = cfg.radius;
+        if (canvas$1.width !== width || canvas$1.height !== height) {
+            canvas$1.width = width;
+            canvas$1.height = height;
+        }
+        return this.runGuarded(gl, () => {
+            // Use exact sorting for small kernels, histogram for large
+            const shaderSource = radius <= 2 ? source$x : source$w;
+            const cacheKey = radius <= 2 ? 'medianSmall' : 'medianLarge';
+            const program = createProgram$4(shaderSource, cacheKey);
+            if (!program) {
+                throw new Error('MedianFilterWebGL: failed to compile/link shader program.');
+            }
+            const inputTex = createInputTexture$1(data, width, height);
+            const output = createFramebuffer$2(width, height);
+            if (!inputTex || !output) {
+                if (inputTex)
+                    gl.deleteTexture(inputTex);
+                throw new Error('MedianFilterWebGL: failed to create input texture or framebuffer.');
+            }
+            renderPass$1(program, inputTex, output.fb, width, height, {
+                u_texelSize: [1.0 / width, 1.0 / height],
+                u_radius: radius,
+            });
+            const result = readResult$1(output.fb, width, height);
+            // Cleanup
+            gl.deleteTexture(inputTex);
+            gl.deleteTexture(output.tex);
+            gl.deleteFramebuffer(output.fb);
+            return { data: result, width, height };
+        });
+    }
+}
+// ============================================================================
+// KUWAHARA FILTER - WebGL Implementation
+// ============================================================================
+class KuwaharaFilterWebGL extends BaseWebGLStrategy {
+    static async isSupported() {
+        return isWebGLAvailable$1();
+    }
+    static async getUnsupportedReason() {
+        return isWebGLAvailable$1() ? undefined : 'WebGL 2.0 is not available in this environment';
+    }
+    async apply(input, config = {}) {
+        const cfg = { ...DEFAULT_KUWAHARA_CONFIG, ...config };
+        const gl = getGL$1();
+        if (!gl) {
+            throw new Error('KuwaharaFilterWebGL: WebGL 2.0 is not available in this environment.');
+        }
+        const { width, height, data } = input;
+        const radius = cfg.radius;
+        if (canvas$1.width !== width || canvas$1.height !== height) {
+            canvas$1.width = width;
+            canvas$1.height = height;
+        }
+        return this.runGuarded(gl, () => {
+            const program = createProgram$4(source$y, 'kuwahara');
+            if (!program) {
+                throw new Error('KuwaharaFilterWebGL: failed to compile/link shader program.');
+            }
+            const inputTex = createInputTexture$1(data, width, height);
+            const output = createFramebuffer$2(width, height);
+            if (!inputTex || !output) {
+                if (inputTex)
+                    gl.deleteTexture(inputTex);
+                throw new Error('KuwaharaFilterWebGL: failed to create input texture or framebuffer.');
+            }
+            renderPass$1(program, inputTex, output.fb, width, height, {
+                u_texelSize: [1.0 / width, 1.0 / height],
+                u_radius: radius,
+            });
+            const result = readResult$1(output.fb, width, height);
+            // Cleanup
+            gl.deleteTexture(inputTex);
+            gl.deleteTexture(output.tex);
+            gl.deleteFramebuffer(output.fb);
+            return { data: result, width, height };
+        });
+    }
+}
+// ============================================================================
+// CONTRAST ENHANCEMENT - WebGL Implementation
+// ============================================================================
+class ContrastEnhancerWebGL extends BaseWebGLStrategy {
+    static async isSupported() {
+        return isWebGLAvailable$1();
+    }
+    static async getUnsupportedReason() {
+        return isWebGLAvailable$1() ? undefined : 'WebGL 2.0 is not available in this environment';
+    }
+    async apply(input, config) {
+        const { blackPoint, whitePoint } = { ...DEFAULT_CONTRAST_ENHANCEMENT_CONFIG, ...config };
+        const gl = getGL$1();
+        if (!gl) {
+            throw new Error('ContrastEnhancerWebGL: WebGL 2.0 is not available in this environment.');
+        }
+        const { width, height, data } = input;
+        // Calculate percentiles on CPU (fast enough, O(n log n)) - this is
+        // inherent to the algorithm, not a fallback path.
+        const sorted = new Float32Array(data).sort((a, b) => a - b);
+        const minVal = sorted[Math.floor(data.length * blackPoint)];
+        const maxVal = sorted[Math.floor(data.length * whitePoint)];
+        if (canvas$1.width !== width || canvas$1.height !== height) {
+            canvas$1.width = width;
+            canvas$1.height = height;
+        }
+        return this.runGuarded(gl, () => {
+            const program = createProgram$4(source$B, 'contrast');
+            if (!program) {
+                throw new Error('ContrastEnhancerWebGL: failed to compile/link shader program.');
+            }
+            const inputTex = createInputTexture$1(data, width, height);
+            const output = createFramebuffer$2(width, height);
+            if (!inputTex || !output) {
+                if (inputTex)
+                    gl.deleteTexture(inputTex);
+                throw new Error('ContrastEnhancerWebGL: failed to create input texture or framebuffer.');
+            }
+            renderPass$1(program, inputTex, output.fb, width, height, {
+                u_minVal: minVal,
+                u_maxVal: maxVal,
+            });
+            const result = readResult$1(output.fb, width, height);
+            // Cleanup
+            gl.deleteTexture(inputTex);
+            gl.deleteTexture(output.tex);
+            gl.deleteFramebuffer(output.fb);
+            return { data: result, width, height };
+        });
+    }
+}
+// ============================================================================
+// QUANTIZATION - WebGL Implementation
+// ============================================================================
+class QuantizerWebGL extends BaseWebGLStrategy {
+    static async isSupported() {
+        return isWebGLAvailable$1();
+    }
+    static async getUnsupportedReason() {
+        return isWebGLAvailable$1() ? undefined : 'WebGL 2.0 is not available in this environment';
+    }
+    async apply(input, config) {
+        const levels = config.levels ?? DEFAULT_QUANTIZER_CONFIG.levels;
+        const gl = getGL$1();
+        if (!gl) {
+            throw new Error('QuantizerWebGL: WebGL 2.0 is not available in this environment.');
+        }
+        const { width, height, data } = input;
+        if (canvas$1.width !== width || canvas$1.height !== height) {
+            canvas$1.width = width;
+            canvas$1.height = height;
+        }
+        return this.runGuarded(gl, () => {
+            const program = createProgram$4(source$v, 'quantize');
+            if (!program) {
+                throw new Error('QuantizerWebGL: failed to compile/link shader program.');
+            }
+            const inputTex = createInputTexture$1(data, width, height);
+            const output = createFramebuffer$2(width, height);
+            if (!inputTex || !output) {
+                if (inputTex)
+                    gl.deleteTexture(inputTex);
+                throw new Error('QuantizerWebGL: failed to create input texture or framebuffer.');
+            }
+            renderPass$1(program, inputTex, output.fb, width, height, {
+                u_levels: levels,
+            });
+            const result = readResult$1(output.fb, width, height);
+            // Cleanup
+            gl.deleteTexture(inputTex);
+            gl.deleteTexture(output.tex);
+            gl.deleteFramebuffer(output.fb);
+            return { data: result, width, height };
+        });
+    }
+}
+// ============================================================================
 // UTILITY EXPORTS
 // ============================================================================
 /**
@@ -4330,6 +2220,2116 @@ class WebGLIsotropicFilter extends BaseWebGLStrategy {
  */
 function isWebGLAvailable$1() {
     return getGL$1() !== null;
+}
+/**
+ * Cleanup all WebGL resources
+ */
+function disposeWebGL() {
+    if (!gl$1)
+        return;
+    // Delete cached programs
+    programCache$1.forEach(program => gl$1.deleteProgram(program));
+    programCache$1.clear();
+    // Delete VAO
+    if (quadVAO$1) {
+        gl$1.deleteVertexArray(quadVAO$1);
+        quadVAO$1 = null;
+    }
+    gl$1 = null;
+    canvas$1 = null;
+}
+
+var webgl = /*#__PURE__*/Object.freeze({
+    __proto__: null,
+    BilateralFilter: BilateralFilterWebGL,
+    BilateralFilterWebGL: BilateralFilterWebGL,
+    ContrastEnhancer: ContrastEnhancerWebGL,
+    ContrastEnhancerWebGL: ContrastEnhancerWebGL,
+    GaussianBlur: GaussianBlurWebGL,
+    GaussianBlurWebGL: GaussianBlurWebGL,
+    KuwaharaFilter: KuwaharaFilterWebGL,
+    KuwaharaFilterWebGL: KuwaharaFilterWebGL,
+    MedianFilter: MedianFilterWebGL,
+    MedianFilterWebGL: MedianFilterWebGL,
+    Quantizer: QuantizerWebGL,
+    QuantizerWebGL: QuantizerWebGL,
+    disposeWebGL: disposeWebGL,
+    isWebGLAvailable: isWebGLAvailable$1
+});
+
+// AUTO-GENERATED FILE — DO NOT EDIT.
+// Source: filters/shaders/webgpu/bilateral.wgsl
+// Regenerate with `npm run build:shaders`.
+const source$u = `struct Params {
+  width: u32,
+  height: u32,
+  radius: u32,
+  rowOffset: u32,
+  sigmaSpatial2: f32,
+  sigmaRange2: f32,
+  _pad1: f32,
+  _pad2: f32,
+};
+
+// Pipeline-overridable — real value supplied via
+// GPUComputePipelineDescriptor.compute.constants (see getPipeline() in
+// webgpu.ts, which injects it for every pipeline by default).
+override WORKGROUP_SIZE: u32 = 8u;
+
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
+@group(0) @binding(2) var<storage, read_write> outputImage: array<f32>;
+@group(0) @binding(3) var<storage, read> spatialWeights: array<f32>;
+
+fn samplePixel(x: i32, y: i32) -> f32 {
+  let cx = clamp(x, 0, i32(params.width) - 1);
+  let cy = clamp(y, 0, i32(params.height) - 1);
+  return inputImage[cy * i32(params.width) + cx];
+}
+
+@compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let x = i32(gid.x);
+  // gid.y is relative to the current chunk; rowOffset shifts it back into
+  // the coordinate space of the full image.
+  let y = i32(gid.y) + i32(params.rowOffset);
+  if (x >= i32(params.width) || y >= i32(params.height)) {
+    return;
+  }
+
+  let r = i32(params.radius);
+  let center = samplePixel(x, y);
+
+  var sum: f32 = 0.0;
+  var weightSum: f32 = 0.0;
+  var idx: u32 = 0u;
+
+  for (var dy = -r; dy <= r; dy = dy + 1) {
+    for (var dx = -r; dx <= r; dx = dx + 1) {
+      let neighbor = samplePixel(x + dx, y + dy);
+      let diff = neighbor - center;
+      let rangeWeight = exp(-(diff * diff) / params.sigmaRange2);
+      let weight = spatialWeights[idx] * rangeWeight;
+      sum = sum + neighbor * weight;
+      weightSum = weightSum + weight;
+      idx = idx + 1u;
+    }
+  }
+
+  outputImage[y * i32(params.width) + x] = select(center, sum / weightSum, weightSum > 0.0);
+}
+`;
+
+// AUTO-GENERATED FILE — DO NOT EDIT.
+// Source: filters/shaders/webgpu/kuwahara.wgsl
+// Regenerate with `npm run build:shaders`.
+const source$t = `struct Params {
+  width: u32,
+  height: u32,
+  radius: u32,
+  _pad: u32,
+};
+
+override WORKGROUP_SIZE: u32 = 8u;
+
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
+@group(0) @binding(2) var<storage, read_write> outputImage: array<f32>;
+
+fn samplePixel(x: i32, y: i32) -> f32 {
+  let cx = clamp(x, 0, i32(params.width) - 1);
+  let cy = clamp(y, 0, i32(params.height) - 1);
+  return inputImage[cy * i32(params.width) + cx];
+}
+
+fn quadrantStats(x: i32, y: i32, x0: i32, x1: i32, y0: i32, y1: i32) -> vec2<f32> {
+  var sum: f32 = 0.0;
+  var sumSq: f32 = 0.0;
+  var count: f32 = 0.0;
+  for (var dy = y0; dy <= y1; dy = dy + 1) {
+    for (var dx = x0; dx <= x1; dx = dx + 1) {
+      let v = samplePixel(x + dx, y + dy);
+      sum = sum + v;
+      sumSq = sumSq + v * v;
+      count = count + 1.0;
+    }
+  }
+  let mean = sum / count;
+  let variance = (sumSq / count) - (mean * mean);
+  return vec2<f32>(mean, variance);
+}
+
+@compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let x = i32(gid.x);
+  let y = i32(gid.y);
+  if (x >= i32(params.width) || y >= i32(params.height)) {
+    return;
+  }
+
+  let r = i32(params.radius);
+
+  // Four quadrants: top-left, top-right, bottom-left, bottom-right.
+  let q0 = quadrantStats(x, y, -r, 0, -r, 0);
+  let q1 = quadrantStats(x, y, 0, r, -r, 0);
+  let q2 = quadrantStats(x, y, -r, 0, 0, r);
+  let q3 = quadrantStats(x, y, 0, r, 0, r);
+
+  var bestMean = q0.x;
+  var minVariance = q0.y;
+
+  if (q1.y < minVariance) { minVariance = q1.y; bestMean = q1.x; }
+  if (q2.y < minVariance) { minVariance = q2.y; bestMean = q2.x; }
+  if (q3.y < minVariance) { minVariance = q3.y; bestMean = q3.x; }
+
+  outputImage[y * i32(params.width) + x] = bestMean;
+}
+`;
+
+// AUTO-GENERATED FILE — DO NOT EDIT.
+// Source: filters/shaders/webgpu/gaussian.wgsl
+// Regenerate with `npm run build:shaders`.
+const source$s = `struct Params {
+  width: u32,
+  height: u32,
+  radius: u32,
+  _pad: u32,
+};
+
+override WORKGROUP_SIZE: u32 = 8u;
+
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
+@group(0) @binding(2) var<storage, read> kernelWeights: array<f32>;
+@group(0) @binding(3) var<storage, read_write> outputImage: array<f32>;
+
+@compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
+fn main_h(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let x = i32(gid.x);
+  let y = i32(gid.y);
+  if (x >= i32(params.width) || y >= i32(params.height)) {
+    return;
+  }
+  let r = i32(params.radius);
+  var sum: f32 = 0.0;
+  for (var k = 0; k <= 2 * r; k = k + 1) {
+    let sx = clamp(x + k - r, 0, i32(params.width) - 1);
+    sum = sum + inputImage[y * i32(params.width) + sx] * kernelWeights[k];
+  }
+  outputImage[y * i32(params.width) + x] = sum;
+}
+
+@compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
+fn main_v(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let x = i32(gid.x);
+  let y = i32(gid.y);
+  if (x >= i32(params.width) || y >= i32(params.height)) {
+    return;
+  }
+  let r = i32(params.radius);
+  var sum: f32 = 0.0;
+  for (var k = 0; k <= 2 * r; k = k + 1) {
+    let sy = clamp(y + k - r, 0, i32(params.height) - 1);
+    sum = sum + inputImage[sy * i32(params.width) + x] * kernelWeights[k];
+  }
+  outputImage[y * i32(params.width) + x] = sum;
+}
+`;
+
+// AUTO-GENERATED FILE — DO NOT EDIT.
+// Source: filters/shaders/webgpu/histogram.wgsl
+// Regenerate with `npm run build:shaders`.
+const source$r = `struct Params {
+  width: u32,
+  height: u32,
+  _pad0: u32,
+  _pad1: u32,
+};
+
+override WORKGROUP_SIZE: u32 = 8u;
+
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
+@group(0) @binding(2) var<storage, read_write> histogram: array<atomic<u32>>;
+
+@compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let x = i32(gid.x);
+  let y = i32(gid.y);
+  if (x >= i32(params.width) || y >= i32(params.height)) {
+    return;
+  }
+  let v = clamp(inputImage[y * i32(params.width) + x], 0.0, 1.0);
+  let bin = u32(v * 255.0 + 0.5);
+  atomicAdd(&histogram[min(bin, 255u)], 1u);
+}
+`;
+
+// AUTO-GENERATED FILE — DO NOT EDIT.
+// Source: filters/shaders/webgpu/stretch.wgsl
+// Regenerate with `npm run build:shaders`.
+const source$q = `struct Params {
+  width: u32,
+  height: u32,
+  minVal: f32,
+  range: f32,
+};
+
+override WORKGROUP_SIZE: u32 = 8u;
+
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
+@group(0) @binding(2) var<storage, read_write> outputImage: array<f32>;
+
+@compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let x = i32(gid.x);
+  let y = i32(gid.y);
+  if (x >= i32(params.width) || y >= i32(params.height)) {
+    return;
+  }
+  let idx = y * i32(params.width) + x;
+  let v = (inputImage[idx] - params.minVal) / params.range;
+  outputImage[idx] = clamp(v, 0.0, 1.0);
+}
+`;
+
+// AUTO-GENERATED FILE — DO NOT EDIT.
+// Source: filters/shaders/webgpu/quantize.wgsl
+// Regenerate with `npm run build:shaders`.
+const source$p = `struct Params {
+  width: u32,
+  height: u32,
+  step: f32,
+  _pad: f32,
+};
+
+override WORKGROUP_SIZE: u32 = 8u;
+
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
+@group(0) @binding(2) var<storage, read_write> outputImage: array<f32>;
+
+@compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let x = i32(gid.x);
+  let y = i32(gid.y);
+  if (x >= i32(params.width) || y >= i32(params.height)) {
+    return;
+  }
+  let idx = y * i32(params.width) + x;
+  outputImage[idx] = round(inputImage[idx] / params.step) * params.step;
+}
+`;
+
+// AUTO-GENERATED FILE — DO NOT EDIT.
+// Source: filters/shaders/webgpu/median.wgsl
+// Regenerate with `npm run build:shaders`.
+const source$o = `struct Params {
+  width: u32,
+  height: u32,
+  radius: u32,
+  _pad: u32,
+};
+
+override WORKGROUP_SIZE: u32 = 8u;
+
+// N (the per-pixel neighborhood size, (2*radius+1)^2) sizes a plain
+// function-local \`var\`, not a \`var<workgroup>\` one — WGSL's override-as-
+// array-size exception only covers the latter, so N can't become an
+// \`override\`. It has to stay a real \`const\`, resolved at shader-module
+// creation. That means it genuinely can't be fixed at build time; a new
+// module is compiled per distinct radius, same as before. __N__ is
+// substituted at runtime in medianShaderSource() (webgpu.ts) — the one
+// remaining spot in this codebase that still needs string templating,
+// and for a language-level reason rather than convenience.
+const N: u32 = __N__u;
+
+@group(0) @binding(0) var<uniform> params: Params;
+@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
+@group(0) @binding(2) var<storage, read_write> outputImage: array<f32>;
+
+fn samplePixel(x: i32, y: i32) -> f32 {
+  let cx = clamp(x, 0, i32(params.width) - 1);
+  let cy = clamp(y, 0, i32(params.height) - 1);
+  return inputImage[cy * i32(params.width) + cx];
+}
+
+@compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let x = i32(gid.x);
+  let y = i32(gid.y);
+  if (x >= i32(params.width) || y >= i32(params.height)) {
+    return;
+  }
+
+  let r = i32(params.radius);
+  var vals: array<f32, N>;
+  var idx: u32 = 0u;
+  for (var dy = -r; dy <= r; dy = dy + 1) {
+    for (var dx = -r; dx <= r; dx = dx + 1) {
+      vals[idx] = samplePixel(x + dx, y + dy);
+      idx = idx + 1u;
+    }
+  }
+
+  // Insertion sort: O(n^2), fine for the small neighborhoods used here
+  // (n = (2*radius+1)^2, e.g. 25 at radius 2).
+  for (var i = 1u; i < N; i = i + 1u) {
+    let key = vals[i];
+    var j = i;
+    while (j > 0u && vals[j - 1u] > key) {
+      vals[j] = vals[j - 1u];
+      j = j - 1u;
+    }
+    vals[j] = key;
+  }
+
+  outputImage[y * i32(params.width) + x] = vals[N / 2u];
+}
+`;
+
+/**
+ * WebGPU-accelerated preprocessing module for XDoG/FDoG
+ *
+ * Even faster than WebGL implementations
+ */
+/* ==================================================================== */
+/* GPU device management                                                */
+/* ==================================================================== */
+let cachedDevice = null;
+let deviceInitPromise = null;
+/**
+ * Deeper async check: confirms an adapter is actually obtainable, not
+ * just that `navigator.gpu` exists.
+ */
+async function getWebGPUUnsupportedReason() {
+    if (typeof navigator === 'undefined' || !navigator.gpu) {
+        return 'navigator.gpu is not available in this environment';
+    }
+    try {
+        const adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) {
+            return 'No suitable GPU adapter was found';
+        }
+    }
+    catch (err) {
+        return `Failed to request a GPU adapter: ${err.message}`;
+    }
+    return undefined;
+}
+async function getWebGPUDevice() {
+    if (cachedDevice)
+        return cachedDevice;
+    if (deviceInitPromise)
+        return deviceInitPromise;
+    deviceInitPromise = (async () => {
+        if (!isWebGLComputeSupported()) {
+            throw new Error('WebGPU is not supported in this environment (navigator.gpu is missing)');
+        }
+        const adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) {
+            throw new Error('Failed to acquire a WebGPU adapter');
+        }
+        const device = await adapter.requestDevice();
+        device.lost.then((info) => {
+            // Invalidate the cache so the next call reinitializes a fresh device.
+            cachedDevice = null;
+            deviceInitPromise = null;
+            clearShaderCaches();
+            console.warn(`WebGPU device lost: ${info.message}`);
+        });
+        cachedDevice = device;
+        return device;
+    })();
+    return deviceInitPromise;
+}
+/** Release the cached device. Mainly useful for tests / hot reload. */
+function disposeWebGPU() {
+    cachedDevice?.destroy();
+    cachedDevice = null;
+    deviceInitPromise = null;
+}
+/* ==================================================================== */
+/* Low-level GPU helpers                                                 */
+/* ==================================================================== */
+const WORKGROUP_SIZE$2 = 8;
+function workgroupCount(size) {
+    return Math.ceil(size / WORKGROUP_SIZE$2);
+}
+function createUniformBuffer(device, data) {
+    const buffer = device.createBuffer({
+        size: data.byteLength,
+        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        mappedAtCreation: true,
+    });
+    new Uint8Array(buffer.getMappedRange()).set(new Uint8Array(data));
+    buffer.unmap();
+    return buffer;
+}
+function createReadOnlyStorageBuffer(device, data) {
+    const buffer = device.createBuffer({
+        size: data.byteLength,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        mappedAtCreation: true,
+    });
+    new Float32Array(buffer.getMappedRange()).set(data);
+    buffer.unmap();
+    return buffer;
+}
+function createOutputStorageBuffer(device, byteLength) {
+    return device.createBuffer({
+        size: byteLength,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+}
+async function readFloat32Buffer(device, buffer, length) {
+    const byteLength = length * 4;
+    const staging = device.createBuffer({
+        size: byteLength,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+    const encoder = device.createCommandEncoder();
+    encoder.copyBufferToBuffer(buffer, 0, staging, 0, byteLength);
+    device.queue.submit([encoder.finish()]);
+    await staging.mapAsync(GPUMapMode.READ);
+    const copy = new Float32Array(staging.getMappedRange().slice(0));
+    staging.unmap();
+    staging.destroy();
+    return copy;
+}
+// Shader modules are cached by cacheKey so pipelines that share a module
+// (e.g. the two Gaussian blur passes) don't recompile it twice.
+const moduleCache = new Map();
+const pipelineCache = new Map();
+function getShaderModule(device, cacheKey, code) {
+    let module = moduleCache.get(cacheKey);
+    if (!module) {
+        module = device.createShaderModule({ code });
+        moduleCache.set(cacheKey, module);
+    }
+    return module;
+}
+// in webgpu.ts, near moduleCache/pipelineCache
+function clearShaderCaches() {
+    moduleCache.clear();
+    pipelineCache.clear();
+}
+function getPipeline(device, cacheKey, code, entryPoint) {
+    const key = `${cacheKey}::${entryPoint}`;
+    let pipeline = pipelineCache.get(key);
+    if (!pipeline) {
+        const module = getShaderModule(device, cacheKey, code);
+        pipeline = device.createComputePipeline({
+            layout: 'auto',
+            compute: { module, entryPoint, constants: { WORKGROUP_SIZE: WORKGROUP_SIZE$2 } },
+        });
+        pipelineCache.set(key, pipeline);
+    }
+    return pipeline;
+}
+function dispatch(device, pipeline, bindGroup, width, height) {
+    const encoder = device.createCommandEncoder();
+    const pass = encoder.beginComputePass();
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, bindGroup);
+    pass.dispatchWorkgroups(workgroupCount(width), workgroupCount(height));
+    pass.end();
+    device.queue.submit([encoder.finish()]);
+}
+/* ==================================================================== */
+/* Bilateral Filter                                                      */
+/* ==================================================================== */
+/**
+ * The `rowOffset` field lets a single dispatch cover only a band of rows
+ * of a much taller image (see the chunking loop in `process()` below).
+ * `spatialWeights` is a precomputed (2*radius+1)^2 lookup table for the
+ * spatial term of the bilateral weight, which depends only on (dx, dy)
+ * and is identical for every pixel. Computing it on the CPU once instead
+ * of calling `exp()` for it on every shader invocation roughly halves the
+ * transcendental-function work in the inner loop.
+ */
+class GPUBilateralFilter extends BaseWebGPUStrategy {
+    static async isSupported() {
+        return isWebGLComputeSupported() && (await getWebGPUUnsupportedReason()) === undefined;
+    }
+    static getUnsupportedReason() {
+        return getWebGPUUnsupportedReason();
+    }
+    async apply(input, config) {
+        const device = await getWebGPUDevice();
+        const { width, height } = input;
+        const cfg = { ...DEFAULT_BILATERAL_CONFIG, ...config };
+        const radius = Math.ceil(cfg.sigmaSpatial * (cfg.radiusMultiplier ?? 2));
+        const side = 2 * radius + 1;
+        if (radius > 15) {
+            console.warn(`GPUBilateralFilter: radius=${radius} (from sigmaSpatial=${cfg.sigmaSpatial}) means ` +
+                `${side * side} samples/pixel. On large images this can still be expensive enough ` +
+                `to run long even chunked; consider a smaller sigmaSpatial/radiusMultiplier if you ` +
+                `see slowdowns or device loss.`);
+        }
+        // Precompute the spatial weight term (depends only on dx, dy - identical
+        // for every pixel) once on the CPU instead of recomputing it with exp()
+        // on every shader invocation for every pixel.
+        const spatialLUT = new Float32Array(side * side);
+        {
+            const sigmaSpatial2 = 2 * cfg.sigmaSpatial * cfg.sigmaSpatial;
+            let li = 0;
+            for (let dy = -radius; dy <= radius; dy++) {
+                for (let dx = -radius; dx <= radius; dx++) {
+                    spatialLUT[li++] = Math.exp(-(dx * dx + dy * dy) / sigmaSpatial2);
+                }
+            }
+        }
+        const uniformData = new ArrayBuffer(32);
+        const u32View = new Uint32Array(uniformData);
+        const f32View = new Float32Array(uniformData);
+        u32View[0] = width;
+        u32View[1] = height;
+        u32View[2] = radius;
+        u32View[3] = 0; // rowOffset - updated per chunk in the loop below
+        f32View[4] = 2 * cfg.sigmaSpatial * cfg.sigmaSpatial;
+        f32View[5] = 2 * cfg.sigmaRange * cfg.sigmaRange;
+        return this.runGuarded(device, async () => {
+            const uniformBuffer = createUniformBuffer(device, uniformData);
+            const inputBuffer = createReadOnlyStorageBuffer(device, input.data);
+            const outputBuffer = createOutputStorageBuffer(device, input.data.byteLength);
+            const spatialWeightsBuffer = createReadOnlyStorageBuffer(device, spatialLUT);
+            const pipeline = getPipeline(device, 'bilateral', source$u, 'main');
+            const bindGroup = device.createBindGroup({
+                layout: pipeline.getBindGroupLayout(0),
+                entries: [
+                    { binding: 0, resource: { buffer: uniformBuffer } },
+                    { binding: 1, resource: { buffer: inputBuffer } },
+                    { binding: 2, resource: { buffer: outputBuffer } },
+                    { binding: 3, resource: { buffer: spatialWeightsBuffer } },
+                ],
+            });
+            // Large images combined with large radii make width * height *
+            // (2*radius+1)^2 samples in a single dispatch, which can run long
+            // enough to exceed the GPU driver's watchdog timeout and bring down
+            // the whole device (VK_ERROR_DEVICE_LOST) instead of just failing
+            // this operation. Splitting the work into row bands, each submitted
+            // and awaited independently, keeps any single submission short.
+            // ROWS_PER_CHUNK is sized so that each chunk does roughly the same
+            // amount of total sampling work regardless of image width or radius.
+            const ROWS_PER_CHUNK = Math.max(1, Math.floor(4_000_000 / (width * side * side)));
+            for (let y0 = 0; y0 < height; y0 += ROWS_PER_CHUNK) {
+                const rows = Math.min(ROWS_PER_CHUNK, height - y0);
+                device.queue.writeBuffer(uniformBuffer, 12, new Uint32Array([y0]));
+                const encoder = device.createCommandEncoder();
+                const pass = encoder.beginComputePass();
+                pass.setPipeline(pipeline);
+                pass.setBindGroup(0, bindGroup);
+                pass.dispatchWorkgroups(workgroupCount(width), workgroupCount(rows));
+                pass.end();
+                device.queue.submit([encoder.finish()]);
+            }
+            const resultData = await readFloat32Buffer(device, outputBuffer, width * height);
+            uniformBuffer.destroy();
+            inputBuffer.destroy();
+            outputBuffer.destroy();
+            spatialWeightsBuffer.destroy();
+            return { data: resultData, width, height };
+        });
+    }
+}
+/* ==================================================================== */
+/* Median Filter                                                         */
+/* ==================================================================== */
+// N (the per-pixel neighborhood size) sizes a function-local `var`, not a
+// `var<workgroup>` one, so it can't become a WGSL `override`. The
+// override-as-array-size exception only covers workgroup-address-space
+// arrays (see median.wgsl's comment for the full explanation). It's a
+// genuine `const`, so it still has to be baked per radius at the string
+// level; a new shader module is compiled (and cached by getPipeline's
+// cacheKey) for each distinct radius, same as before this migration.
+function medianShaderSource(radius) {
+    const side = 2 * radius + 1;
+    const n = side * side;
+    return source$o.replace('__N__', String(n));
+}
+class GPUMedianFilter extends BaseWebGPUStrategy {
+    static async isSupported() {
+        return isWebGLComputeSupported() && (await getWebGPUUnsupportedReason()) === undefined;
+    }
+    static getUnsupportedReason() {
+        return getWebGPUUnsupportedReason();
+    }
+    async apply(input, config) {
+        const cfg = { ...DEFAULT_MEDIAN_CONFIG, ...config };
+        if (cfg.radius > 6) {
+            console.warn(`GPUMedianFilter: radius=${cfg.radius} means a per-pixel ` +
+                `neighborhood array of ${(2 * cfg.radius + 1) ** 2} elements, ` +
+                `sorted in-shader with an O(n^2) insertion sort. This can get slow ` +
+                `and register-heavy fast; consider a smaller radius on GPU.`);
+        }
+        const device = await getWebGPUDevice();
+        const { width, height } = input;
+        const radius = cfg.radius;
+        const uniformData = new ArrayBuffer(16);
+        const u32View = new Uint32Array(uniformData);
+        u32View[0] = width;
+        u32View[1] = height;
+        u32View[2] = radius;
+        return this.runGuarded(device, async () => {
+            const uniformBuffer = createUniformBuffer(device, uniformData);
+            const inputBuffer = createReadOnlyStorageBuffer(device, input.data);
+            const outputBuffer = createOutputStorageBuffer(device, input.data.byteLength);
+            const cacheKey = `median-r${radius}`;
+            const pipeline = getPipeline(device, cacheKey, medianShaderSource(radius), 'main');
+            const bindGroup = device.createBindGroup({
+                layout: pipeline.getBindGroupLayout(0),
+                entries: [
+                    { binding: 0, resource: { buffer: uniformBuffer } },
+                    { binding: 1, resource: { buffer: inputBuffer } },
+                    { binding: 2, resource: { buffer: outputBuffer } },
+                ],
+            });
+            dispatch(device, pipeline, bindGroup, width, height);
+            const resultData = await readFloat32Buffer(device, outputBuffer, width * height);
+            uniformBuffer.destroy();
+            inputBuffer.destroy();
+            outputBuffer.destroy();
+            return { data: resultData, width, height };
+        });
+    }
+}
+/* ==================================================================== */
+/* Kuwahara Filter                                                       */
+/* ==================================================================== */
+class GPUKuwaharaFilter extends BaseWebGPUStrategy {
+    static async isSupported() {
+        return isWebGLComputeSupported() && (await getWebGPUUnsupportedReason()) === undefined;
+    }
+    static getUnsupportedReason() {
+        return getWebGPUUnsupportedReason();
+    }
+    async apply(input, config) {
+        const cfg = { ...DEFAULT_KUWAHARA_CONFIG, ...config };
+        const device = await getWebGPUDevice();
+        const { width, height } = input;
+        const radius = cfg.radius;
+        const uniformData = new ArrayBuffer(16);
+        const u32View = new Uint32Array(uniformData);
+        u32View[0] = width;
+        u32View[1] = height;
+        u32View[2] = radius;
+        return this.runGuarded(device, async () => {
+            const uniformBuffer = createUniformBuffer(device, uniformData);
+            const inputBuffer = createReadOnlyStorageBuffer(device, input.data);
+            const outputBuffer = createOutputStorageBuffer(device, input.data.byteLength);
+            const pipeline = getPipeline(device, 'kuwahara', source$t, 'main');
+            const bindGroup = device.createBindGroup({
+                layout: pipeline.getBindGroupLayout(0),
+                entries: [
+                    { binding: 0, resource: { buffer: uniformBuffer } },
+                    { binding: 1, resource: { buffer: inputBuffer } },
+                    { binding: 2, resource: { buffer: outputBuffer } },
+                ],
+            });
+            dispatch(device, pipeline, bindGroup, width, height);
+            const resultData = await readFloat32Buffer(device, outputBuffer, width * height);
+            uniformBuffer.destroy();
+            inputBuffer.destroy();
+            outputBuffer.destroy();
+            return { data: resultData, width, height };
+        });
+    }
+}
+/* ==================================================================== */
+/* Gaussian Blur (separable, two compute passes)                        */
+/* ==================================================================== */
+class GPUGaussianBlur extends BaseWebGPUStrategy {
+    static async isSupported() {
+        return isWebGLComputeSupported() && (await getWebGPUUnsupportedReason()) === undefined;
+    }
+    static getUnsupportedReason() {
+        return getWebGPUUnsupportedReason();
+    }
+    async apply(input, config) {
+        const { width, height } = input;
+        const cfg = { ...DEFAULT_GAUSSIAN_CONFIG, ...config };
+        if (cfg.sigma < 0.1) {
+            return { data: new Float32Array(input.data), width, height };
+        }
+        const device = await getWebGPUDevice();
+        const radius = Math.ceil(cfg.sigma * 3);
+        const kernelSize = radius * 2 + 1;
+        const kernel = generateGaussianKernel$1(cfg.sigma, kernelSize);
+        const uniformData = new ArrayBuffer(16);
+        const u32View = new Uint32Array(uniformData);
+        u32View[0] = width;
+        u32View[1] = height;
+        u32View[2] = radius;
+        return this.runGuarded(device, async () => {
+            const uniformBuffer = createUniformBuffer(device, uniformData);
+            const inputBuffer = createReadOnlyStorageBuffer(device, input.data);
+            const kernelBuffer = createReadOnlyStorageBuffer(device, new Float32Array(kernel));
+            const tempBuffer = createOutputStorageBuffer(device, input.data.byteLength);
+            const outputBuffer = createOutputStorageBuffer(device, input.data.byteLength);
+            const pipelineH = getPipeline(device, 'gaussian', source$s, 'main_h');
+            const pipelineV = getPipeline(device, 'gaussian', source$s, 'main_v');
+            const bindGroupH = device.createBindGroup({
+                layout: pipelineH.getBindGroupLayout(0),
+                entries: [
+                    { binding: 0, resource: { buffer: uniformBuffer } },
+                    { binding: 1, resource: { buffer: inputBuffer } },
+                    { binding: 2, resource: { buffer: kernelBuffer } },
+                    { binding: 3, resource: { buffer: tempBuffer } },
+                ],
+            });
+            const bindGroupV = device.createBindGroup({
+                layout: pipelineV.getBindGroupLayout(0),
+                entries: [
+                    { binding: 0, resource: { buffer: uniformBuffer } },
+                    { binding: 1, resource: { buffer: tempBuffer } },
+                    { binding: 2, resource: { buffer: kernelBuffer } },
+                    { binding: 3, resource: { buffer: outputBuffer } },
+                ],
+            });
+            // Both passes are recorded on one command encoder before submission,
+            // so the vertical pass reliably waits for the horizontal pass's writes
+            // to tempBuffer (WebGPU commands within one queue submission execute
+            // in program order with respect to buffer dependencies).
+            const encoder = device.createCommandEncoder();
+            let pass = encoder.beginComputePass();
+            pass.setPipeline(pipelineH);
+            pass.setBindGroup(0, bindGroupH);
+            pass.dispatchWorkgroups(workgroupCount(width), workgroupCount(height));
+            pass.end();
+            pass = encoder.beginComputePass();
+            pass.setPipeline(pipelineV);
+            pass.setBindGroup(0, bindGroupV);
+            pass.dispatchWorkgroups(workgroupCount(width), workgroupCount(height));
+            pass.end();
+            device.queue.submit([encoder.finish()]);
+            const resultData = await readFloat32Buffer(device, outputBuffer, width * height);
+            uniformBuffer.destroy();
+            inputBuffer.destroy();
+            kernelBuffer.destroy();
+            tempBuffer.destroy();
+            outputBuffer.destroy();
+            return { data: resultData, width, height };
+        });
+    }
+}
+/* ==================================================================== */
+/* Contrast Enhancement (histogram-based percentile approximation)      */
+/* ==================================================================== */
+class GPUContrastEnhancer extends BaseWebGPUStrategy {
+    static async isSupported() {
+        return isWebGLComputeSupported() && (await getWebGPUUnsupportedReason()) === undefined;
+    }
+    static getUnsupportedReason() {
+        return getWebGPUUnsupportedReason();
+    }
+    /**
+     * The CPU version sorts every pixel to find exact percentiles. Sorting
+     * is a poor fit for a GPU compute pass, so this builds a 256-bin
+     * histogram instead (one atomicAdd per pixel), reads the 1KB histogram
+     * back to the CPU to locate the percentile bins, then runs a second,
+     * fully GPU-resident pass to apply the stretch. This trades a small
+     * amount of precision (bin width 1/255) for O(n) work instead of an
+     * O(n log n) sort, at the cost of one small CPU/GPU sync point.
+     *
+     * The two GPU round-trips (histogram pass, then stretch pass) are each
+     * wrapped in their own runGuarded scope rather than one scope spanning
+     * both. The CPU-side histogram bucketing that happens between them
+     * isn't GPU work, so it shouldn't sit inside a WebGPU error scope.
+     */
+    async apply(input, config) {
+        const { blackPoint, whitePoint } = { ...DEFAULT_CONTRAST_ENHANCEMENT_CONFIG, ...config };
+        const device = await getWebGPUDevice();
+        const { width, height } = input;
+        const size = width * height;
+        const histUniform = new ArrayBuffer(16);
+        new Uint32Array(histUniform).set([width, height, 0, 0]);
+        const histogramU32 = await this.runGuarded(device, async () => {
+            const histUniformBuffer = createUniformBuffer(device, histUniform);
+            const histInputBuffer = createReadOnlyStorageBuffer(device, input.data);
+            const histogramBuffer = device.createBuffer({
+                size: 256 * 4,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
+            });
+            device.queue.writeBuffer(histogramBuffer, 0, new Uint32Array(256));
+            const histPipeline = getPipeline(device, 'histogram', source$r, 'main');
+            const histBindGroup = device.createBindGroup({
+                layout: histPipeline.getBindGroupLayout(0),
+                entries: [
+                    { binding: 0, resource: { buffer: histUniformBuffer } },
+                    { binding: 1, resource: { buffer: histInputBuffer } },
+                    { binding: 2, resource: { buffer: histogramBuffer } },
+                ],
+            });
+            dispatch(device, histPipeline, histBindGroup, width, height);
+            const result = await readUint32Buffer(device, histogramBuffer, 256);
+            histUniformBuffer.destroy();
+            histInputBuffer.destroy();
+            histogramBuffer.destroy();
+            return result;
+        });
+        const blackCount = blackPoint * size;
+        const whiteCount = whitePoint * size;
+        let cumulative = 0;
+        let minBin = 0;
+        let maxBin = 255;
+        let foundMin = false;
+        for (let bin = 0; bin < 256; bin++) {
+            cumulative += histogramU32[bin];
+            if (!foundMin && cumulative >= blackCount) {
+                minBin = bin;
+                foundMin = true;
+            }
+            if (cumulative >= whiteCount) {
+                maxBin = bin;
+                break;
+            }
+        }
+        const minVal = minBin / 255;
+        const maxVal = maxBin / 255;
+        const range = maxVal - minVal;
+        if (range < 0.01) {
+            return { data: new Float32Array(input.data), width, height };
+        }
+        const stretchUniform = new ArrayBuffer(16);
+        const stretchU32 = new Uint32Array(stretchUniform);
+        const stretchF32 = new Float32Array(stretchUniform);
+        stretchU32[0] = width;
+        stretchU32[1] = height;
+        stretchF32[2] = minVal;
+        stretchF32[3] = range;
+        return this.runGuarded(device, async () => {
+            const stretchUniformBuffer = createUniformBuffer(device, stretchUniform);
+            const stretchInputBuffer = createReadOnlyStorageBuffer(device, input.data);
+            const outputBuffer = createOutputStorageBuffer(device, input.data.byteLength);
+            const stretchPipeline = getPipeline(device, 'stretch', source$q, 'main');
+            const stretchBindGroup = device.createBindGroup({
+                layout: stretchPipeline.getBindGroupLayout(0),
+                entries: [
+                    { binding: 0, resource: { buffer: stretchUniformBuffer } },
+                    { binding: 1, resource: { buffer: stretchInputBuffer } },
+                    { binding: 2, resource: { buffer: outputBuffer } },
+                ],
+            });
+            dispatch(device, stretchPipeline, stretchBindGroup, width, height);
+            const resultData = await readFloat32Buffer(device, outputBuffer, width * height);
+            stretchUniformBuffer.destroy();
+            stretchInputBuffer.destroy();
+            outputBuffer.destroy();
+            return { data: resultData, width, height };
+        });
+    }
+}
+async function readUint32Buffer(device, buffer, length) {
+    const byteLength = length * 4;
+    const staging = device.createBuffer({
+        size: byteLength,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+    const encoder = device.createCommandEncoder();
+    encoder.copyBufferToBuffer(buffer, 0, staging, 0, byteLength);
+    device.queue.submit([encoder.finish()]);
+    await staging.mapAsync(GPUMapMode.READ);
+    const copy = new Uint32Array(staging.getMappedRange().slice(0));
+    staging.unmap();
+    staging.destroy();
+    return copy;
+}
+/* ==================================================================== */
+/* Quantizer                                                             */
+/* ==================================================================== */
+class GPUQuantizer extends BaseWebGPUStrategy {
+    static async isSupported() {
+        return isWebGLComputeSupported() && (await getWebGPUUnsupportedReason()) === undefined;
+    }
+    static getUnsupportedReason() {
+        return getWebGPUUnsupportedReason();
+    }
+    async apply(input, config) {
+        const cfg = { ...DEFAULT_QUANTIZER_CONFIG, ...config };
+        const device = await getWebGPUDevice();
+        const { width, height } = input;
+        const step = 1 / (cfg.levels - 1);
+        const uniformData = new ArrayBuffer(16);
+        const u32View = new Uint32Array(uniformData);
+        const f32View = new Float32Array(uniformData);
+        u32View[0] = width;
+        u32View[1] = height;
+        f32View[2] = step;
+        return this.runGuarded(device, async () => {
+            const uniformBuffer = createUniformBuffer(device, uniformData);
+            const inputBuffer = createReadOnlyStorageBuffer(device, input.data);
+            const outputBuffer = createOutputStorageBuffer(device, input.data.byteLength);
+            const pipeline = getPipeline(device, 'quantize', source$p, 'main');
+            const bindGroup = device.createBindGroup({
+                layout: pipeline.getBindGroupLayout(0),
+                entries: [
+                    { binding: 0, resource: { buffer: uniformBuffer } },
+                    { binding: 1, resource: { buffer: inputBuffer } },
+                    { binding: 2, resource: { buffer: outputBuffer } },
+                ],
+            });
+            dispatch(device, pipeline, bindGroup, width, height);
+            const resultData = await readFloat32Buffer(device, outputBuffer, width * height);
+            uniformBuffer.destroy();
+            inputBuffer.destroy();
+            outputBuffer.destroy();
+            return { data: resultData, width, height };
+        });
+    }
+}
+/* ==================================================================== */
+/* Presets and pipeline (async-native equivalents of cpu.ts's)           */
+/* ==================================================================== */
+/**
+ * Preset preprocessing pipelines for common use cases.
+ * async GPU equivalents of `PreprocessingPresets` in cpu.ts.
+ */
+const GPUPreprocessingPresets = {
+    /** Light preprocessing - minimal smoothing. Good for clean studio photos, illustrations. */
+    light: (input) => new GPUBilateralFilter().apply(input, { sigmaSpatial: 2, sigmaRange: 0.08 }),
+    /** Standard preprocessing - balanced smoothing. Good for most outdoor photos, portraits. */
+    standard: (input) => new GPUBilateralFilter().apply(input, { sigmaSpatial: 4, sigmaRange: 0.1 }),
+    /** Heavy preprocessing - aggressive noise removal. Good for very textured images. */
+    heavy: async (input) => {
+        let result = await new GPUBilateralFilter().apply(input, { sigmaSpatial: 5, sigmaRange: 0.12 });
+        result = await new GPUBilateralFilter().apply(result, { sigmaSpatial: 3, sigmaRange: 0.1 });
+        return result;
+    },
+    /** Artistic preprocessing - painterly smoothing. Good for stylized/artistic output. */
+    artistic: async (input) => {
+        let result = await new GPUKuwaharaFilter().apply(input, { radius: 4 });
+        result = await new GPUBilateralFilter().apply(result, { sigmaSpatial: 2, sigmaRange: 0.08 });
+        return result;
+    },
+    /** Photo preprocessing - for photos with grass/nature. Good for landscape, outdoor scenes. */
+    nature: async (input) => {
+        let result = await new GPUBilateralFilter().apply(input, { sigmaSpatial: 6, sigmaRange: 0.15 });
+        result = await new GPUBilateralFilter().apply(result, { sigmaSpatial: 3, sigmaRange: 0.08 });
+        return result;
+    },
+};
+
+var webgpu = /*#__PURE__*/Object.freeze({
+    __proto__: null,
+    GPUBilateralFilter: GPUBilateralFilter,
+    GPUContrastEnhancer: GPUContrastEnhancer,
+    GPUGaussianBlur: GPUGaussianBlur,
+    GPUKuwaharaFilter: GPUKuwaharaFilter,
+    GPUMedianFilter: GPUMedianFilter,
+    GPUPreprocessingPresets: GPUPreprocessingPresets,
+    GPUQuantizer: GPUQuantizer,
+    clearShaderCaches: clearShaderCaches,
+    disposeWebGPU: disposeWebGPU,
+    getWebGPUUnsupportedReason: getWebGPUUnsupportedReason
+});
+
+/**
+ * Preprocessing module for XDoG/FDoG
+ *
+ * Provides filters to prepare images before line detection.
+ * These help reduce noise and texture while preserving important edges.
+ *
+ * Section 3.2 of the paper discusses the importance of bilateral
+ * preprocessing for "indication" - attenuating weak edges while
+ * preserving strong edges.
+ */
+/**
+ * Bilateral Filter
+ *
+ * Edge-preserving smoothing filter that averages pixels based on both
+ * spatial proximity AND intensity similarity. This smooths out texture
+ * (like grass) while keeping strong edges (like the car outline) sharp.
+ *
+ * This is the recommended preprocessing for most images.
+ *
+ * As mentioned in Section 3.2, bilateral filtering can serve as a
+ * "prioritization mechanism" for indication - attenuating weak edges
+ * while supporting strong edges.
+ *
+ * CPU is always available (BaseCPUStrategy.isSupported() / dispose() /
+ * backend all apply unchanged). This is the universal fallback.
+ */
+let BilateralFilter$2 = class BilateralFilter extends BaseCPUStrategy {
+    async apply(input, config) {
+        const cfg = { ...DEFAULT_BILATERAL_CONFIG, ...config };
+        const { width, height } = input;
+        const output = createChannelImage$1(width, height);
+        const radius = Math.ceil(cfg.sigmaSpatial * (cfg.radiusMultiplier ?? 2));
+        const sigmaSpatial2 = 2 * cfg.sigmaSpatial * cfg.sigmaSpatial;
+        const sigmaRange2 = 2 * cfg.sigmaRange * cfg.sigmaRange;
+        // Precompute spatial weights
+        const spatialWeights = [];
+        for (let dy = -radius; dy <= radius; dy++) {
+            for (let dx = -radius; dx <= radius; dx++) {
+                const dist2 = dx * dx + dy * dy;
+                spatialWeights.push(Math.exp(-dist2 / sigmaSpatial2));
+            }
+        }
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const centerValue = getPixel(input, x, y);
+                let sum = 0;
+                let weightSum = 0;
+                let idx = 0;
+                for (let dy = -radius; dy <= radius; dy++) {
+                    for (let dx = -radius; dx <= radius; dx++) {
+                        const nx = x + dx;
+                        const ny = y + dy;
+                        const neighborValue = getPixel(input, nx, ny);
+                        // Range weight based on intensity difference
+                        const intensityDiff = neighborValue - centerValue;
+                        const rangeWeight = Math.exp(-(intensityDiff * intensityDiff) / sigmaRange2);
+                        // Combined weight
+                        const weight = spatialWeights[idx] * rangeWeight;
+                        sum += neighborValue * weight;
+                        weightSum += weight;
+                        idx++;
+                    }
+                }
+                output.data[y * width + x] = weightSum > 0 ? sum / weightSum : centerValue;
+            }
+        }
+        return output;
+    }
+};
+/**
+ * Median Filter
+ *
+ * Replaces each pixel with the median of its neighborhood.
+ * Excellent for removing salt-and-pepper noise and small texture details.
+ */
+let MedianFilter$2 = class MedianFilter extends BaseCPUStrategy {
+    async apply(input, config) {
+        const cfg = { ...DEFAULT_MEDIAN_CONFIG, ...config };
+        const { width, height } = input;
+        const output = createChannelImage$1(width, height);
+        const radius = cfg.radius;
+        const kernelSize = (2 * radius + 1) * (2 * radius + 1);
+        const values = new Array(kernelSize);
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                let idx = 0;
+                for (let dy = -radius; dy <= radius; dy++) {
+                    for (let dx = -radius; dx <= radius; dx++) {
+                        values[idx++] = getPixel(input, x + dx, y + dy);
+                    }
+                }
+                // Sort and take median
+                values.sort((a, b) => a - b);
+                output.data[y * width + x] = values[Math.floor(kernelSize / 2)];
+            }
+        }
+        return output;
+    }
+};
+/**
+ * Kuwahara Filter
+ *
+ * Artistic smoothing filter that creates a painterly effect.
+ * Divides the neighborhood into 4 quadrants, finds the one with
+ * lowest variance, and uses its mean. Creates flat regions with
+ * preserved edges - great for a more stylized look.
+ */
+let KuwaharaFilter$2 = class KuwaharaFilter extends BaseCPUStrategy {
+    async apply(input, config) {
+        const cfg = { ...DEFAULT_KUWAHARA_CONFIG, ...config };
+        const { width, height } = input;
+        const output = createChannelImage$1(width, height);
+        const r = cfg.radius;
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                // Four quadrants: top-left, top-right, bottom-left, bottom-right
+                const quadrants = [
+                    { startX: -r, endX: 0, startY: -r, endY: 0 },
+                    { startX: 0, endX: r, startY: -r, endY: 0 },
+                    { startX: -r, endX: 0, startY: 0, endY: r },
+                    { startX: 0, endX: r, startY: 0, endY: r },
+                ];
+                let minVariance = Infinity;
+                let bestMean = getPixel(input, x, y);
+                for (const q of quadrants) {
+                    let sum = 0;
+                    let sumSq = 0;
+                    let count = 0;
+                    for (let dy = q.startY; dy <= q.endY; dy++) {
+                        for (let dx = q.startX; dx <= q.endX; dx++) {
+                            const val = getPixel(input, x + dx, y + dy);
+                            sum += val;
+                            sumSq += val * val;
+                            count++;
+                        }
+                    }
+                    const mean = sum / count;
+                    const variance = (sumSq / count) - (mean * mean);
+                    if (variance < minVariance) {
+                        minVariance = variance;
+                        bestMean = mean;
+                    }
+                }
+                output.data[y * width + x] = bestMean;
+            }
+        }
+        return output;
+    }
+};
+/**
+ * Gaussian Blur
+ *
+ * Simple Gaussian smoothing. Less edge-preserving than bilateral,
+ * but faster. Good for very noisy images or when used with small sigma.
+ */
+let GaussianBlur$2 = class GaussianBlur extends BaseCPUStrategy {
+    async apply(input, config) {
+        const { width, height } = input;
+        const sigma = config.sigma ?? DEFAULT_GAUSSIAN_CONFIG.sigma;
+        if (sigma < 0.1) {
+            return { data: new Float32Array(input.data), width, height };
+        }
+        const radius = Math.ceil(sigma * 3);
+        const kernelSize = radius * 2 + 1;
+        const kernel = generateGaussianKernel$1(sigma, kernelSize);
+        // Horizontal pass
+        const temp = createChannelImage$1(width, height);
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                let val = 0;
+                for (let k = 0; k < kernelSize; k++) {
+                    val += getPixel(input, x + k - radius, y) * kernel[k];
+                }
+                temp.data[y * width + x] = val;
+            }
+        }
+        // Vertical pass
+        const output = createChannelImage$1(width, height);
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                let val = 0;
+                for (let k = 0; k < kernelSize; k++) {
+                    val += getPixel(temp, x, y + k - radius) * kernel[k];
+                }
+                output.data[y * width + x] = val;
+            }
+        }
+        return output;
+    }
+};
+/**
+ * Contrast Enhancement
+ *
+ * Stretches the histogram to use the full 0-1 range.
+ * Can help make edges more distinct before processing.
+ */
+let ContrastEnhancer$2 = class ContrastEnhancer extends BaseCPUStrategy {
+    async apply(input, config) {
+        const cfg = { ...DEFAULT_CONTRAST_ENHANCEMENT_CONFIG, ...config };
+        const { width, height, data } = input;
+        const output = createChannelImage$1(width, height);
+        const size = width * height;
+        // Find histogram percentiles
+        const sorted = new Float32Array(data).sort();
+        const minVal = sorted[Math.floor(size * cfg.blackPoint)];
+        const maxVal = sorted[Math.floor(size * cfg.whitePoint)];
+        const range = maxVal - minVal;
+        if (range < 0.01) {
+            return { data: new Float32Array(data), width, height };
+        }
+        for (let i = 0; i < size; i++) {
+            output.data[i] = Math.max(0, Math.min(1, (data[i] - minVal) / range));
+        }
+        return output;
+    }
+};
+/**
+ * Quantize to reduce color levels
+ *
+ * Reduces the number of intensity levels, creating a posterized effect.
+ * Can help reduce noise by grouping similar intensities together.
+ */
+let Quantizer$2 = class Quantizer extends BaseCPUStrategy {
+    async apply(input, config) {
+        const cfg = { ...DEFAULT_QUANTIZER_CONFIG, ...config };
+        const { width, height, data } = input;
+        const output = createChannelImage$1(width, height);
+        const size = width * height;
+        const step = 1 / (cfg.levels - 1);
+        for (let i = 0; i < size; i++) {
+            output.data[i] = Math.round(data[i] / step) * step;
+        }
+        return output;
+    }
+};
+/**
+ * Computes local variance as texture detection preprocessing
+ *
+ * STANDALONE PREPROCESSING: This class only detects texture.
+ * It does NOT perform edge detection.
+ *
+ * Input: ChannelImage (typically grayscale image)
+ * Output: ChannelImage with same dimensions where each pixel value
+ *         represents texture strength (0 = pure structure, 1 = pure texture)
+ *
+ * The output can be:
+ * 1. Passed to your XDoG/FDoG/HDoG implementation to modulate parameters
+ * 2. Combined with other texture detection methods (Spectral, Patch-based)
+ * 3. Visualized for debugging
+ * 4. Processed through additional preprocessing steps
+ *
+ * Example:
+ * ```
+ * const filter = new LocalVarianceFilter({
+ *   windowRadius: 2,
+ *   normalizeByGradient: true,
+ * });
+ *
+ * const textureMap = filter.apply(grayImage);
+ * // textureMap.data[i] = texture strength at pixel i
+ * // Now use textureMap with your own edge detection
+ * ```
+ */
+class LocalVarianceFilter {
+    /** CPU-only. No WebGL/WebGPU counterparts for this yet. */
+    backend = 'cpu';
+    defaultConfig = {
+        windowRadius: 2,
+        normalizeByGradient: true,
+        varianceScale: 1.0,
+        maxVariance: 1.0,
+    };
+    dispose() { }
+    /**
+     * Process using separable convolution (faster for large windows)
+     * Variance = E[X^2] - E[X]^2
+     * Compute box blur of X and X^2 separately, then combine
+     */
+    async apply(image, config) {
+        const { width, height, data } = image;
+        const cfg = { ...config, ...this.defaultConfig };
+        const { windowRadius, normalizeByGradient, varianceScale, maxVariance } = cfg;
+        // Step 1: Compute E[X] (mean) via box filter
+        const meanImage = this.boxBlur(data, width, height, windowRadius);
+        // Step 2: Compute E[X^2] via box filter on squared values
+        const squaredData = new Float32Array(data.length);
+        for (let i = 0; i < data.length; i++) {
+            squaredData[i] = data[i] * data[i];
+        }
+        const meanOfSquaresImage = this.boxBlur(squaredData, width, height, windowRadius);
+        // Step 3: Compute variance = E[X^2] - E[X]^2
+        const result = new Float32Array(data.length);
+        const gradientMap = normalizeByGradient ? this.computeGradientMap(data, width, height) : null;
+        for (let i = 0; i < data.length; i++) {
+            const mean = meanImage[i];
+            const variance = Math.max(0, meanOfSquaresImage[i] - mean * mean);
+            let textureStrength = variance * varianceScale;
+            if (normalizeByGradient && gradientMap) {
+                const gradient = gradientMap[i];
+                const gradientFactor = 1.0 / (1.0 + gradient * gradient);
+                textureStrength *= gradientFactor;
+            }
+            if (maxVariance !== undefined) {
+                textureStrength = Math.min(textureStrength, maxVariance);
+            }
+            result[i] = Math.min(1.0, textureStrength);
+        }
+        return { data: result, width, height };
+    }
+    /**
+     * Fast box blur using separable convolution + a sliding-window running sum.
+     *
+     * @remarks
+     * Each pass is O(width * height): the window sum is updated incrementally
+     * as it slides one pixel over (`sum += incoming - outgoing`) rather than
+     * being re-summed from scratch at every position, so cost no longer grows
+     * with `radius`. Edge pixels use clamp-to-edge boundary handling.
+     *
+     * Trade-off: because each sum is derived from the previous one instead of
+     * being recomputed from scratch, floating-point error can accumulate along
+     * a scan line, unlike the resum-per-pixel approach this replaces. This is
+     * negligible in practice for 0-1 normalized pixel values and the small
+     * radii (1-4) this filter supports.
+     *
+     * @private
+     */
+    boxBlur(data, width, height, radius) {
+        const windowSize = 2 * radius + 1;
+        // Horizontal pass: O(width) per row via a running sum, not O(width * radius).
+        const horizontal = new Float32Array(data.length);
+        for (let y = 0; y < height; y++) {
+            const rowOffset = y * width;
+            // Seed the window sum for x = 0 (the only O(radius) step per row).
+            let sum = 0;
+            for (let j = 0; j < windowSize; j++) {
+                const srcX = Math.max(0, Math.min(width - 1, j - radius));
+                sum += data[rowOffset + srcX];
+            }
+            horizontal[rowOffset] = sum / windowSize;
+            // Slide the window one column at a time: O(1) per step instead of O(radius).
+            for (let x = 1; x < width; x++) {
+                const outgoingX = Math.max(0, Math.min(width - 1, x - 1 - radius));
+                const incomingX = Math.max(0, Math.min(width - 1, x + radius));
+                sum += data[rowOffset + incomingX] - data[rowOffset + outgoingX];
+                horizontal[rowOffset + x] = sum / windowSize;
+            }
+        }
+        // Vertical pass: same sliding-window trick, now sliding down each column.
+        const result = new Float32Array(data.length);
+        for (let x = 0; x < width; x++) {
+            // Seed the window sum for y = 0.
+            let sum = 0;
+            for (let j = 0; j < windowSize; j++) {
+                const srcY = Math.max(0, Math.min(height - 1, j - radius));
+                sum += horizontal[srcY * width + x];
+            }
+            result[x] = sum / windowSize;
+            for (let y = 1; y < height; y++) {
+                const outgoingY = Math.max(0, Math.min(height - 1, y - 1 - radius));
+                const incomingY = Math.max(0, Math.min(height - 1, y + radius));
+                sum += horizontal[incomingY * width + x] - horizontal[outgoingY * width + x];
+                result[y * width + x] = sum / windowSize;
+            }
+        }
+        return result;
+    }
+    /**
+     * Compute gradient map using Sobel filter (separable for efficiency)
+     * @private
+     */
+    computeGradientMap(data, width, height) {
+        const result = new Float32Array(data.length);
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                if (x === 0 || x === width - 1 || y === 0 || y === height - 1) {
+                    result[y * width + x] = 0;
+                    continue;
+                }
+                const rowUp = (y - 1) * width;
+                const rowMid = y * width;
+                const rowDown = (y + 1) * width;
+                // Each neighbor read once and reused for both gx and gy
+                const tl = data[rowUp + x - 1];
+                const tm = data[rowUp + x];
+                const tr = data[rowUp + x + 1];
+                const ml = data[rowMid + x - 1];
+                const mr = data[rowMid + x + 1];
+                const bl = data[rowDown + x - 1];
+                const bm = data[rowDown + x];
+                const br = data[rowDown + x + 1];
+                // Sobel
+                const gx = (-tl + tr) - 2 * ml + 2 * mr - bl + br;
+                const gy = tl + 2 * tm + tr - bl - 2 * bm - br;
+                const magnitude = Math.sqrt(gx * gx + gy * gy);
+                result[y * width + x] = magnitude;
+            }
+        }
+        return result;
+    }
+}
+/**
+ * Preset preprocessing pipelines for common use cases
+ */
+const EdgeAwareFilterPresets = {
+    /**
+     * Light preprocessing - minimal smoothing
+     * Good for: Clean studio photos, illustrations
+     */
+    light: async (input) => {
+        return await new BilateralFilter$2().apply(input, { sigmaSpatial: 2, sigmaRange: 0.08 });
+    },
+    /**
+     * Standard preprocessing - balanced smoothing
+     * Good for: Most outdoor photos, portraits
+     */
+    standard: async (input) => {
+        return new BilateralFilter$2().apply(input, { sigmaSpatial: 4, sigmaRange: 0.1 });
+    },
+    /**
+     * Heavy preprocessing - aggressive noise removal
+     * Good for: Very textured images (grass, foliage, fabric)
+     */
+    heavy: async (input) => {
+        let result = await new BilateralFilter$2().apply(input, { sigmaSpatial: 5, sigmaRange: 0.12 });
+        result = await new BilateralFilter$2().apply(result, { sigmaSpatial: 3, sigmaRange: 0.1 });
+        return result;
+    },
+    /**
+     * Artistic preprocessing - painterly smoothing
+     * Good for: Stylized/artistic output
+     */
+    artistic: async (input) => {
+        let result = await new KuwaharaFilter$2().apply(input, { radius: 4 });
+        result = await new BilateralFilter$2().apply(result, { sigmaSpatial: 2, sigmaRange: 0.08 });
+        return result;
+    },
+    /**
+     * Photo preprocessing - for photos with grass/nature
+     * Good for: Landscape, outdoor scenes
+     */
+    nature: async (input) => {
+        // First pass: aggressive bilateral to smooth texture
+        let result = await new BilateralFilter$2().apply(input, { sigmaSpatial: 6, sigmaRange: 0.15 });
+        // Second pass: lighter bilateral to clean up
+        result = await new BilateralFilter$2().apply(result, { sigmaSpatial: 3, sigmaRange: 0.08 });
+        return result;
+    },
+};
+
+var cpu = /*#__PURE__*/Object.freeze({
+    __proto__: null,
+    BilateralFilter: BilateralFilter$2,
+    ContrastEnhancer: ContrastEnhancer$2,
+    EdgeAwareFilterPresets: EdgeAwareFilterPresets,
+    GaussianBlur: GaussianBlur$2,
+    KuwaharaFilter: KuwaharaFilter$2,
+    LocalVarianceFilter: LocalVarianceFilter,
+    MedianFilter: MedianFilter$2,
+    Quantizer: Quantizer$2
+});
+
+// AUTO-GENERATED FILE — DO NOT EDIT.
+// Source: filters/isotropic/shaders/webgpu-horizontal-blur.wgsl
+// Regenerate with `npm run build:shaders`.
+const source$n = `struct Params {
+  width: u32,
+  height: u32,
+  kernelSize: u32,
+  _pad: u32,
+}
+
+@group(0) @binding(0)
+var<uniform> params: Params;
+
+@group(0) @binding(1)
+var<storage, read> kernel: array<f32>;
+
+@group(0) @binding(2)
+var<storage, read> input: array<f32>;
+
+@group(0) @binding(3)
+var<storage, read_write> output: array<f32>;
+
+@compute @workgroup_size(16, 16)
+fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+  let x = global_id.x;
+  let y = global_id.y;
+  
+  if (x >= params.width || y >= params.height) {
+    return;
+  }
+  
+  let halfSize = i32(params.kernelSize) / 2;
+  var sum = 0.0;
+  
+  for (var k = 0; k < i32(params.kernelSize); k = k + 1) {
+    let sampleX = i32(x) + k - halfSize;
+    let clampedX = clamp(sampleX, 0, i32(params.width) - 1);
+    let sampleIdx = u32(clampedX) + y * params.width;
+    sum = sum + input[sampleIdx] * kernel[u32(k)];
+  }
+  
+  output[x + y * params.width] = sum;
+}`;
+
+// AUTO-GENERATED FILE — DO NOT EDIT.
+// Source: filters/isotropic/shaders/webgpu-vertical-blur.wgsl
+// Regenerate with `npm run build:shaders`.
+const source$m = `struct Params {
+  width: u32,
+  height: u32,
+  kernelSize: u32,
+  _pad: u32,
+}
+
+@group(0) @binding(0)
+var<uniform> params: Params;
+
+@group(0) @binding(1)
+var<storage, read> kernel: array<f32>;
+
+@group(0) @binding(2)
+var<storage, read> input: array<f32>;
+
+@group(0) @binding(3)
+var<storage, read_write> output: array<f32>;
+
+@compute @workgroup_size(16, 16)
+fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+  let x = global_id.x;
+  let y = global_id.y;
+  
+  if (x >= params.width || y >= params.height) {
+    return;
+  }
+  
+  let halfSize = i32(params.kernelSize) / 2;
+  var sum = 0.0;
+  
+  for (var k = 0; k < i32(params.kernelSize); k = k + 1) {
+    let sampleY = i32(y) + k - halfSize;
+    let clampedY = clamp(sampleY, 0, i32(params.height) - 1);
+    let sampleIdx = x + u32(clampedY) * params.width;
+    sum = sum + input[sampleIdx] * kernel[u32(k)];
+  }
+  
+  output[x + y * params.width] = sum;
+}`;
+
+/**
+ * WebGPU-accelerated isotropic Gaussian blur
+ * Uses compute shaders with separable convolution
+ *
+ * Supports concurrent/parallel blur calls by creating
+ * separate staging buffers for each operation instead of reusing one.
+ */
+class WebGPUIsotropicFilter extends BaseWebGPUStrategy {
+    resources = null;
+    /**
+     * Confirms an adapter is actually obtainable, not just that
+     * `navigator.gpu` exists as an API surface.
+     */
+    static async isSupported() {
+        return isWebGPUSupported();
+    }
+    /**
+     * Initialize WebGPU resources
+     */
+    async initResources() {
+        if (this.resources)
+            return this.resources;
+        const device = await WebGPUIsotropicFilter.getWebGPUDevice();
+        if (!device) {
+            throw new Error('WebGPU device not available');
+        }
+        // Create bind group layout
+        const bindGroupLayout = device.createBindGroupLayout({
+            entries: [
+                { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+                { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+                { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+                { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+            ],
+        });
+        const pipelineLayout = device.createPipelineLayout({
+            bindGroupLayouts: [bindGroupLayout],
+        });
+        // Create compute pipelines
+        const horizontalPipeline = device.createComputePipeline({
+            layout: pipelineLayout,
+            compute: {
+                module: device.createShaderModule({ code: source$n }),
+                entryPoint: 'main',
+            },
+        });
+        const verticalPipeline = device.createComputePipeline({
+            layout: pipelineLayout,
+            compute: {
+                module: device.createShaderModule({ code: source$m }),
+                entryPoint: 'main',
+            },
+        });
+        return {
+            device,
+            horizontalPipeline,
+            verticalPipeline,
+            bindGroupLayout,
+        };
+    }
+    /**
+     * Fix for WebGPUIsotropicBlur: allocate buffers per call instead of
+     * reusing instance-level ones, so concurrent blur() calls (as issued by
+     * DoGProcessor.process()'s Promise.all([blur(sigma), blur(sigma*k)]))
+     * never share mutable GPU state. Mirrors the pattern already used by
+     * WebGPUFlowGuidedBlur and WebGPUGradientAlignedBlur.
+     *
+     * Delete the old paramsBuffer/kernelBuffer/inputBuffer/tempBuffer/
+     * outputBuffer/currentBufferSize/currentKernelSize instance fields and
+     * ensureBuffers() method; they're no longer needed.
+     */
+    async apply(input, config) {
+        const cfg = { ...DEFAULT_ISOTROPIC_BLUR_CONFIG, ...config };
+        const { sigma } = cfg;
+        if (sigma < 0.1) {
+            return {
+                data: new Float32Array(input.data),
+                width: input.width,
+                height: input.height,
+            };
+        }
+        const { device, horizontalPipeline, verticalPipeline, bindGroupLayout } = await this.initResources();
+        const { width, height } = input;
+        const pixelCount = width * height;
+        const bufferSize = pixelCount * 4;
+        const kernelSize = Math.min(cfg.maxKernelSize, Math.max(3, Math.floor(sigma * cfg.kernelSizeMultiplier) | 1));
+        const kernel = generateGaussianKernel$1(sigma, kernelSize);
+        // Per-call resources -- never shared with a concurrent blur() call on
+        // this same instance.
+        const paramsBuffer = device.createBuffer({
+            size: 16,
+            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        });
+        const kernelBuffer = device.createBuffer({
+            size: kernelSize * 4,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        });
+        const inputBuffer = device.createBuffer({
+            size: bufferSize,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+        });
+        const tempBuffer = device.createBuffer({
+            size: bufferSize,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+        });
+        const outputBuffer = device.createBuffer({
+            size: bufferSize,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+        });
+        const stagingBuffer = device.createBuffer({
+            size: bufferSize,
+            usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+        });
+        try {
+            device.queue.writeBuffer(paramsBuffer, 0, new Uint32Array([width, height, kernelSize, 0]));
+            device.queue.writeBuffer(kernelBuffer, 0, new Float32Array(kernel));
+            device.queue.writeBuffer(inputBuffer, 0, new Float32Array(input.data));
+            const horizontalBindGroup = device.createBindGroup({
+                layout: bindGroupLayout,
+                entries: [
+                    { binding: 0, resource: { buffer: paramsBuffer } },
+                    { binding: 1, resource: { buffer: kernelBuffer } },
+                    { binding: 2, resource: { buffer: inputBuffer } },
+                    { binding: 3, resource: { buffer: tempBuffer } },
+                ],
+            });
+            const verticalBindGroup = device.createBindGroup({
+                layout: bindGroupLayout,
+                entries: [
+                    { binding: 0, resource: { buffer: paramsBuffer } },
+                    { binding: 1, resource: { buffer: kernelBuffer } },
+                    { binding: 2, resource: { buffer: tempBuffer } },
+                    { binding: 3, resource: { buffer: outputBuffer } },
+                ],
+            });
+            const workgroupsX = Math.ceil(width / 16);
+            const workgroupsY = Math.ceil(height / 16);
+            const commandEncoder = device.createCommandEncoder();
+            const horizontalPass = commandEncoder.beginComputePass();
+            horizontalPass.setPipeline(horizontalPipeline);
+            horizontalPass.setBindGroup(0, horizontalBindGroup);
+            horizontalPass.dispatchWorkgroups(workgroupsX, workgroupsY);
+            horizontalPass.end();
+            const verticalPass = commandEncoder.beginComputePass();
+            verticalPass.setPipeline(verticalPipeline);
+            verticalPass.setBindGroup(0, verticalBindGroup);
+            verticalPass.dispatchWorkgroups(workgroupsX, workgroupsY);
+            verticalPass.end();
+            commandEncoder.copyBufferToBuffer(outputBuffer, 0, stagingBuffer, 0, bufferSize);
+            device.queue.submit([commandEncoder.finish()]);
+            await stagingBuffer.mapAsync(GPUMapMode.READ);
+            const resultData = new Float32Array(stagingBuffer.getMappedRange().slice(0));
+            stagingBuffer.unmap();
+            return { data: resultData, width, height };
+        }
+        finally {
+            // Always release per-call resources, even if a pass or readback
+            // throws, so concurrent/repeated calls don't leak GPU memory.
+            paramsBuffer.destroy();
+            kernelBuffer.destroy();
+            inputBuffer.destroy();
+            tempBuffer.destroy();
+            outputBuffer.destroy();
+            stagingBuffer.destroy();
+        }
+    }
+    /**
+     * dispose() no longer needs to clean up shared buffers -- only the
+     * cached pipeline/layout resources from initResources() remain.
+     */
+    dispose() { }
+}
+
+// AUTO-GENERATED FILE — DO NOT EDIT.
+// Source: filters/isotropic/shaders/guassian-horizontal.glsl
+// Regenerate with `npm run build:shaders`.
+const source$l = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+
+in vec2 v_texCoord;
+out vec4 fragColor;
+
+uniform sampler2D u_image;
+uniform float u_texelSizeX;
+uniform int u_radius;
+uniform float u_sigma2;
+
+void main() {
+  float sum = 0.0;
+  float weightSum = 0.0;
+  
+  for (int dx = -u_radius; dx <= u_radius; dx++) {
+    float offset = float(dx) * u_texelSizeX;
+    float value = texture(u_image, v_texCoord + vec2(offset, 0.0)).r;
+    
+    float weight = exp(-float(dx * dx) / u_sigma2);
+    sum += value * weight;
+    weightSum += weight;
+  }
+  
+  fragColor = vec4(sum / weightSum, 0.0, 0.0, 1.0);
+}`;
+
+// AUTO-GENERATED FILE — DO NOT EDIT.
+// Source: filters/isotropic/shaders/guassian-vertical.glsl
+// Regenerate with `npm run build:shaders`.
+const source$k = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+
+in vec2 v_texCoord;
+out vec4 fragColor;
+
+uniform sampler2D u_image;
+uniform float u_texelSizeY;
+uniform int u_radius;
+uniform float u_sigma2;
+
+void main() {
+  float sum = 0.0;
+  float weightSum = 0.0;
+  
+  for (int dy = -u_radius; dy <= u_radius; dy++) {
+    float offset = float(dy) * u_texelSizeY;
+    float value = texture(u_image, v_texCoord + vec2(0.0, offset)).r;
+    
+    float weight = exp(-float(dy * dy) / u_sigma2);
+    sum += value * weight;
+    weightSum += weight;
+  }
+  
+  fragColor = vec4(sum / weightSum, 0.0, 0.0, 1.0);
+}`;
+
+/**
+ * WebGL-Accelerated Preprocessing Module for XDoG/FDoG
+ *
+ * High-performance GPU implementations of image preprocessing filters.
+ * Achieves 50-100x speedup over CPU implementations for large images.
+ */
+// ============================================================================
+// WebGL Context Management
+// ============================================================================
+let gl = null;
+let canvas = null;
+// Shader program cache
+const programCache = new Map();
+// Reusable geometry buffers
+let quadVAO = null;
+/**
+ * Check if running in a WebWorker context
+ */
+function isWorkerContext() {
+    return typeof document === 'undefined';
+}
+/**
+ * Initialize or get WebGL context
+ */
+function getGL() {
+    if (gl)
+        return gl;
+    try {
+        let glCanvas;
+        // Use OffscreenCanvas in WebWorker, HTMLCanvasElement in main thread
+        if (isWorkerContext()) {
+            glCanvas = new OffscreenCanvas(1, 1);
+        }
+        else {
+            glCanvas = document.createElement('canvas');
+        }
+        glCanvas.width = 1;
+        glCanvas.height = 1;
+        gl = glCanvas.getContext('webgl2', {
+            alpha: false,
+            antialias: false,
+            depth: false,
+            stencil: false,
+            powerPreference: 'high-performance',
+            preserveDrawingBuffer: false,
+        });
+        if (!gl) {
+            console.warn('WebGL 2.0 not available');
+            return null;
+        }
+        // Enable required extensions for float textures
+        const ext1 = gl.getExtension('EXT_color_buffer_float');
+        if (!ext1) {
+            console.warn('EXT_color_buffer_float not available, some features may be limited');
+        }
+        canvas = glCanvas;
+        // Setup reusable quad geometry
+        setupQuadGeometry();
+        return gl;
+    }
+    catch (err) {
+        console.error('WebGL initialization failed:', err);
+        return null;
+    }
+}
+/**
+ * Setup fullscreen quad VAO (reused for all render passes)
+ */
+function setupQuadGeometry() {
+    if (!gl)
+        return;
+    quadVAO = gl.createVertexArray();
+    gl.bindVertexArray(quadVAO);
+    // Positions: fullscreen quad in clip space
+    const positions = new Float32Array([
+        -1, -1,
+        1, -1,
+        -1, 1,
+        1, 1,
+    ]);
+    // Texture coordinates
+    const texCoords = new Float32Array([
+        0, 0,
+        1, 0,
+        0, 1,
+        1, 1,
+    ]);
+    const posBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    const texBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, texBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, texCoords, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(1);
+    gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
+}
+// ============================================================================
+// Shader Compilation Utilities
+// ============================================================================
+const VERTEX_SHADER = `#version 300 es
+layout(location = 0) in vec2 a_position;
+layout(location = 1) in vec2 a_texCoord;
+out vec2 v_texCoord;
+
+void main() {
+  gl_Position = vec4(a_position, 0.0, 1.0);
+  v_texCoord = a_texCoord;
+}
+`;
+function compileShader$2(source, type) {
+    if (!gl)
+        return null;
+    const shader = gl.createShader(type);
+    if (!shader)
+        return null;
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        console.error('Shader compile error:', gl.getShaderInfoLog(shader));
+        gl.deleteShader(shader);
+        return null;
+    }
+    return shader;
+}
+function createProgram$3(fragmentSource, cacheKey) {
+    if (!gl)
+        return null;
+    // Check cache first
+    const cached = programCache.get(cacheKey);
+    if (cached)
+        return cached;
+    const vertShader = compileShader$2(VERTEX_SHADER, gl.VERTEX_SHADER);
+    const fragShader = compileShader$2(fragmentSource, gl.FRAGMENT_SHADER);
+    if (!vertShader || !fragShader)
+        return null;
+    const program = gl.createProgram();
+    if (!program)
+        return null;
+    gl.attachShader(program, vertShader);
+    gl.attachShader(program, fragShader);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        console.error('Program link error:', gl.getProgramInfoLog(program));
+        gl.deleteProgram(program);
+        return null;
+    }
+    // Cleanup shaders (they're now part of the program)
+    gl.deleteShader(vertShader);
+    gl.deleteShader(fragShader);
+    // Cache the program
+    programCache.set(cacheKey, program);
+    return program;
+}
+// ============================================================================
+// Texture and Framebuffer Utilities
+// ============================================================================
+function createInputTexture(data, width, height) {
+    if (!gl)
+        return null;
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    // Upload grayscale data as R32F
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, width, height, 0, gl.RED, gl.FLOAT, data);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    return texture;
+}
+function createFramebuffer$1(width, height) {
+    if (!gl)
+        return null;
+    const fb = gl.createFramebuffer();
+    const tex = gl.createTexture();
+    if (!fb || !tex)
+        return null;
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, height, 0, gl.RGBA, gl.FLOAT, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if (status !== gl.FRAMEBUFFER_COMPLETE) {
+        console.error('Framebuffer incomplete:', status);
+        gl.deleteFramebuffer(fb);
+        gl.deleteTexture(tex);
+        return null;
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return { fb, tex };
+}
+function readResult(fb, width, height) {
+    if (!gl)
+        return new Float32Array(0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    const pixels = new Float32Array(width * height * 4);
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, pixels);
+    // Extract red channel only
+    const result = new Float32Array(width * height);
+    for (let i = 0; i < width * height; i++) {
+        result[i] = pixels[i * 4];
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return result;
+}
+function renderPass(program, inputTex, outputFb, width, height, uniforms) {
+    if (!gl || !quadVAO)
+        return;
+    gl.useProgram(program);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, outputFb);
+    gl.viewport(0, 0, width, height);
+    // Bind input texture
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, inputTex);
+    gl.uniform1i(gl.getUniformLocation(program, 'u_image'), 0);
+    // Set uniforms
+    for (const [name, value] of Object.entries(uniforms)) {
+        const loc = gl.getUniformLocation(program, name);
+        if (loc === null)
+            continue;
+        if (Array.isArray(value)) {
+            if (value.length === 2)
+                gl.uniform2fv(loc, value);
+            else if (value.length === 3)
+                gl.uniform3fv(loc, value);
+            else if (value.length === 4)
+                gl.uniform4fv(loc, value);
+        }
+        else if (Number.isInteger(value)) {
+            gl.uniform1i(loc, value);
+        }
+        else {
+            gl.uniform1f(loc, value);
+        }
+    }
+    // Draw
+    gl.bindVertexArray(quadVAO);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.bindVertexArray(null);
+}
+// ============================================================================
+// Isometric BLUR - Separable WebGL Implementation (Very Fast)
+// ============================================================================
+class WebGLIsotropicFilter extends BaseWebGLStrategy {
+    static async isSupported() {
+        return isWebGLAvailable();
+    }
+    static async getUnsupportedReason() {
+        return isWebGLAvailable() ? undefined : 'WebGL 2.0 is not available in this environment';
+    }
+    async apply(input, config) {
+        const sigma = config.sigma ?? DEFAULT_GAUSSIAN_CONFIG.sigma;
+        if (sigma < 0.1) {
+            return { data: new Float32Array(input.data), width: input.width, height: input.height };
+        }
+        const gl = getGL();
+        if (!gl) {
+            throw new Error('GaussianBlurWebGL: WebGL 2.0 is not available in this environment.');
+        }
+        const { width, height, data } = input;
+        const radius = Math.ceil(sigma * 3);
+        const sigma2 = 2.0 * sigma * sigma;
+        if (canvas.width !== width || canvas.height !== height) {
+            canvas.width = width;
+            canvas.height = height;
+        }
+        return this.runGuarded(gl, () => {
+            const hProgram = createProgram$3(source$l, 'gaussianH');
+            const vProgram = createProgram$3(source$k, 'gaussianV');
+            if (!hProgram || !vProgram) {
+                throw new Error('GaussianBlurWebGL: failed to compile/link shader program.');
+            }
+            const inputTex = createInputTexture(data, width, height);
+            const tempFb = createFramebuffer$1(width, height);
+            const outputFb = createFramebuffer$1(width, height);
+            if (!inputTex || !tempFb || !outputFb) {
+                if (inputTex)
+                    gl.deleteTexture(inputTex);
+                if (tempFb) {
+                    gl.deleteFramebuffer(tempFb.fb);
+                    gl.deleteTexture(tempFb.tex);
+                }
+                throw new Error('GaussianBlurWebGL: failed to create input texture or framebuffer.');
+            }
+            // Horizontal pass
+            renderPass(hProgram, inputTex, tempFb.fb, width, height, {
+                u_texelSizeX: 1.0 / width,
+                u_radius: radius,
+                u_sigma2: sigma2,
+            });
+            // Vertical pass
+            renderPass(vProgram, tempFb.tex, outputFb.fb, width, height, {
+                u_texelSizeY: 1.0 / height,
+                u_radius: radius,
+                u_sigma2: sigma2,
+            });
+            const result = readResult(outputFb.fb, width, height);
+            // Cleanup
+            gl.deleteTexture(inputTex);
+            gl.deleteTexture(tempFb.tex);
+            gl.deleteFramebuffer(tempFb.fb);
+            gl.deleteTexture(outputFb.tex);
+            gl.deleteFramebuffer(outputFb.fb);
+            return { data: result, width, height };
+        });
+    }
+}
+// ============================================================================
+// UTILITY EXPORTS
+// ============================================================================
+/**
+ * Check if WebGL 2.0 is available
+ */
+function isWebGLAvailable() {
+    return getGL() !== null;
 }
 
 /**
@@ -4427,7 +4427,7 @@ class CPUIsotropicFilter extends BaseCPUStrategy {
  * retries the call that failed; that shared retry/demote machinery lives
  * in `ResilientEdgeAwareFilter`, not duplicated per filter.
  */
-function pickCandidates$1(candidates, options) {
+function pickCandidates(candidates, options) {
     if (!options?.forceCPU)
         return candidates;
     return [candidates[candidates.length - 1]];
@@ -4436,53 +4436,53 @@ function pickCandidates$1(candidates, options) {
  * Edge-preserving smoothing filter. Resolves the best supported backend
  * at creation time; falls back once if that backend fails later.
  */
-let BilateralFilter$2 = class BilateralFilter extends ResilientEdgeAwareFilter {
+let BilateralFilter$1 = class BilateralFilter extends ResilientEdgeAwareFilter {
     // Ordered best-to-worst. `satisfies` (not `implements`) catches a
     // backend missing isSupported() or the instance shape at this line.
     static candidates = [
-        GPUBilateralFilter$1,
-        BilateralFilterWebGL$1,
-        BilateralFilter$3,
+        GPUBilateralFilter,
+        BilateralFilterWebGL,
+        BilateralFilter$2,
     ];
     constructor(resolved, config) {
         super(BilateralFilter.candidates, resolved, config);
     }
     static async create(config = {}, options) {
-        const resolved = await ResilientEdgeAwareFilter.resolve(pickCandidates$1(BilateralFilter.candidates, options), config);
+        const resolved = await ResilientEdgeAwareFilter.resolve(pickCandidates(BilateralFilter.candidates, options), config);
         return new BilateralFilter(resolved, config);
     }
 };
 /**
  * Median filter for salt-and-pepper noise removal.
  */
-let MedianFilter$2 = class MedianFilter extends ResilientEdgeAwareFilter {
+let MedianFilter$1 = class MedianFilter extends ResilientEdgeAwareFilter {
     static candidates = [
-        GPUMedianFilter$1,
-        MedianFilterWebGL$1,
-        MedianFilter$3,
+        GPUMedianFilter,
+        MedianFilterWebGL,
+        MedianFilter$2,
     ];
     constructor(resolved, config) {
         super(MedianFilter.candidates, resolved, config);
     }
     static async create(config = {}, options) {
-        const resolved = await ResilientEdgeAwareFilter.resolve(pickCandidates$1(MedianFilter.candidates, options), config);
+        const resolved = await ResilientEdgeAwareFilter.resolve(pickCandidates(MedianFilter.candidates, options), config);
         return new MedianFilter(resolved, config);
     }
 };
 /**
  * Kuwahara filter for a painterly, stylized effect.
  */
-let KuwaharaFilter$2 = class KuwaharaFilter extends ResilientEdgeAwareFilter {
+let KuwaharaFilter$1 = class KuwaharaFilter extends ResilientEdgeAwareFilter {
     static candidates = [
-        GPUKuwaharaFilter$1,
-        KuwaharaFilterWebGL$1,
-        KuwaharaFilter$3,
+        GPUKuwaharaFilter,
+        KuwaharaFilterWebGL,
+        KuwaharaFilter$2,
     ];
     constructor(resolved, config) {
         super(KuwaharaFilter.candidates, resolved, config);
     }
     static async create(config = {}, options) {
-        const resolved = await ResilientEdgeAwareFilter.resolve(pickCandidates$1(KuwaharaFilter.candidates, options), config);
+        const resolved = await ResilientEdgeAwareFilter.resolve(pickCandidates(KuwaharaFilter.candidates, options), config);
         return new KuwaharaFilter(resolved, config);
     }
 };
@@ -4499,56 +4499,56 @@ class IsotropicBlurFilter extends ResilientEdgeAwareFilter {
         super(IsotropicBlurFilter.candidates, resolved, config);
     }
     static async create(config, options) {
-        const resolved = await ResilientEdgeAwareFilter.resolve(pickCandidates$1(IsotropicBlurFilter.candidates, options), config);
+        const resolved = await ResilientEdgeAwareFilter.resolve(pickCandidates(IsotropicBlurFilter.candidates, options), config);
         return new IsotropicBlurFilter(resolved, config);
     }
 }
 /**
  * Separable Gaussian blur.
  */
-let GaussianBlur$2 = class GaussianBlur extends ResilientEdgeAwareFilter {
+let GaussianBlur$1 = class GaussianBlur extends ResilientEdgeAwareFilter {
     static candidates = [
-        GPUGaussianBlur$1,
-        GaussianBlurWebGL$1,
-        GaussianBlur$3,
+        GPUGaussianBlur,
+        GaussianBlurWebGL,
+        GaussianBlur$2,
     ];
     constructor(resolved, config) {
         super(GaussianBlur.candidates, resolved, config);
     }
     static async create(config, options) {
-        const resolved = await ResilientEdgeAwareFilter.resolve(pickCandidates$1(GaussianBlur.candidates, options), config);
+        const resolved = await ResilientEdgeAwareFilter.resolve(pickCandidates(GaussianBlur.candidates, options), config);
         return new GaussianBlur(resolved, config);
     }
 };
-let ContrastEnhancer$2 = class ContrastEnhancer extends ResilientEdgeAwareFilter {
+let ContrastEnhancer$1 = class ContrastEnhancer extends ResilientEdgeAwareFilter {
     static candidates = [
-        GPUContrastEnhancer$1,
-        ContrastEnhancerWebGL$1,
-        ContrastEnhancer$3,
+        GPUContrastEnhancer,
+        ContrastEnhancerWebGL,
+        ContrastEnhancer$2,
     ];
     constructor(resolved, config) {
         super(ContrastEnhancer.candidates, resolved, config);
     }
     static async create(blackPoint = 0.01, whitePoint = 0.99, options) {
         const config = { blackPoint, whitePoint };
-        const resolved = await ResilientEdgeAwareFilter.resolve(pickCandidates$1(ContrastEnhancer.candidates, options), config);
+        const resolved = await ResilientEdgeAwareFilter.resolve(pickCandidates(ContrastEnhancer.candidates, options), config);
         return new ContrastEnhancer(resolved, config);
     }
 };
 /**
  * Posterize/quantize intensity levels.
  */
-let Quantizer$2 = class Quantizer extends ResilientEdgeAwareFilter {
+let Quantizer$1 = class Quantizer extends ResilientEdgeAwareFilter {
     static candidates = [
-        GPUQuantizer$1,
-        QuantizerWebGL$1,
-        Quantizer$3,
+        GPUQuantizer,
+        QuantizerWebGL,
+        Quantizer$2,
     ];
     constructor(resolved, config) {
         super(Quantizer.candidates, resolved, config);
     }
     static async create(config, options) {
-        const resolved = await ResilientEdgeAwareFilter.resolve(pickCandidates$1(Quantizer.candidates, options), config);
+        const resolved = await ResilientEdgeAwareFilter.resolve(pickCandidates(Quantizer.candidates, options), config);
         return new Quantizer(resolved, config);
     }
 };
@@ -4558,7 +4558,7 @@ const PreprocessingPresets$1 = {
      * Good for: Clean studio photos, illustrations
      */
     light: async (input) => {
-        const filter = await BilateralFilter$2.create();
+        const filter = await BilateralFilter$1.create();
         try {
             return await filter.apply(input, { sigmaSpatial: 2, sigmaRange: 0.08 });
         }
@@ -4571,7 +4571,7 @@ const PreprocessingPresets$1 = {
      * Good for: Most outdoor photos, portraits
      */
     standard: async (input) => {
-        const filter = await BilateralFilter$2.create();
+        const filter = await BilateralFilter$1.create();
         try {
             return await filter.apply(input, { sigmaSpatial: 4, sigmaRange: 0.1 });
         }
@@ -4584,8 +4584,8 @@ const PreprocessingPresets$1 = {
      * Good for: Very textured images (grass, foliage, fabric)
      */
     heavy: async (input) => {
-        const first = await BilateralFilter$2.create();
-        const second = await BilateralFilter$2.create();
+        const first = await BilateralFilter$1.create();
+        const second = await BilateralFilter$1.create();
         try {
             return await second.apply(await first.apply(input, { sigmaSpatial: 5, sigmaRange: 0.12 }), { sigmaSpatial: 3, sigmaRange: 0.1 });
         }
@@ -4599,8 +4599,8 @@ const PreprocessingPresets$1 = {
      * Good for: Stylized/artistic output
      */
     artistic: async (input) => {
-        const kuwahara = await KuwaharaFilter$2.create();
-        const bilateral = await BilateralFilter$2.create();
+        const kuwahara = await KuwaharaFilter$1.create();
+        const bilateral = await BilateralFilter$1.create();
         try {
             return await bilateral.apply(await kuwahara.apply(input, { radius: 4 }), { sigmaSpatial: 2, sigmaRange: 0.08 });
         }
@@ -4614,8 +4614,8 @@ const PreprocessingPresets$1 = {
      * Good for: Landscape, outdoor scenes
      */
     nature: async (input) => {
-        const first = await BilateralFilter$2.create();
-        const second = await BilateralFilter$2.create();
+        const first = await BilateralFilter$1.create();
+        const second = await BilateralFilter$1.create();
         try {
             return await second.apply(await first.apply(input, { sigmaSpatial: 6, sigmaRange: 0.15 }), { sigmaSpatial: 3, sigmaRange: 0.08 });
         }
@@ -4951,7 +4951,7 @@ function hsvToRgb$1(h, s, v) {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgpu/common.wgsl
 // Regenerate with `npm run build:shaders`.
-const source$y = `// common.wgsl
+const source$j = `// common.wgsl
 // Pipeline-overridable. real value supplied via
 // GPUComputePipelineDescriptor.compute.constants (see makePipeline() in
 // webgpu.ts). Declared once here since it's shared by every shader module.
@@ -4973,7 +4973,7 @@ fn clampIdx(x: i32, y: i32, w: i32, h: i32) -> u32 {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgpu/gradient_structure_tensor.wgsl
 // Regenerate with `npm run build:shaders`.
-const source$x = `// Fused Sobel gradient + structure-tensor accumulation.
+const source$i = `// Fused Sobel gradient + structure-tensor accumulation.
 //
 // Replaces the old gradient.wgsl -> structure_tensor_accumulate.wgsl pair.
 // Nothing downstream ever consumed the raw gradient (gx, gy) on its own —
@@ -5034,7 +5034,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgpu/gaussian_blur.wgsl
 // Regenerate with `npm run build:shaders`.
-const source$w = `@group(0) @binding(0) var<uniform> params: Params;
+const source$h = `@group(0) @binding(0) var<uniform> params: Params;
 @group(0) @binding(1) var<storage, read> inputBuf: array<vec4<f32>>;
 @group(0) @binding(2) var<storage, read_write> outputBuf: array<vec4<f32>>;
 @group(0) @binding(3) var<storage, read> kernelBuf: array<f32>;
@@ -5082,7 +5082,7 @@ fn blurV(@builtin(global_invocation_id) gid: vec3<u32>) {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgpu/gaussian_blur_tiled.wgsl
 // Regenerate with `npm run build:shaders`.
-const source$v = `override TILE_RADIUS_CAP: u32 = 32u;
+const source$g = `override TILE_RADIUS_CAP: u32 = 32u;
 override TILE_WIDTH: u32 = WORKGROUP_SIZE + 2u * TILE_RADIUS_CAP;
 override KERNEL_SHARED_SIZE: u32 = 2u * TILE_RADIUS_CAP + 1u;
 
@@ -5192,7 +5192,7 @@ fn blurVTiled(
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgpu/tangent_extract.wgsl
 // Regenerate with `npm run build:shaders`.
-const source$u = `@group(0) @binding(0) var<uniform> params: Params;
+const source$f = `@group(0) @binding(0) var<uniform> params: Params;
 @group(0) @binding(1) var<storage, read> tensorBuf: array<vec4<f32>>;
 @group(0) @binding(2) var<storage, read_write> outputBuf: array<vec4<f32>>;
 
@@ -5249,7 +5249,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgpu/tangent_refine.wgsl
 // Regenerate with `npm run build:shaders`.
-const source$t = `override REFINE_TILE_DIM: u32 = WORKGROUP_SIZE + 4u; // fixed 5x5 (radius-2) footprint
+const source$e = `override REFINE_TILE_DIM: u32 = WORKGROUP_SIZE + 4u; // fixed 5x5 (radius-2) footprint
 
 @group(0) @binding(0) var<uniform> params: Params;
 @group(0) @binding(1) var<storage, read> inputBuf: array<vec4<f32>>;
@@ -5396,7 +5396,7 @@ fn main(
 /** Sanity cap on Gaussian blur radius (pixels). uards against pathological
  * sigma values blowing up dispatch cost. */
 const MAX_BLUR_RADIUS = 64;
-const WORKGROUP_SIZE$2 = 8;
+const WORKGROUP_SIZE$1 = 8;
 /**
  * Blur radii up to this value use the shared-memory-tiled blurH/blurV
  * pipelines; anything above it falls back to the original untiled
@@ -5456,11 +5456,11 @@ const MIN_BAND_ROWS = 64;
 // the Di Zenzo-consistent combined gradient magnitude, so it's derived
 // once from the final accumulated trace directly inside
 // TANGENT_EXTRACT_SHADER instead of a separate finalize pass.
-const GRADIENT_STRUCTURE_TENSOR_SHADER = source$y + source$x;
+const GRADIENT_STRUCTURE_TENSOR_SHADER = source$j + source$i;
 // Both blur directions live in the same module. Since WGSL allows multiple
 // @compute entry points per shader module, this replaces the WebGL
 // version's two separate H/V programs with one module and two pipelines.
-const GAUSSIAN_BLUR_SHADER = source$y + source$w;
+const GAUSSIAN_BLUR_SHADER = source$j + source$h;
 // Tiled counterpart to GAUSSIAN_BLUR_SHADER, used when radius <=
 // TILE_RADIUS_CAP (see that constant's comment for the sizing rationale).
 // Each workgroup loads its input footprint into workgroup-shared memory
@@ -5468,15 +5468,15 @@ const GAUSSIAN_BLUR_SHADER = source$y + source$w;
 // re-issuing up to `kernelSize` independent global storage-buffer reads;
 // the redundant-read pattern the untiled version has, since neighboring
 // threads' kernel windows overlap almost entirely.
-const GAUSSIAN_BLUR_TILED_SHADER = source$y + source$v;
-const TANGENT_EXTRACT_SHADER = source$y + source$u;
+const GAUSSIAN_BLUR_TILED_SHADER = source$j + source$g;
+const TANGENT_EXTRACT_SHADER = source$j + source$f;
 // Unlike the blur radius, the refine neighborhood is a fixed 5x5 (radius
 // 2) so the tile size is a compile-time constant with no data-dependent
 // cap/fallback needed, unlike GAUSSIAN_BLUR_TILED_SHADER above. Every
 // invocation in the untiled version re-read the same 5x5=25 neighbors its
 // neighbors were also reading independently from global storage; here
 // each workgroup loads its (WORKGROUP_SIZE+4)^2 footprint once instead.
-const TANGENT_REFINE_SHADER = source$y + source$t;
+const TANGENT_REFINE_SHADER = source$j + source$e;
 /**
  * WebGPU-accelerated ETFComputer. Device/pipeline resources are cached
  * statically (shared across every instance) since acquiring a GPUDevice
@@ -5572,7 +5572,7 @@ class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy {
             // REFINE_TILE_DIM are override-expressions *derived* from
             // WORKGROUP_SIZE (and TILE_RADIUS_CAP) inside the WGSL itself, so
             // they don't need their own entries here.
-            const makePipeline = (code, entryPoint = 'main', constants = { WORKGROUP_SIZE: WORKGROUP_SIZE$2 }) => device.createComputePipeline({
+            const makePipeline = (code, entryPoint = 'main', constants = { WORKGROUP_SIZE: WORKGROUP_SIZE$1 }) => device.createComputePipeline({
                 layout: 'auto',
                 compute: {
                     module: device.createShaderModule({ code }),
@@ -5583,11 +5583,11 @@ class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy {
             const blurModule = device.createShaderModule({ code: GAUSSIAN_BLUR_SHADER });
             const blurHPipeline = device.createComputePipeline({
                 layout: 'auto',
-                compute: { module: blurModule, entryPoint: 'blurH', constants: { WORKGROUP_SIZE: WORKGROUP_SIZE$2 } },
+                compute: { module: blurModule, entryPoint: 'blurH', constants: { WORKGROUP_SIZE: WORKGROUP_SIZE$1 } },
             });
             const blurVPipeline = device.createComputePipeline({
                 layout: 'auto',
-                compute: { module: blurModule, entryPoint: 'blurV', constants: { WORKGROUP_SIZE: WORKGROUP_SIZE$2 } },
+                compute: { module: blurModule, entryPoint: 'blurV', constants: { WORKGROUP_SIZE: WORKGROUP_SIZE$1 } },
             });
             const blurTiledModule = device.createShaderModule({ code: GAUSSIAN_BLUR_TILED_SHADER });
             const blurHTiledPipeline = device.createComputePipeline({
@@ -5595,7 +5595,7 @@ class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy {
                 compute: {
                     module: blurTiledModule,
                     entryPoint: 'blurHTiled',
-                    constants: { WORKGROUP_SIZE: WORKGROUP_SIZE$2, TILE_RADIUS_CAP },
+                    constants: { WORKGROUP_SIZE: WORKGROUP_SIZE$1, TILE_RADIUS_CAP },
                 },
             });
             const blurVTiledPipeline = device.createComputePipeline({
@@ -5603,7 +5603,7 @@ class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy {
                 compute: {
                     module: blurTiledModule,
                     entryPoint: 'blurVTiled',
-                    constants: { WORKGROUP_SIZE: WORKGROUP_SIZE$2, TILE_RADIUS_CAP },
+                    constants: { WORKGROUP_SIZE: WORKGROUP_SIZE$1, TILE_RADIUS_CAP },
                 },
             });
             const resources = {
@@ -5711,7 +5711,7 @@ class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy {
         const { bandRows, numBands } = planBandLayout(width, height, channelCount, halo, device.limits, WebGpuEdgeTangentFlowComputer.bandMemoryBudgetBytes);
         const maxBandBufHeight = Math.min(bandRows, height) + 2 * halo;
         const kernelBuf = createBufferWithData(device, kernel, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST);
-        const dispatchX = Math.ceil(width / WORKGROUP_SIZE$2);
+        const dispatchX = Math.ceil(width / WORKGROUP_SIZE$1);
         return this.runGuarded(device, async () => {
             // Two full sets of band-sized buffers, alternated per band, so band
             // N's compute can be submitted before band N-1's result has
@@ -5763,7 +5763,7 @@ class WebGpuEdgeTangentFlowComputer extends BaseWebGPUStrategy {
                     // `height` here is the *band's* local height, not the image's.
                     const params = createParamsBuffer(device, { width, height: bandBufHeight, radius: 0, kernelSize: 0 });
                     const blurParams = createParamsBuffer(device, { width, height: bandBufHeight, radius, kernelSize });
-                    const dispatchY = Math.ceil(bandBufHeight / WORKGROUP_SIZE$2);
+                    const dispatchY = Math.ceil(bandBufHeight / WORKGROUP_SIZE$1);
                     const encoder = device.createCommandEncoder();
                     // tensorAccumBuf is reused across bands (unlike the one-shot
                     // version, which relied on freshly-created WebGPU buffers being
@@ -6045,7 +6045,7 @@ function isWebGPUComputeSupported() {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgl/vertex.glsl
 // Regenerate with `npm run build:shaders`.
-const source$s = `#version 300 es
+const source$d = `#version 300 es
 precision highp float;
 in vec2 a_position;
 out vec2 v_texCoord;
@@ -6058,7 +6058,7 @@ void main() {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgl/gradient.glsl
 // Regenerate with `npm run build:shaders`.
-const source$r = `#version 300 es
+const source$c = `#version 300 es
 precision highp float;
 
 uniform sampler2D u_input;
@@ -6091,7 +6091,7 @@ void main() {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgl/structural_tensor.glsl
 // Regenerate with `npm run build:shaders`.
-const source$q = `#version 300 es
+const source$b = `#version 300 es
 precision highp float;
 
 uniform sampler2D u_input;
@@ -6128,7 +6128,7 @@ void main() {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgl/gaussian_blur_h.glsl
 // Regenerate with `npm run build:shaders`.
-const source$p = `#version 300 es
+const source$a = `#version 300 es
 precision highp float;
 
 uniform sampler2D u_input;
@@ -6156,7 +6156,7 @@ void main() {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgl/gaussian_blur_v.glsl
 // Regenerate with `npm run build:shaders`.
-const source$o = `#version 300 es
+const source$9 = `#version 300 es
 precision highp float;
 
 uniform sampler2D u_input;
@@ -6184,7 +6184,7 @@ void main() {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgl/tangent_extract.glsl
 // Regenerate with `npm run build:shaders`.
-const source$n = `#version 300 es
+const source$8 = `#version 300 es
 precision highp float;
 
 uniform sampler2D u_tensor;
@@ -6233,7 +6233,7 @@ void main() {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgl/tangent_refine.glsl
 // Regenerate with `npm run build:shaders`.
-const source$m = `#version 300 es
+const source$7 = `#version 300 es
 precision highp float;
 
 uniform sampler2D u_tangents;
@@ -6293,7 +6293,7 @@ void main() {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: etf/shaders/webgl/finalize_magnitude.glsl
 // Regenerate with `npm run build:shaders`.
-const source$l = `#version 300 es
+const source$6 = `#version 300 es
 precision highp float;
 
 uniform sampler2D u_tensor; // accumulated (summed) E, F, G in .rgb
@@ -6369,13 +6369,13 @@ class WebGLEdgeTangentFlowComputer extends BaseWebGLStrategy {
             gl.viewport(0, 0, width, height);
             // Per-channel scratch (overwritten each iteration) and the tensor
             // accumulator that channels are additively blended into.
-            const gradientFB = createFramebuffer$1(gl, width, height, gl.RGBA32F);
-            const tensorAccumFB = createFramebuffer$1(gl, width, height, gl.RGBA32F);
-            const blurTempFB = createFramebuffer$1(gl, width, height, gl.RGBA32F);
-            const blurOutputFB = createFramebuffer$1(gl, width, height, gl.RGBA32F);
-            const tangentFB1 = createFramebuffer$1(gl, width, height, gl.RGBA32F);
-            const tangentFB2 = createFramebuffer$1(gl, width, height, gl.RGBA32F);
-            const tensorFinalizedFB = createFramebuffer$1(gl, width, height, gl.RGBA32F);
+            const gradientFB = createFramebuffer(gl, width, height, gl.RGBA32F);
+            const tensorAccumFB = createFramebuffer(gl, width, height, gl.RGBA32F);
+            const blurTempFB = createFramebuffer(gl, width, height, gl.RGBA32F);
+            const blurOutputFB = createFramebuffer(gl, width, height, gl.RGBA32F);
+            const tangentFB1 = createFramebuffer(gl, width, height, gl.RGBA32F);
+            const tangentFB2 = createFramebuffer(gl, width, height, gl.RGBA32F);
+            const tensorFinalizedFB = createFramebuffer(gl, width, height, gl.RGBA32F);
             const channelTextures = [];
             try {
                 // Step 1 & 2 (Di Zenzo summation): for each channel, compute its
@@ -6546,13 +6546,13 @@ class WebGLEdgeTangentFlowComputer extends BaseWebGLStrategy {
         gl.getExtension('EXT_color_buffer_float');
         gl.getExtension('OES_texture_float_linear');
         // Create shader programs
-        const gradientProgram = createProgram$3(gl, source$s, source$r);
-        const structureTensorProgram = createProgram$3(gl, source$s, source$q);
-        const gaussianBlurHProgram = createProgram$3(gl, source$s, source$p);
-        const gaussianBlurVProgram = createProgram$3(gl, source$s, source$o);
-        const tangentExtractProgram = createProgram$3(gl, source$s, source$n);
-        const tangentRefineProgram = createProgram$3(gl, source$s, source$m);
-        const finalizeMagnitudeProgram = createProgram$3(gl, source$s, source$l);
+        const gradientProgram = createProgram$2(gl, source$d, source$c);
+        const structureTensorProgram = createProgram$2(gl, source$d, source$b);
+        const gaussianBlurHProgram = createProgram$2(gl, source$d, source$a);
+        const gaussianBlurVProgram = createProgram$2(gl, source$d, source$9);
+        const tangentExtractProgram = createProgram$2(gl, source$d, source$8);
+        const tangentRefineProgram = createProgram$2(gl, source$d, source$7);
+        const finalizeMagnitudeProgram = createProgram$2(gl, source$d, source$6);
         // Create fullscreen quad
         const quadVAO = gl.createVertexArray();
         const quadVBO = gl.createBuffer();
@@ -6593,7 +6593,7 @@ function createShader(gl, type, source) {
     }
     return shader;
 }
-function createProgram$3(gl, vertSrc, fragSrc) {
+function createProgram$2(gl, vertSrc, fragSrc) {
     const vert = createShader(gl, gl.VERTEX_SHADER, vertSrc);
     const frag = createShader(gl, gl.FRAGMENT_SHADER, fragSrc);
     const program = gl.createProgram();
@@ -6619,7 +6619,7 @@ function createTexture(gl, width, height, internalFormat, format, data) {
     gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, width, height, 0, format, gl.FLOAT, data ?? null);
     return tex;
 }
-function createFramebuffer$1(gl, width, height, internalFormat) {
+function createFramebuffer(gl, width, height, internalFormat) {
     const tex = createTexture(gl, width, height, internalFormat, gl.RGBA, null);
     const fb = gl.createFramebuffer();
     gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
@@ -7240,7 +7240,7 @@ class CPUGradientAlignedBlur extends BaseCPUStrategy {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: blur/shaders/gradient-aligned/webgl2-fragment.glsl
 // Regenerate with `npm run build:shaders`.
-const source$k = `#version 300 es
+const source$5 = `#version 300 es
 precision highp float;
 
 #define MAX_SAMPLES \${MAX_SAMPLES}
@@ -7327,7 +7327,7 @@ void main() {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: blur/shaders/gradient-aligned/vertex.glsl
 // Regenerate with `npm run build:shaders`.
-const source$j = `#version 300 es
+const source$4 = `#version 300 es
 layout(location = 0) in vec2 a_pos;
 void main() {
   gl_Position = vec4(a_pos, 0.0, 1.0);
@@ -7343,7 +7343,7 @@ void main() {
  */
 // Must match the unrolled loop bound in FRAGMENT_SOURCE.
 const MAX_SAMPLES$1 = 256;
-function compileShader$2(gl, type, source) {
+function compileShader$1(gl, type, source) {
     const shader = gl.createShader(type);
     gl.shaderSource(shader, source);
     gl.compileShader(shader);
@@ -7354,9 +7354,9 @@ function compileShader$2(gl, type, source) {
     }
     return shader;
 }
-function createProgram$2(gl, vsSrc, fsSrc) {
-    const vs = compileShader$2(gl, gl.VERTEX_SHADER, vsSrc);
-    const fs = compileShader$2(gl, gl.FRAGMENT_SHADER, fsSrc);
+function createProgram$1(gl, vsSrc, fsSrc) {
+    const vs = compileShader$1(gl, gl.VERTEX_SHADER, vsSrc);
+    const fs = compileShader$1(gl, gl.FRAGMENT_SHADER, fsSrc);
     const program = gl.createProgram();
     gl.attachShader(program, vs);
     gl.attachShader(program, fs);
@@ -7431,7 +7431,7 @@ class WebGLGradientAlignedBlur {
         });
         this.canvas = canvas;
         this.gl = gl;
-        this.program = createProgram$2(gl, source$j, source$k);
+        this.program = createProgram$1(gl, source$4, source$5);
         this.vao = gl.createVertexArray();
         gl.bindVertexArray(this.vao);
         const quadBuffer = gl.createBuffer();
@@ -7566,7 +7566,7 @@ class WebGLGradientAlignedBlur {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: blur/shaders/gradient-aligned/webgpu-fragment.wgsl
 // Regenerate with `npm run build:shaders`.
-const source$i = `struct Params {
+const source$3 = `struct Params {
   width: u32,
   height: u32,
   halfSamples: u32,
@@ -7667,7 +7667,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
  *
  */
 const MAX_SAMPLES = 256;
-const WORKGROUP_SIZE$1 = 8;
+const WORKGROUP_SIZE = 8;
 class WebGPUGradientAlignedBlur {
     backend = 'webgpu';
     config;
@@ -7696,7 +7696,7 @@ class WebGPUGradientAlignedBlur {
         this.config = { ...DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, ...config };
         this.initPipeline();
         const limits = this.device.limits;
-        this.maxTileBytes = Math.max(WORKGROUP_SIZE$1 * 4, // never go below one row's worth of data
+        this.maxTileBytes = Math.max(WORKGROUP_SIZE * 4, // never go below one row's worth of data
         Math.floor(Math.min(limits.maxStorageBufferBindingSize, limits.maxBufferSize) *
             WebGPUGradientAlignedBlur.TILE_MEMORY_SAFETY_FACTOR));
         if (!WebGPUGradientAlignedBlur.errorListenerAttached) {
@@ -7768,7 +7768,7 @@ class WebGPUGradientAlignedBlur {
         return WebGPUGradientAlignedBlur.lastUnsupportedReason;
     }
     initPipeline() {
-        const module = this.device.createShaderModule({ code: source$i });
+        const module = this.device.createShaderModule({ code: source$3 });
         this.pipeline = this.device.createComputePipeline({
             layout: 'auto',
             compute: { module, entryPoint: 'main' },
@@ -7948,7 +7948,7 @@ class WebGPUGradientAlignedBlur {
                 const pass = encoder.beginComputePass();
                 pass.setPipeline(this.pipeline);
                 pass.setBindGroup(0, bindGroup);
-                pass.dispatchWorkgroups(Math.ceil(width / WORKGROUP_SIZE$1), Math.ceil(tileHeight / WORKGROUP_SIZE$1));
+                pass.dispatchWorkgroups(Math.ceil(width / WORKGROUP_SIZE), Math.ceil(tileHeight / WORKGROUP_SIZE));
                 pass.end();
                 encoder.copyBufferToBuffer(outputBuffer, 0, readBuffer, 0, tileHeight * bytesPerRow);
                 this.device.queue.submit([encoder.finish()]);
@@ -8063,7 +8063,7 @@ class GradientAlignedBlur {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: blur/shaders/flow-guided/webgl2-flow-blur.glsl
 // Regenerate with `npm run build:shaders`.
-const source$h = `/**
+const source$2 = `/**
  * Fragment shader for flow-guided blur (WebGL2)
  * Uses line integral convolution along edge tangent directions
  */
@@ -8124,7 +8124,7 @@ const source$h = `/**
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: blur/shaders/flow-guided/webgl2-vertex.glsl
 // Regenerate with `npm run build:shaders`.
-const source$g = `#version 300 es
+const source$1 = `#version 300 es
 in vec2 a_position;
 in vec2 a_texCoord;
 out vec2 v_texCoord;
@@ -8138,7 +8138,7 @@ void main() {
 // AUTO-GENERATED FILE — DO NOT EDIT.
 // Source: blur/shaders/flow-guided/webgpu-flow-blur.wgsl
 // Regenerate with `npm run build:shaders`.
-const source$f = `/**
+const source = `/**
  * WebGPU compute shader for flow-guided blur
  */
 struct Params {
@@ -8345,7 +8345,7 @@ const DEFAULT_WEBGL_CONFIG = {
     kernelSizeMultiplier: 6,
     maxKernelSize: 63,
 };
-function compileShader$1(gl, source, type) {
+function compileShader(gl, source, type) {
     const shader = gl.createShader(type);
     if (!shader) {
         throw new Error('Failed to create shader');
@@ -8362,9 +8362,9 @@ function compileShader$1(gl, source, type) {
 /**
  * Create a WebGL2 program from vertex and fragment shaders
  */
-function createProgram$1(gl, vertexSource, fragmentSource) {
-    const vertexShader = compileShader$1(gl, vertexSource, gl.VERTEX_SHADER);
-    const fragmentShader = compileShader$1(gl, fragmentSource, gl.FRAGMENT_SHADER);
+function createProgram(gl, vertexSource, fragmentSource) {
+    const vertexShader = compileShader(gl, vertexSource, gl.VERTEX_SHADER);
+    const fragmentShader = compileShader(gl, fragmentSource, gl.FRAGMENT_SHADER);
     const program = gl.createProgram();
     if (!program) {
         throw new Error('Failed to create program');
@@ -8420,7 +8420,7 @@ class WebGLFlowGuidedBlur extends BaseWebGLStrategy {
         const gl = canvas.getContext('webgl2');
         if (!gl)
             throw new Error('WebGL2 is not supported');
-        const program = createProgram$1(gl, source$g, source$h);
+        const program = createProgram(gl, source$1, source$2);
         const quadBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
@@ -8643,7 +8643,7 @@ class WebGPUFlowGuidedBlur extends BaseWebGPUStrategy {
         const flowPipeline = device.createComputePipeline({
             layout: pipelineLayout,
             compute: {
-                module: device.createShaderModule({ code: source$f }),
+                module: device.createShaderModule({ code: source }),
                 entryPoint: 'main',
             },
         });
@@ -9492,7 +9492,7 @@ var index$5 = /*#__PURE__*/Object.freeze({
     xdog: xdog
 });
 
-class EdgeAwareBlurStrategy {
+class EdgeAwareBlur {
     filter;
     toConfig;
     constructor(filter, toConfig) {
@@ -9509,7 +9509,7 @@ class EdgeAwareBlurStrategy {
 var index$4 = /*#__PURE__*/Object.freeze({
     __proto__: null,
     CPUFlowGuidedBlur: CPUFlowGuidedBlur,
-    EdgeAwareBlurStrategy: EdgeAwareBlurStrategy,
+    EdgeAwareBlur: EdgeAwareBlur,
     FlowGuidedBlur: FlowGuidedBlur,
     GradientAlignedBlur: GradientAlignedBlur,
     IsotropicBlur: IsotropicBlur,
@@ -9519,19 +9519,19 @@ var index$4 = /*#__PURE__*/Object.freeze({
 
 var index$3 = /*#__PURE__*/Object.freeze({
     __proto__: null,
-    BilateralFilter: BilateralFilter$2,
-    ContrastEnhancer: ContrastEnhancer$2,
-    GaussianBlur: GaussianBlur$2,
+    BilateralFilter: BilateralFilter$1,
+    ContrastEnhancer: ContrastEnhancer$1,
+    GaussianBlur: GaussianBlur$1,
     IsotropicBlurFilter: IsotropicBlurFilter,
-    KuwaharaFilter: KuwaharaFilter$2,
-    MedianFilter: MedianFilter$2,
+    KuwaharaFilter: KuwaharaFilter$1,
+    MedianFilter: MedianFilter$1,
     PreprocessingPresets: PreprocessingPresets$1,
-    Quantizer: Quantizer$2,
+    Quantizer: Quantizer$1,
     cpu: cpu,
-    disposeWebGL: disposeWebGL$1,
-    disposeWebGPU: disposeWebGPU$1,
-    isWebGLAvailable: isWebGLAvailable$2,
-    webgl: webgl$1,
+    disposeWebGL: disposeWebGL,
+    disposeWebGPU: disposeWebGPU,
+    isWebGLAvailable: isWebGLAvailable$1,
+    webgl: webgl,
     webgpu: webgpu
 });
 
@@ -9889,2587 +9889,190 @@ var index$2 = /*#__PURE__*/Object.freeze({
 });
 
 /**
- * Preprocessing module for XDoG/FDoG
- *
- * Provides filters to prepare images before line detection.
- * These help reduce noise and texture while preserving important edges.
- *
- * Section 3.2 of the paper discusses the importance of bilateral
- * preprocessing for "indication" - attenuating weak edges while
- * preserving strong edges.
- */
-const DEFAULT_BILATERAL_CONFIG$2 = {
-    sigmaSpatial: 3,
-    sigmaRange: 0.1,
-    radiusMultiplier: 2,
-};
-const DEFAULT_MEDIAN_CONFIG$2 = {
-    radius: 2,
-};
-const DEFAULT_KUWAHARA_CONFIG$2 = {
-    radius: 3,
-};
-/**
- * Bilateral Filter
- *
- * Edge-preserving smoothing filter that averages pixels based on both
- * spatial proximity AND intensity similarity. This smooths out texture
- * (like grass) while keeping strong edges (like the car outline) sharp.
- *
- * This is the recommended preprocessing for most images.
- *
- * As mentioned in Section 3.2, bilateral filtering can serve as a
- * "prioritization mechanism" for indication - attenuating weak edges
- * while supporting strong edges.
- *
- * CPU is always available (BaseCPUStrategy.isSupported() / dispose() /
- * backend all apply unchanged). This is the universal fallback.
- */
-let BilateralFilter$1 = class BilateralFilter extends BaseCPUStrategy {
-    config;
-    constructor(config = {}) {
-        super();
-        this.config = { ...DEFAULT_BILATERAL_CONFIG$2, ...config };
-    }
-    async process(input) {
-        const cfg = this.config;
-        const { width, height } = input;
-        const output = createChannelImage$1(width, height);
-        const radius = Math.ceil(cfg.sigmaSpatial * (cfg.radiusMultiplier ?? 2));
-        const sigmaSpatial2 = 2 * cfg.sigmaSpatial * cfg.sigmaSpatial;
-        const sigmaRange2 = 2 * cfg.sigmaRange * cfg.sigmaRange;
-        // Precompute spatial weights
-        const spatialWeights = [];
-        for (let dy = -radius; dy <= radius; dy++) {
-            for (let dx = -radius; dx <= radius; dx++) {
-                const dist2 = dx * dx + dy * dy;
-                spatialWeights.push(Math.exp(-dist2 / sigmaSpatial2));
-            }
-        }
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                const centerValue = getPixel(input, x, y);
-                let sum = 0;
-                let weightSum = 0;
-                let idx = 0;
-                for (let dy = -radius; dy <= radius; dy++) {
-                    for (let dx = -radius; dx <= radius; dx++) {
-                        const nx = x + dx;
-                        const ny = y + dy;
-                        const neighborValue = getPixel(input, nx, ny);
-                        // Range weight based on intensity difference
-                        const intensityDiff = neighborValue - centerValue;
-                        const rangeWeight = Math.exp(-(intensityDiff * intensityDiff) / sigmaRange2);
-                        // Combined weight
-                        const weight = spatialWeights[idx] * rangeWeight;
-                        sum += neighborValue * weight;
-                        weightSum += weight;
-                        idx++;
-                    }
-                }
-                output.data[y * width + x] = weightSum > 0 ? sum / weightSum : centerValue;
-            }
-        }
-        return output;
-    }
-};
-/**
- * Median Filter
- *
- * Replaces each pixel with the median of its neighborhood.
- * Excellent for removing salt-and-pepper noise and small texture details.
- */
-let MedianFilter$1 = class MedianFilter extends BaseCPUStrategy {
-    config;
-    constructor(config = {}) {
-        super();
-        this.config = { ...DEFAULT_MEDIAN_CONFIG$2, ...config };
-    }
-    async process(input) {
-        const { width, height } = input;
-        const output = createChannelImage$1(width, height);
-        const radius = this.config.radius;
-        const kernelSize = (2 * radius + 1) * (2 * radius + 1);
-        const values = new Array(kernelSize);
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                let idx = 0;
-                for (let dy = -radius; dy <= radius; dy++) {
-                    for (let dx = -radius; dx <= radius; dx++) {
-                        values[idx++] = getPixel(input, x + dx, y + dy);
-                    }
-                }
-                // Sort and take median
-                values.sort((a, b) => a - b);
-                output.data[y * width + x] = values[Math.floor(kernelSize / 2)];
-            }
-        }
-        return output;
-    }
-};
-/**
- * Kuwahara Filter
- *
- * Artistic smoothing filter that creates a painterly effect.
- * Divides the neighborhood into 4 quadrants, finds the one with
- * lowest variance, and uses its mean. Creates flat regions with
- * preserved edges - great for a more stylized look.
- */
-let KuwaharaFilter$1 = class KuwaharaFilter extends BaseCPUStrategy {
-    config;
-    constructor(config = {}) {
-        super();
-        this.config = { ...DEFAULT_KUWAHARA_CONFIG$2, ...config };
-    }
-    async process(input) {
-        const { width, height } = input;
-        const output = createChannelImage$1(width, height);
-        const r = this.config.radius;
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                // Four quadrants: top-left, top-right, bottom-left, bottom-right
-                const quadrants = [
-                    { startX: -r, endX: 0, startY: -r, endY: 0 },
-                    { startX: 0, endX: r, startY: -r, endY: 0 },
-                    { startX: -r, endX: 0, startY: 0, endY: r },
-                    { startX: 0, endX: r, startY: 0, endY: r },
-                ];
-                let minVariance = Infinity;
-                let bestMean = getPixel(input, x, y);
-                for (const q of quadrants) {
-                    let sum = 0;
-                    let sumSq = 0;
-                    let count = 0;
-                    for (let dy = q.startY; dy <= q.endY; dy++) {
-                        for (let dx = q.startX; dx <= q.endX; dx++) {
-                            const val = getPixel(input, x + dx, y + dy);
-                            sum += val;
-                            sumSq += val * val;
-                            count++;
-                        }
-                    }
-                    const mean = sum / count;
-                    const variance = (sumSq / count) - (mean * mean);
-                    if (variance < minVariance) {
-                        minVariance = variance;
-                        bestMean = mean;
-                    }
-                }
-                output.data[y * width + x] = bestMean;
-            }
-        }
-        return output;
-    }
-};
-/**
- * Gaussian Blur
- *
- * Simple Gaussian smoothing. Less edge-preserving than bilateral,
- * but faster. Good for very noisy images or when used with small sigma.
- */
-let GaussianBlur$1 = class GaussianBlur extends BaseCPUStrategy {
-    sigma;
-    constructor(sigma = 1.0) {
-        super();
-        this.sigma = sigma;
-    }
-    async process(input) {
-        const { width, height } = input;
-        const sigma = this.sigma;
-        if (sigma < 0.1) {
-            return { data: new Float32Array(input.data), width, height };
-        }
-        const radius = Math.ceil(sigma * 3);
-        const kernelSize = radius * 2 + 1;
-        const kernel = generateGaussianKernel$1(sigma, kernelSize);
-        // Horizontal pass
-        const temp = createChannelImage$1(width, height);
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                let val = 0;
-                for (let k = 0; k < kernelSize; k++) {
-                    val += getPixel(input, x + k - radius, y) * kernel[k];
-                }
-                temp.data[y * width + x] = val;
-            }
-        }
-        // Vertical pass
-        const output = createChannelImage$1(width, height);
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                let val = 0;
-                for (let k = 0; k < kernelSize; k++) {
-                    val += getPixel(temp, x, y + k - radius) * kernel[k];
-                }
-                output.data[y * width + x] = val;
-            }
-        }
-        return output;
-    }
-};
-/**
- * Contrast Enhancement
- *
- * Stretches the histogram to use the full 0-1 range.
- * Can help make edges more distinct before processing.
- */
-let ContrastEnhancer$1 = class ContrastEnhancer extends BaseCPUStrategy {
-    blackPoint;
-    whitePoint;
-    constructor(blackPoint = 0.01, whitePoint = 0.99) {
-        super();
-        this.blackPoint = blackPoint;
-        this.whitePoint = whitePoint;
-    }
-    async process(input) {
-        const { width, height, data } = input;
-        const output = createChannelImage$1(width, height);
-        const size = width * height;
-        // Find histogram percentiles
-        const sorted = new Float32Array(data).sort();
-        const minVal = sorted[Math.floor(size * this.blackPoint)];
-        const maxVal = sorted[Math.floor(size * this.whitePoint)];
-        const range = maxVal - minVal;
-        if (range < 0.01) {
-            return { data: new Float32Array(data), width, height };
-        }
-        for (let i = 0; i < size; i++) {
-            output.data[i] = Math.max(0, Math.min(1, (data[i] - minVal) / range));
-        }
-        return output;
-    }
-};
-/**
- * Quantize to reduce color levels
- *
- * Reduces the number of intensity levels, creating a posterized effect.
- * Can help reduce noise by grouping similar intensities together.
- */
-let Quantizer$1 = class Quantizer extends BaseCPUStrategy {
-    levels;
-    constructor(levels = 8) {
-        super();
-        this.levels = levels;
-    }
-    async process(input) {
-        const { width, height, data } = input;
-        const output = createChannelImage$1(width, height);
-        const size = width * height;
-        const step = 1 / (this.levels - 1);
-        for (let i = 0; i < size; i++) {
-            output.data[i] = Math.round(data[i] / step) * step;
-        }
-        return output;
-    }
-};
-/**
- * Computes local variance as texture detection preprocessing
- *
- * STANDALONE PREPROCESSING: This class only detects texture.
- * It does NOT perform edge detection.
- *
- * Input: ChannelImage (typically grayscale image)
- * Output: ChannelImage with same dimensions where each pixel value
- *         represents texture strength (0 = pure structure, 1 = pure texture)
- *
- * The output can be:
- * 1. Passed to your XDoG/FDoG/HDoG implementation to modulate parameters
- * 2. Combined with other texture detection methods (Spectral, Patch-based)
- * 3. Visualized for debugging
- * 4. Processed through additional preprocessing steps
- *
- * Example:
- * ```
- * const preprocessor = new LocalVariancePreprocessor({
- *   windowRadius: 2,
- *   normalizeByGradient: true,
- * });
- *
- * const textureMap = preprocessor.process(grayImage);
- * // textureMap.data[i] = texture strength at pixel i
- * // Now use textureMap with your own edge detection
- * ```
- */
-class LocalVariancePreprocessor {
-    config;
-    /** CPU-only. No WebGL/WebGPU counterparts for this yet. */
-    backend = 'cpu';
-    constructor(config = {}) {
-        this.config = {
-            windowRadius: config.windowRadius ?? 2,
-            normalizeByGradient: config.normalizeByGradient ?? true,
-            varianceScale: config.varianceScale ?? 1.0,
-            maxVariance: config.maxVariance,
-        };
-    }
-    dispose() {
-        // No resources to release.
-    }
-    /**
-     * Process using separable convolution (faster for large windows)
-     * Variance = E[X^2] - E[X]^2
-     * Compute box blur of X and X^2 separately, then combine
-     */
-    async process(image) {
-        const { width, height, data } = image;
-        const { windowRadius, normalizeByGradient, varianceScale, maxVariance } = this.config;
-        // Step 1: Compute E[X] (mean) via box filter
-        const meanImage = this.boxBlur(data, width, height, windowRadius);
-        // Step 2: Compute E[X^2] via box filter on squared values
-        const squaredData = new Float32Array(data.length);
-        for (let i = 0; i < data.length; i++) {
-            squaredData[i] = data[i] * data[i];
-        }
-        const meanOfSquaresImage = this.boxBlur(squaredData, width, height, windowRadius);
-        // Step 3: Compute variance = E[X^2] - E[X]^2
-        const result = new Float32Array(data.length);
-        const gradientMap = normalizeByGradient ? this.computeGradientMap(data, width, height) : null;
-        for (let i = 0; i < data.length; i++) {
-            const mean = meanImage[i];
-            const variance = Math.max(0, meanOfSquaresImage[i] - mean * mean);
-            let textureStrength = variance * varianceScale;
-            if (normalizeByGradient && gradientMap) {
-                const gradient = gradientMap[i];
-                const gradientFactor = 1.0 / (1.0 + gradient * gradient);
-                textureStrength *= gradientFactor;
-            }
-            if (maxVariance !== undefined) {
-                textureStrength = Math.min(textureStrength, maxVariance);
-            }
-            result[i] = Math.min(1.0, textureStrength);
-        }
-        return { data: result, width, height };
-    }
-    /**
-     * Fast box blur using separable convolution + a sliding-window running sum.
-     *
-     * @remarks
-     * Each pass is O(width * height): the window sum is updated incrementally
-     * as it slides one pixel over (`sum += incoming - outgoing`) rather than
-     * being re-summed from scratch at every position, so cost no longer grows
-     * with `radius`. Edge pixels use clamp-to-edge boundary handling.
-     *
-     * Trade-off: because each sum is derived from the previous one instead of
-     * being recomputed from scratch, floating-point error can accumulate along
-     * a scan line, unlike the resum-per-pixel approach this replaces. This is
-     * negligible in practice for 0-1 normalized pixel values and the small
-     * radii (1-4) this preprocessor supports.
-     *
-     * @private
-     */
-    boxBlur(data, width, height, radius) {
-        const windowSize = 2 * radius + 1;
-        // Horizontal pass: O(width) per row via a running sum, not O(width * radius).
-        const horizontal = new Float32Array(data.length);
-        for (let y = 0; y < height; y++) {
-            const rowOffset = y * width;
-            // Seed the window sum for x = 0 (the only O(radius) step per row).
-            let sum = 0;
-            for (let j = 0; j < windowSize; j++) {
-                const srcX = Math.max(0, Math.min(width - 1, j - radius));
-                sum += data[rowOffset + srcX];
-            }
-            horizontal[rowOffset] = sum / windowSize;
-            // Slide the window one column at a time: O(1) per step instead of O(radius).
-            for (let x = 1; x < width; x++) {
-                const outgoingX = Math.max(0, Math.min(width - 1, x - 1 - radius));
-                const incomingX = Math.max(0, Math.min(width - 1, x + radius));
-                sum += data[rowOffset + incomingX] - data[rowOffset + outgoingX];
-                horizontal[rowOffset + x] = sum / windowSize;
-            }
-        }
-        // Vertical pass: same sliding-window trick, now sliding down each column.
-        const result = new Float32Array(data.length);
-        for (let x = 0; x < width; x++) {
-            // Seed the window sum for y = 0.
-            let sum = 0;
-            for (let j = 0; j < windowSize; j++) {
-                const srcY = Math.max(0, Math.min(height - 1, j - radius));
-                sum += horizontal[srcY * width + x];
-            }
-            result[x] = sum / windowSize;
-            for (let y = 1; y < height; y++) {
-                const outgoingY = Math.max(0, Math.min(height - 1, y - 1 - radius));
-                const incomingY = Math.max(0, Math.min(height - 1, y + radius));
-                sum += horizontal[incomingY * width + x] - horizontal[outgoingY * width + x];
-                result[y * width + x] = sum / windowSize;
-            }
-        }
-        return result;
-    }
-    /**
-     * Compute gradient map using Sobel filter (separable for efficiency)
-     * @private
-     */
-    computeGradientMap(data, width, height) {
-        const result = new Float32Array(data.length);
-        for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-                if (x === 0 || x === width - 1 || y === 0 || y === height - 1) {
-                    result[y * width + x] = 0;
-                    continue;
-                }
-                const rowUp = (y - 1) * width;
-                const rowMid = y * width;
-                const rowDown = (y + 1) * width;
-                // Each neighbor read once and reused for both gx and gy
-                const tl = data[rowUp + x - 1];
-                const tm = data[rowUp + x];
-                const tr = data[rowUp + x + 1];
-                const ml = data[rowMid + x - 1];
-                const mr = data[rowMid + x + 1];
-                const bl = data[rowDown + x - 1];
-                const bm = data[rowDown + x];
-                const br = data[rowDown + x + 1];
-                // Sobel
-                const gx = (-tl + tr) - 2 * ml + 2 * mr - bl + br;
-                const gy = tl + 2 * tm + tr - bl - 2 * bm - br;
-                const magnitude = Math.sqrt(gx * gx + gy * gy);
-                result[y * width + x] = magnitude;
-            }
-        }
-        return result;
-    }
-}
-
-/**
- * Shared machinery for "pick the best supported backend, fall back
- * gracefully if it fails later" preprocessors.
- */
-class ResilientPreprocessor {
-    candidates;
-    config;
-    failedBackends = new Set();
-    instance;
-    currentCtor;
-    /**
-     * Subclasses resolve their instance via `resolve()` *before* calling
-     * this (in their own async static `create()`), then hand the result in
-     * here. The constructor itself stays synchronous, as constructors must.
-     */
-    constructor(candidates, resolved, config) {
-        this.candidates = candidates;
-        this.config = config;
-        this.instance = resolved.instance;
-        this.currentCtor = resolved.ctor;
-    }
-    /**
-     * Try each candidate in order, skipping unsupported ones. If a
-     * candidate reports supported but throws on construction anyway
-     * (isSupported() lied), move on to the next.
-     */
-    static async resolve(candidates, config) {
-        for (const Ctor of candidates) {
-            if (await Ctor.isSupported()) {
-                try {
-                    return { instance: new Ctor(config), ctor: Ctor };
-                }
-                catch {
-                    continue;
-                }
-            }
-        }
-        throw new Error('No supported preprocessor implementation available');
-    }
-    get backend() {
-        return this.instance.backend;
-    }
-    dispose() {
-        this.instance.dispose();
-    }
-    async process(input) {
-        let current = this.instance;
-        while (true) {
-            try {
-                console.log(`${this.constructor.name}: Running ${current.backend}`);
-                return await current.process(input);
-            }
-            catch (err) {
-                console.warn(`${this.constructor.name}: [${this.currentCtor.name}] process() failed, attempting fallback:`, err);
-                const fallback = await this.demoteAndFindNext();
-                if (!fallback)
-                    throw err;
-                current = fallback;
-            }
-        }
-    }
-    async demoteAndFindNext() {
-        this.failedBackends.add(this.currentCtor);
-        this.instance.dispose();
-        for (const Ctor of this.candidates) {
-            if (this.failedBackends.has(Ctor))
-                continue;
-            if (await Ctor.isSupported()) {
-                try {
-                    this.instance = new Ctor(this.config);
-                    this.currentCtor = Ctor;
-                    console.warn(`Falling back to ${Ctor.name}`);
-                    return this.instance;
-                }
-                catch (err) {
-                    console.warn(`[${Ctor.name}] construction failed despite isSupported():`, err);
-                    this.failedBackends.add(Ctor);
-                }
-            }
-        }
-        return null;
-    }
-}
-
-// AUTO-GENERATED FILE — DO NOT EDIT.
-// Source: preprocess/preprocessors/shaders/webgl/bilateral.glsl
-// Regenerate with `npm run build:shaders`.
-const source$e = `#version 300 es
-precision highp float;
-precision highp sampler2D;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-uniform sampler2D u_image;
-uniform vec2 u_texelSize;
-uniform float u_sigmaSpatial2;
-uniform float u_sigmaRange2;
-uniform int u_radius;
-
-void main() {
-  float centerValue = texture(u_image, v_texCoord).r;
-  
-  float sum = 0.0;
-  float weightSum = 0.0;
-  
-  for (int dy = -u_radius; dy <= u_radius; dy++) {
-    for (int dx = -u_radius; dx <= u_radius; dx++) {
-      vec2 offset = vec2(float(dx), float(dy)) * u_texelSize;
-      float neighborValue = texture(u_image, v_texCoord + offset).r;
-      
-      // Spatial weight
-      float dist2 = float(dx * dx + dy * dy);
-      float spatialWeight = exp(-dist2 / u_sigmaSpatial2);
-      
-      // Range weight
-      float diff = neighborValue - centerValue;
-      float rangeWeight = exp(-(diff * diff) / u_sigmaRange2);
-      
-      float weight = spatialWeight * rangeWeight;
-      sum += neighborValue * weight;
-      weightSum += weight;
-    }
-  }
-  
-  float result = weightSum > 0.0 ? sum / weightSum : centerValue;
-  fragColor = vec4(result, 0.0, 0.0, 1.0);
-}`;
-
-// AUTO-GENERATED FILE — DO NOT EDIT.
-// Source: preprocess/preprocessors/shaders/webgl/contrast.glsl
-// Regenerate with `npm run build:shaders`.
-const source$d = `#version 300 es
-precision highp float;
-precision highp sampler2D;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-uniform sampler2D u_image;
-uniform float u_minVal;
-uniform float u_maxVal;
-
-void main() {
-  float value = texture(u_image, v_texCoord).r;
-  float range = u_maxVal - u_minVal;
-  
-  float result = range > 0.01 
-    ? clamp((value - u_minVal) / range, 0.0, 1.0)
-    : value;
-    
-  fragColor = vec4(result, 0.0, 0.0, 1.0);
-}`;
-
-// AUTO-GENERATED FILE — DO NOT EDIT.
-// Source: preprocess/preprocessors/shaders/webgl/guassian-horizontal.glsl
-// Regenerate with `npm run build:shaders`.
-const source$c = `#version 300 es
-precision highp float;
-precision highp sampler2D;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-uniform sampler2D u_image;
-uniform float u_texelSizeX;
-uniform int u_radius;
-uniform float u_sigma2;
-
-void main() {
-  float sum = 0.0;
-  float weightSum = 0.0;
-  
-  for (int dx = -u_radius; dx <= u_radius; dx++) {
-    float offset = float(dx) * u_texelSizeX;
-    float value = texture(u_image, v_texCoord + vec2(offset, 0.0)).r;
-    
-    float weight = exp(-float(dx * dx) / u_sigma2);
-    sum += value * weight;
-    weightSum += weight;
-  }
-  
-  fragColor = vec4(sum / weightSum, 0.0, 0.0, 1.0);
-}`;
-
-// AUTO-GENERATED FILE — DO NOT EDIT.
-// Source: preprocess/preprocessors/shaders/webgl/guassian-vertical.glsl
-// Regenerate with `npm run build:shaders`.
-const source$b = `#version 300 es
-precision highp float;
-precision highp sampler2D;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-uniform sampler2D u_image;
-uniform float u_texelSizeY;
-uniform int u_radius;
-uniform float u_sigma2;
-
-void main() {
-  float sum = 0.0;
-  float weightSum = 0.0;
-  
-  for (int dy = -u_radius; dy <= u_radius; dy++) {
-    float offset = float(dy) * u_texelSizeY;
-    float value = texture(u_image, v_texCoord + vec2(0.0, offset)).r;
-    
-    float weight = exp(-float(dy * dy) / u_sigma2);
-    sum += value * weight;
-    weightSum += weight;
-  }
-  
-  fragColor = vec4(sum / weightSum, 0.0, 0.0, 1.0);
-}`;
-
-// AUTO-GENERATED FILE — DO NOT EDIT.
-// Source: preprocess/preprocessors/shaders/webgl/kuwahara.glsl
-// Regenerate with `npm run build:shaders`.
-const source$a = `#version 300 es
-precision highp float;
-precision highp sampler2D;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-uniform sampler2D u_image;
-uniform vec2 u_texelSize;
-uniform int u_radius;
-
-// Calculate mean and variance for a quadrant
-vec2 quadrantStats(vec2 center, int startX, int endX, int startY, int endY) {
-  float sum = 0.0;
-  float sumSq = 0.0;
-  float count = 0.0;
-  
-  for (int dy = startY; dy <= endY; dy++) {
-    for (int dx = startX; dx <= endX; dx++) {
-      vec2 offset = vec2(float(dx), float(dy)) * u_texelSize;
-      float val = texture(u_image, center + offset).r;
-      sum += val;
-      sumSq += val * val;
-      count += 1.0;
-    }
-  }
-  
-  float mean = sum / count;
-  float variance = (sumSq / count) - (mean * mean);
-  
-  return vec2(mean, variance);
-}
-
-void main() {
-  int r = u_radius;
-  
-  // Four quadrants: top-left, top-right, bottom-left, bottom-right
-  vec2 q0 = quadrantStats(v_texCoord, -r, 0, -r, 0);
-  vec2 q1 = quadrantStats(v_texCoord, 0, r, -r, 0);
-  vec2 q2 = quadrantStats(v_texCoord, -r, 0, 0, r);
-  vec2 q3 = quadrantStats(v_texCoord, 0, r, 0, r);
-  
-  // Find quadrant with minimum variance
-  float minVar = q0.y;
-  float result = q0.x;
-  
-  if (q1.y < minVar) { minVar = q1.y; result = q1.x; }
-  if (q2.y < minVar) { minVar = q2.y; result = q2.x; }
-  if (q3.y < minVar) { result = q3.x; }
-  
-  fragColor = vec4(result, 0.0, 0.0, 1.0);
-}`;
-
-// AUTO-GENERATED FILE — DO NOT EDIT.
-// Source: preprocess/preprocessors/shaders/webgl/median-small.glsl
-// Regenerate with `npm run build:shaders`.
-const source$9 = `// For small radius, use direct sorting approach (more accurate)
-#version 300 es
-precision highp float;
-precision highp sampler2D;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-uniform sampler2D u_image;
-uniform vec2 u_texelSize;
-uniform int u_radius;
-
-// Partial sort network for finding median of small kernels
-// This is exact for radius 1-2 (3x3 to 5x5 kernels)
-
-void swap(inout float a, inout float b) {
-  float t = min(a, b);
-  b = max(a, b);
-  a = t;
-}
-
-void main() {
-  // Collect all values
-  float values[25]; // Max 5x5
-  int count = 0;
-  
-  for (int dy = -u_radius; dy <= u_radius; dy++) {
-    for (int dx = -u_radius; dx <= u_radius; dx++) {
-      vec2 offset = vec2(float(dx), float(dy)) * u_texelSize;
-      values[count] = texture(u_image, v_texCoord + offset).r;
-      count++;
-    }
-  }
-  
-  // Partial bubble sort to find median
-  int medianIdx = count / 2;
-  
-  for (int i = 0; i <= medianIdx; i++) {
-    for (int j = i + 1; j < count; j++) {
-      swap(values[i], values[j]);
-    }
-  }
-  
-  fragColor = vec4(values[medianIdx], 0.0, 0.0, 1.0);
-}`;
-
-// AUTO-GENERATED FILE — DO NOT EDIT.
-// Source: preprocess/preprocessors/shaders/webgl/median.glsl
-// Regenerate with `npm run build:shaders`.
-const source$8 = `// True median requires sorting which isn't efficient in shaders.
-// We use a weighted percentile approximation that's very close to median.
-#version 300 es
-precision highp float;
-precision highp sampler2D;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-uniform sampler2D u_image;
-uniform vec2 u_texelSize;
-uniform int u_radius;
-
-// Histogram-based median approximation
-// We use 32 bins for speed while maintaining accuracy
-#define NUM_BINS 32
-
-void main() {
-  float bins[NUM_BINS];
-  for (int i = 0; i < NUM_BINS; i++) bins[i] = 0.0;
-  
-  float totalWeight = 0.0;
-  int kernelSize = (2 * u_radius + 1) * (2 * u_radius + 1);
-  
-  // Build histogram
-  for (int dy = -u_radius; dy <= u_radius; dy++) {
-    for (int dx = -u_radius; dx <= u_radius; dx++) {
-      vec2 offset = vec2(float(dx), float(dy)) * u_texelSize;
-      float value = texture(u_image, v_texCoord + offset).r;
-      
-      // Map value to bin
-      int binIdx = int(clamp(value * float(NUM_BINS - 1), 0.0, float(NUM_BINS - 1)));
-      bins[binIdx] += 1.0;
-      totalWeight += 1.0;
-    }
-  }
-  
-  // Find median (50th percentile)
-  float targetWeight = totalWeight * 0.5;
-  float cumWeight = 0.0;
-  float median = 0.5;
-  
-  for (int i = 0; i < NUM_BINS; i++) {
-    cumWeight += bins[i];
-    if (cumWeight >= targetWeight) {
-      median = (float(i) + 0.5) / float(NUM_BINS);
-      break;
-    }
-  }
-  
-  fragColor = vec4(median, 0.0, 0.0, 1.0);
-}`;
-
-// AUTO-GENERATED FILE — DO NOT EDIT.
-// Source: preprocess/preprocessors/shaders/webgl/quantize.glsl
-// Regenerate with `npm run build:shaders`.
-const source$7 = `#version 300 es
-precision highp float;
-precision highp sampler2D;
-
-in vec2 v_texCoord;
-out vec4 fragColor;
-
-uniform sampler2D u_image;
-uniform float u_levels;
-
-void main() {
-  float value = texture(u_image, v_texCoord).r;
-  float step = 1.0 / (u_levels - 1.0);
-  float result = floor(value / step + 0.5) * step;
-  fragColor = vec4(clamp(result, 0.0, 1.0), 0.0, 0.0, 1.0);
-}`;
-
-// Default config values (mirrors the CPU implementation in cpu.ts)
-const DEFAULT_BILATERAL_CONFIG$1 = {
-    sigmaSpatial: 3,
-    sigmaRange: 0.1,
-    radiusMultiplier: 2,
-};
-const DEFAULT_MEDIAN_CONFIG$1 = {
-    radius: 2,
-};
-const DEFAULT_KUWAHARA_CONFIG$1 = {
-    radius: 3,
-};
-// ============================================================================
-// WebGL Context Management
-// ============================================================================
-let gl = null;
-let canvas = null;
-// Shader program cache
-const programCache = new Map();
-// Reusable geometry buffers
-let quadVAO = null;
-/**
- * Check if running in a WebWorker context
- */
-function isWorkerContext() {
-    return typeof document === 'undefined';
-}
-/**
- * Initialize or get WebGL context
- */
-function getGL() {
-    if (gl)
-        return gl;
-    try {
-        let glCanvas;
-        // Use OffscreenCanvas in WebWorker, HTMLCanvasElement in main thread
-        if (isWorkerContext()) {
-            glCanvas = new OffscreenCanvas(1, 1);
-        }
-        else {
-            glCanvas = document.createElement('canvas');
-        }
-        glCanvas.width = 1;
-        glCanvas.height = 1;
-        gl = glCanvas.getContext('webgl2', {
-            alpha: false,
-            antialias: false,
-            depth: false,
-            stencil: false,
-            powerPreference: 'high-performance',
-            preserveDrawingBuffer: false,
-        });
-        if (!gl) {
-            console.warn('WebGL 2.0 not available');
-            return null;
-        }
-        // Enable required extensions for float textures
-        const ext1 = gl.getExtension('EXT_color_buffer_float');
-        if (!ext1) {
-            console.warn('EXT_color_buffer_float not available, some features may be limited');
-        }
-        canvas = glCanvas;
-        // Setup reusable quad geometry
-        setupQuadGeometry();
-        return gl;
-    }
-    catch (err) {
-        console.error('WebGL initialization failed:', err);
-        return null;
-    }
-}
-/**
- * Setup fullscreen quad VAO (reused for all render passes)
- */
-function setupQuadGeometry() {
-    if (!gl)
-        return;
-    quadVAO = gl.createVertexArray();
-    gl.bindVertexArray(quadVAO);
-    // Positions: fullscreen quad in clip space
-    const positions = new Float32Array([
-        -1, -1,
-        1, -1,
-        -1, 1,
-        1, 1,
-    ]);
-    // Texture coordinates
-    const texCoords = new Float32Array([
-        0, 0,
-        1, 0,
-        0, 1,
-        1, 1,
-    ]);
-    const posBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
-    gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-    const texBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, texBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, texCoords, gl.STATIC_DRAW);
-    gl.enableVertexAttribArray(1);
-    gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0);
-    gl.bindVertexArray(null);
-}
-// ============================================================================
-// Shader Compilation Utilities
-// ============================================================================
-const VERTEX_SHADER = `#version 300 es
-layout(location = 0) in vec2 a_position;
-layout(location = 1) in vec2 a_texCoord;
-out vec2 v_texCoord;
-
-void main() {
-  gl_Position = vec4(a_position, 0.0, 1.0);
-  v_texCoord = a_texCoord;
-}
-`;
-function compileShader(source, type) {
-    if (!gl)
-        return null;
-    const shader = gl.createShader(type);
-    if (!shader)
-        return null;
-    gl.shaderSource(shader, source);
-    gl.compileShader(shader);
-    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-        console.error('Shader compile error:', gl.getShaderInfoLog(shader));
-        gl.deleteShader(shader);
-        return null;
-    }
-    return shader;
-}
-function createProgram(fragmentSource, cacheKey) {
-    if (!gl)
-        return null;
-    // Check cache first
-    const cached = programCache.get(cacheKey);
-    if (cached)
-        return cached;
-    const vertShader = compileShader(VERTEX_SHADER, gl.VERTEX_SHADER);
-    const fragShader = compileShader(fragmentSource, gl.FRAGMENT_SHADER);
-    if (!vertShader || !fragShader)
-        return null;
-    const program = gl.createProgram();
-    if (!program)
-        return null;
-    gl.attachShader(program, vertShader);
-    gl.attachShader(program, fragShader);
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-        console.error('Program link error:', gl.getProgramInfoLog(program));
-        gl.deleteProgram(program);
-        return null;
-    }
-    // Cleanup shaders (they're now part of the program)
-    gl.deleteShader(vertShader);
-    gl.deleteShader(fragShader);
-    // Cache the program
-    programCache.set(cacheKey, program);
-    return program;
-}
-// ============================================================================
-// Texture and Framebuffer Utilities
-// ============================================================================
-function createInputTexture(data, width, height) {
-    if (!gl)
-        return null;
-    const texture = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    // Upload grayscale data as R32F
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, width, height, 0, gl.RED, gl.FLOAT, data);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    return texture;
-}
-function createFramebuffer(width, height) {
-    if (!gl)
-        return null;
-    const fb = gl.createFramebuffer();
-    const tex = gl.createTexture();
-    if (!fb || !tex)
-        return null;
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, height, 0, gl.RGBA, gl.FLOAT, null);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-    if (status !== gl.FRAMEBUFFER_COMPLETE) {
-        console.error('Framebuffer incomplete:', status);
-        gl.deleteFramebuffer(fb);
-        gl.deleteTexture(tex);
-        return null;
-    }
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    return { fb, tex };
-}
-function readResult(fb, width, height) {
-    if (!gl)
-        return new Float32Array(0);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-    const pixels = new Float32Array(width * height * 4);
-    gl.readPixels(0, 0, width, height, gl.RGBA, gl.FLOAT, pixels);
-    // Extract red channel only
-    const result = new Float32Array(width * height);
-    for (let i = 0; i < width * height; i++) {
-        result[i] = pixels[i * 4];
-    }
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    return result;
-}
-function renderPass(program, inputTex, outputFb, width, height, uniforms) {
-    if (!gl || !quadVAO)
-        return;
-    gl.useProgram(program);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, outputFb);
-    gl.viewport(0, 0, width, height);
-    // Bind input texture
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, inputTex);
-    gl.uniform1i(gl.getUniformLocation(program, 'u_image'), 0);
-    // Set uniforms
-    for (const [name, value] of Object.entries(uniforms)) {
-        const loc = gl.getUniformLocation(program, name);
-        if (loc === null)
-            continue;
-        if (Array.isArray(value)) {
-            if (value.length === 2)
-                gl.uniform2fv(loc, value);
-            else if (value.length === 3)
-                gl.uniform3fv(loc, value);
-            else if (value.length === 4)
-                gl.uniform4fv(loc, value);
-        }
-        else if (Number.isInteger(value)) {
-            gl.uniform1i(loc, value);
-        }
-        else {
-            gl.uniform1f(loc, value);
-        }
-    }
-    // Draw
-    gl.bindVertexArray(quadVAO);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    gl.bindVertexArray(null);
-}
-// ============================================================================
-// BILATERAL FILTER - WebGL Implementation
-// ============================================================================
-class BilateralFilterWebGL extends BaseWebGLStrategy {
-    config;
-    static async isSupported() {
-        return isWebGLAvailable();
-    }
-    static async getUnsupportedReason() {
-        return isWebGLAvailable() ? undefined : 'WebGL 2.0 is not available in this environment';
-    }
-    constructor(config = {}) {
-        super();
-        this.config = { ...DEFAULT_BILATERAL_CONFIG$1, ...config };
-    }
-    async process(input) {
-        const config = this.config;
-        const gl = getGL();
-        if (!gl) {
-            throw new Error('BilateralFilterWebGL: WebGL 2.0 is not available in this environment.');
-        }
-        const { width, height, data } = input;
-        const sigmaSpatial = config.sigmaSpatial;
-        const sigmaRange = config.sigmaRange;
-        const radiusMultiplier = config.radiusMultiplier ?? 2;
-        const radius = Math.ceil(sigmaSpatial * radiusMultiplier);
-        // Resize canvas if needed
-        if (canvas.width !== width || canvas.height !== height) {
-            canvas.width = width;
-            canvas.height = height;
-        }
-        return this.runGuarded(gl, () => {
-            const program = createProgram(source$e, 'bilateral');
-            if (!program) {
-                throw new Error('BilateralFilterWebGL: failed to compile/link shader program.');
-            }
-            const inputTex = createInputTexture(data, width, height);
-            const output = createFramebuffer(width, height);
-            if (!inputTex || !output) {
-                if (inputTex)
-                    gl.deleteTexture(inputTex);
-                throw new Error('BilateralFilterWebGL: failed to create input texture or framebuffer.');
-            }
-            renderPass(program, inputTex, output.fb, width, height, {
-                u_texelSize: [1.0 / width, 1.0 / height],
-                u_sigmaSpatial2: 2.0 * sigmaSpatial * sigmaSpatial,
-                u_sigmaRange2: 2.0 * sigmaRange * sigmaRange,
-                u_radius: radius,
-            });
-            const result = readResult(output.fb, width, height);
-            // Cleanup
-            gl.deleteTexture(inputTex);
-            gl.deleteTexture(output.tex);
-            gl.deleteFramebuffer(output.fb);
-            return { data: result, width, height };
-        });
-    }
-}
-// ============================================================================
-// GAUSSIAN BLUR - Separable WebGL Implementation (Very Fast)
-// ============================================================================
-class GaussianBlurWebGL extends BaseWebGLStrategy {
-    sigma;
-    static async isSupported() {
-        return isWebGLAvailable();
-    }
-    static async getUnsupportedReason() {
-        return isWebGLAvailable() ? undefined : 'WebGL 2.0 is not available in this environment';
-    }
-    constructor(sigma = 1.0) {
-        super();
-        this.sigma = sigma;
-    }
-    async process(input) {
-        const sigma = this.sigma;
-        if (sigma < 0.1) {
-            return { data: new Float32Array(input.data), width: input.width, height: input.height };
-        }
-        const gl = getGL();
-        if (!gl) {
-            throw new Error('GaussianBlurWebGL: WebGL 2.0 is not available in this environment.');
-        }
-        const { width, height, data } = input;
-        const radius = Math.ceil(sigma * 3);
-        const sigma2 = 2.0 * sigma * sigma;
-        if (canvas.width !== width || canvas.height !== height) {
-            canvas.width = width;
-            canvas.height = height;
-        }
-        return this.runGuarded(gl, () => {
-            const hProgram = createProgram(source$c, 'gaussianH');
-            const vProgram = createProgram(source$b, 'gaussianV');
-            if (!hProgram || !vProgram) {
-                throw new Error('GaussianBlurWebGL: failed to compile/link shader program.');
-            }
-            const inputTex = createInputTexture(data, width, height);
-            const tempFb = createFramebuffer(width, height);
-            const outputFb = createFramebuffer(width, height);
-            if (!inputTex || !tempFb || !outputFb) {
-                if (inputTex)
-                    gl.deleteTexture(inputTex);
-                if (tempFb) {
-                    gl.deleteFramebuffer(tempFb.fb);
-                    gl.deleteTexture(tempFb.tex);
-                }
-                throw new Error('GaussianBlurWebGL: failed to create input texture or framebuffer.');
-            }
-            // Horizontal pass
-            renderPass(hProgram, inputTex, tempFb.fb, width, height, {
-                u_texelSizeX: 1.0 / width,
-                u_radius: radius,
-                u_sigma2: sigma2,
-            });
-            // Vertical pass
-            renderPass(vProgram, tempFb.tex, outputFb.fb, width, height, {
-                u_texelSizeY: 1.0 / height,
-                u_radius: radius,
-                u_sigma2: sigma2,
-            });
-            const result = readResult(outputFb.fb, width, height);
-            // Cleanup
-            gl.deleteTexture(inputTex);
-            gl.deleteTexture(tempFb.tex);
-            gl.deleteFramebuffer(tempFb.fb);
-            gl.deleteTexture(outputFb.tex);
-            gl.deleteFramebuffer(outputFb.fb);
-            return { data: result, width, height };
-        });
-    }
-}
-// ============================================================================
-// MEDIAN FILTER - WebGL Approximation using Weighted Histogram
-// ============================================================================
-class MedianFilterWebGL extends BaseWebGLStrategy {
-    config;
-    static async isSupported() {
-        return isWebGLAvailable();
-    }
-    static async getUnsupportedReason() {
-        return isWebGLAvailable() ? undefined : 'WebGL 2.0 is not available in this environment';
-    }
-    constructor(config = {}) {
-        super();
-        this.config = { ...DEFAULT_MEDIAN_CONFIG$1, ...config };
-    }
-    async process(input) {
-        const config = this.config;
-        const gl = getGL();
-        if (!gl) {
-            throw new Error('MedianFilterWebGL: WebGL 2.0 is not available in this environment.');
-        }
-        const { width, height, data } = input;
-        const radius = config.radius;
-        if (canvas.width !== width || canvas.height !== height) {
-            canvas.width = width;
-            canvas.height = height;
-        }
-        return this.runGuarded(gl, () => {
-            // Use exact sorting for small kernels, histogram for large
-            const shaderSource = radius <= 2 ? source$9 : source$8;
-            const cacheKey = radius <= 2 ? 'medianSmall' : 'medianLarge';
-            const program = createProgram(shaderSource, cacheKey);
-            if (!program) {
-                throw new Error('MedianFilterWebGL: failed to compile/link shader program.');
-            }
-            const inputTex = createInputTexture(data, width, height);
-            const output = createFramebuffer(width, height);
-            if (!inputTex || !output) {
-                if (inputTex)
-                    gl.deleteTexture(inputTex);
-                throw new Error('MedianFilterWebGL: failed to create input texture or framebuffer.');
-            }
-            renderPass(program, inputTex, output.fb, width, height, {
-                u_texelSize: [1.0 / width, 1.0 / height],
-                u_radius: radius,
-            });
-            const result = readResult(output.fb, width, height);
-            // Cleanup
-            gl.deleteTexture(inputTex);
-            gl.deleteTexture(output.tex);
-            gl.deleteFramebuffer(output.fb);
-            return { data: result, width, height };
-        });
-    }
-}
-// ============================================================================
-// KUWAHARA FILTER - WebGL Implementation
-// ============================================================================
-class KuwaharaFilterWebGL extends BaseWebGLStrategy {
-    config;
-    static async isSupported() {
-        return isWebGLAvailable();
-    }
-    static async getUnsupportedReason() {
-        return isWebGLAvailable() ? undefined : 'WebGL 2.0 is not available in this environment';
-    }
-    constructor(config = {}) {
-        super();
-        this.config = { ...DEFAULT_KUWAHARA_CONFIG$1, ...config };
-    }
-    async process(input) {
-        const config = this.config;
-        const gl = getGL();
-        if (!gl) {
-            throw new Error('KuwaharaFilterWebGL: WebGL 2.0 is not available in this environment.');
-        }
-        const { width, height, data } = input;
-        const radius = config.radius;
-        if (canvas.width !== width || canvas.height !== height) {
-            canvas.width = width;
-            canvas.height = height;
-        }
-        return this.runGuarded(gl, () => {
-            const program = createProgram(source$a, 'kuwahara');
-            if (!program) {
-                throw new Error('KuwaharaFilterWebGL: failed to compile/link shader program.');
-            }
-            const inputTex = createInputTexture(data, width, height);
-            const output = createFramebuffer(width, height);
-            if (!inputTex || !output) {
-                if (inputTex)
-                    gl.deleteTexture(inputTex);
-                throw new Error('KuwaharaFilterWebGL: failed to create input texture or framebuffer.');
-            }
-            renderPass(program, inputTex, output.fb, width, height, {
-                u_texelSize: [1.0 / width, 1.0 / height],
-                u_radius: radius,
-            });
-            const result = readResult(output.fb, width, height);
-            // Cleanup
-            gl.deleteTexture(inputTex);
-            gl.deleteTexture(output.tex);
-            gl.deleteFramebuffer(output.fb);
-            return { data: result, width, height };
-        });
-    }
-}
-// ============================================================================
-// CONTRAST ENHANCEMENT - WebGL Implementation
-// ============================================================================
-class ContrastEnhancerWebGL extends BaseWebGLStrategy {
-    blackPoint;
-    whitePoint;
-    static async isSupported() {
-        return isWebGLAvailable();
-    }
-    static async getUnsupportedReason() {
-        return isWebGLAvailable() ? undefined : 'WebGL 2.0 is not available in this environment';
-    }
-    constructor(blackPoint = 0.01, whitePoint = 0.99) {
-        super();
-        this.blackPoint = blackPoint;
-        this.whitePoint = whitePoint;
-    }
-    async process(input) {
-        const { blackPoint, whitePoint } = this;
-        const gl = getGL();
-        if (!gl) {
-            throw new Error('ContrastEnhancerWebGL: WebGL 2.0 is not available in this environment.');
-        }
-        const { width, height, data } = input;
-        // Calculate percentiles on CPU (fast enough, O(n log n)) - this is
-        // inherent to the algorithm, not a fallback path.
-        const sorted = new Float32Array(data).sort((a, b) => a - b);
-        const minVal = sorted[Math.floor(data.length * blackPoint)];
-        const maxVal = sorted[Math.floor(data.length * whitePoint)];
-        if (canvas.width !== width || canvas.height !== height) {
-            canvas.width = width;
-            canvas.height = height;
-        }
-        return this.runGuarded(gl, () => {
-            const program = createProgram(source$d, 'contrast');
-            if (!program) {
-                throw new Error('ContrastEnhancerWebGL: failed to compile/link shader program.');
-            }
-            const inputTex = createInputTexture(data, width, height);
-            const output = createFramebuffer(width, height);
-            if (!inputTex || !output) {
-                if (inputTex)
-                    gl.deleteTexture(inputTex);
-                throw new Error('ContrastEnhancerWebGL: failed to create input texture or framebuffer.');
-            }
-            renderPass(program, inputTex, output.fb, width, height, {
-                u_minVal: minVal,
-                u_maxVal: maxVal,
-            });
-            const result = readResult(output.fb, width, height);
-            // Cleanup
-            gl.deleteTexture(inputTex);
-            gl.deleteTexture(output.tex);
-            gl.deleteFramebuffer(output.fb);
-            return { data: result, width, height };
-        });
-    }
-}
-// ============================================================================
-// QUANTIZATION - WebGL Implementation
-// ============================================================================
-class QuantizerWebGL extends BaseWebGLStrategy {
-    levels;
-    static async isSupported() {
-        return isWebGLAvailable();
-    }
-    static async getUnsupportedReason() {
-        return isWebGLAvailable() ? undefined : 'WebGL 2.0 is not available in this environment';
-    }
-    constructor(levels = 8) {
-        super();
-        this.levels = levels;
-    }
-    async process(input) {
-        const levels = this.levels;
-        const gl = getGL();
-        if (!gl) {
-            throw new Error('QuantizerWebGL: WebGL 2.0 is not available in this environment.');
-        }
-        const { width, height, data } = input;
-        if (canvas.width !== width || canvas.height !== height) {
-            canvas.width = width;
-            canvas.height = height;
-        }
-        return this.runGuarded(gl, () => {
-            const program = createProgram(source$7, 'quantize');
-            if (!program) {
-                throw new Error('QuantizerWebGL: failed to compile/link shader program.');
-            }
-            const inputTex = createInputTexture(data, width, height);
-            const output = createFramebuffer(width, height);
-            if (!inputTex || !output) {
-                if (inputTex)
-                    gl.deleteTexture(inputTex);
-                throw new Error('QuantizerWebGL: failed to create input texture or framebuffer.');
-            }
-            renderPass(program, inputTex, output.fb, width, height, {
-                u_levels: levels,
-            });
-            const result = readResult(output.fb, width, height);
-            // Cleanup
-            gl.deleteTexture(inputTex);
-            gl.deleteTexture(output.tex);
-            gl.deleteFramebuffer(output.fb);
-            return { data: result, width, height };
-        });
-    }
-}
-// ============================================================================
-// UTILITY EXPORTS
-// ============================================================================
-/**
- * Check if WebGL 2.0 is available
- */
-function isWebGLAvailable() {
-    return getGL() !== null;
-}
-/**
- * Cleanup all WebGL resources
- */
-function disposeWebGL() {
-    if (!gl)
-        return;
-    // Delete cached programs
-    programCache.forEach(program => gl.deleteProgram(program));
-    programCache.clear();
-    // Delete VAO
-    if (quadVAO) {
-        gl.deleteVertexArray(quadVAO);
-        quadVAO = null;
-    }
-    gl = null;
-    canvas = null;
-}
-
-var webgl = /*#__PURE__*/Object.freeze({
-    __proto__: null,
-    BilateralFilter: BilateralFilterWebGL,
-    BilateralFilterWebGL: BilateralFilterWebGL,
-    ContrastEnhancer: ContrastEnhancerWebGL,
-    ContrastEnhancerWebGL: ContrastEnhancerWebGL,
-    GaussianBlur: GaussianBlurWebGL,
-    GaussianBlurWebGL: GaussianBlurWebGL,
-    KuwaharaFilter: KuwaharaFilterWebGL,
-    KuwaharaFilterWebGL: KuwaharaFilterWebGL,
-    MedianFilter: MedianFilterWebGL,
-    MedianFilterWebGL: MedianFilterWebGL,
-    Quantizer: QuantizerWebGL,
-    QuantizerWebGL: QuantizerWebGL,
-    disposeWebGL: disposeWebGL,
-    isWebGLAvailable: isWebGLAvailable
-});
-
-// AUTO-GENERATED FILE — DO NOT EDIT.
-// Source: preprocess/preprocessors/shaders/webgpu/bilateral.wgsl
-// Regenerate with `npm run build:shaders`.
-const source$6 = `struct Params {
-  width: u32,
-  height: u32,
-  radius: u32,
-  rowOffset: u32,
-  sigmaSpatial2: f32,
-  sigmaRange2: f32,
-  _pad1: f32,
-  _pad2: f32,
-};
-
-// Pipeline-overridable — real value supplied via
-// GPUComputePipelineDescriptor.compute.constants (see getPipeline() in
-// webgpu.ts, which injects it for every pipeline by default).
-override WORKGROUP_SIZE: u32 = 8u;
-
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
-@group(0) @binding(2) var<storage, read_write> outputImage: array<f32>;
-@group(0) @binding(3) var<storage, read> spatialWeights: array<f32>;
-
-fn samplePixel(x: i32, y: i32) -> f32 {
-  let cx = clamp(x, 0, i32(params.width) - 1);
-  let cy = clamp(y, 0, i32(params.height) - 1);
-  return inputImage[cy * i32(params.width) + cx];
-}
-
-@compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let x = i32(gid.x);
-  // gid.y is relative to the current chunk; rowOffset shifts it back into
-  // the coordinate space of the full image.
-  let y = i32(gid.y) + i32(params.rowOffset);
-  if (x >= i32(params.width) || y >= i32(params.height)) {
-    return;
-  }
-
-  let r = i32(params.radius);
-  let center = samplePixel(x, y);
-
-  var sum: f32 = 0.0;
-  var weightSum: f32 = 0.0;
-  var idx: u32 = 0u;
-
-  for (var dy = -r; dy <= r; dy = dy + 1) {
-    for (var dx = -r; dx <= r; dx = dx + 1) {
-      let neighbor = samplePixel(x + dx, y + dy);
-      let diff = neighbor - center;
-      let rangeWeight = exp(-(diff * diff) / params.sigmaRange2);
-      let weight = spatialWeights[idx] * rangeWeight;
-      sum = sum + neighbor * weight;
-      weightSum = weightSum + weight;
-      idx = idx + 1u;
-    }
-  }
-
-  outputImage[y * i32(params.width) + x] = select(center, sum / weightSum, weightSum > 0.0);
-}
-`;
-
-// AUTO-GENERATED FILE — DO NOT EDIT.
-// Source: preprocess/preprocessors/shaders/webgpu/kuwahara.wgsl
-// Regenerate with `npm run build:shaders`.
-const source$5 = `struct Params {
-  width: u32,
-  height: u32,
-  radius: u32,
-  _pad: u32,
-};
-
-override WORKGROUP_SIZE: u32 = 8u;
-
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
-@group(0) @binding(2) var<storage, read_write> outputImage: array<f32>;
-
-fn samplePixel(x: i32, y: i32) -> f32 {
-  let cx = clamp(x, 0, i32(params.width) - 1);
-  let cy = clamp(y, 0, i32(params.height) - 1);
-  return inputImage[cy * i32(params.width) + cx];
-}
-
-fn quadrantStats(x: i32, y: i32, x0: i32, x1: i32, y0: i32, y1: i32) -> vec2<f32> {
-  var sum: f32 = 0.0;
-  var sumSq: f32 = 0.0;
-  var count: f32 = 0.0;
-  for (var dy = y0; dy <= y1; dy = dy + 1) {
-    for (var dx = x0; dx <= x1; dx = dx + 1) {
-      let v = samplePixel(x + dx, y + dy);
-      sum = sum + v;
-      sumSq = sumSq + v * v;
-      count = count + 1.0;
-    }
-  }
-  let mean = sum / count;
-  let variance = (sumSq / count) - (mean * mean);
-  return vec2<f32>(mean, variance);
-}
-
-@compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= i32(params.width) || y >= i32(params.height)) {
-    return;
-  }
-
-  let r = i32(params.radius);
-
-  // Four quadrants: top-left, top-right, bottom-left, bottom-right.
-  let q0 = quadrantStats(x, y, -r, 0, -r, 0);
-  let q1 = quadrantStats(x, y, 0, r, -r, 0);
-  let q2 = quadrantStats(x, y, -r, 0, 0, r);
-  let q3 = quadrantStats(x, y, 0, r, 0, r);
-
-  var bestMean = q0.x;
-  var minVariance = q0.y;
-
-  if (q1.y < minVariance) { minVariance = q1.y; bestMean = q1.x; }
-  if (q2.y < minVariance) { minVariance = q2.y; bestMean = q2.x; }
-  if (q3.y < minVariance) { minVariance = q3.y; bestMean = q3.x; }
-
-  outputImage[y * i32(params.width) + x] = bestMean;
-}
-`;
-
-// AUTO-GENERATED FILE — DO NOT EDIT.
-// Source: preprocess/preprocessors/shaders/webgpu/gaussian.wgsl
-// Regenerate with `npm run build:shaders`.
-const source$4 = `struct Params {
-  width: u32,
-  height: u32,
-  radius: u32,
-  _pad: u32,
-};
-
-override WORKGROUP_SIZE: u32 = 8u;
-
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
-@group(0) @binding(2) var<storage, read> kernelWeights: array<f32>;
-@group(0) @binding(3) var<storage, read_write> outputImage: array<f32>;
-
-@compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
-fn main_h(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= i32(params.width) || y >= i32(params.height)) {
-    return;
-  }
-  let r = i32(params.radius);
-  var sum: f32 = 0.0;
-  for (var k = 0; k <= 2 * r; k = k + 1) {
-    let sx = clamp(x + k - r, 0, i32(params.width) - 1);
-    sum = sum + inputImage[y * i32(params.width) + sx] * kernelWeights[k];
-  }
-  outputImage[y * i32(params.width) + x] = sum;
-}
-
-@compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
-fn main_v(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= i32(params.width) || y >= i32(params.height)) {
-    return;
-  }
-  let r = i32(params.radius);
-  var sum: f32 = 0.0;
-  for (var k = 0; k <= 2 * r; k = k + 1) {
-    let sy = clamp(y + k - r, 0, i32(params.height) - 1);
-    sum = sum + inputImage[sy * i32(params.width) + x] * kernelWeights[k];
-  }
-  outputImage[y * i32(params.width) + x] = sum;
-}
-`;
-
-// AUTO-GENERATED FILE — DO NOT EDIT.
-// Source: preprocess/preprocessors/shaders/webgpu/histogram.wgsl
-// Regenerate with `npm run build:shaders`.
-const source$3 = `struct Params {
-  width: u32,
-  height: u32,
-  _pad0: u32,
-  _pad1: u32,
-};
-
-override WORKGROUP_SIZE: u32 = 8u;
-
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
-@group(0) @binding(2) var<storage, read_write> histogram: array<atomic<u32>>;
-
-@compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= i32(params.width) || y >= i32(params.height)) {
-    return;
-  }
-  let v = clamp(inputImage[y * i32(params.width) + x], 0.0, 1.0);
-  let bin = u32(v * 255.0 + 0.5);
-  atomicAdd(&histogram[min(bin, 255u)], 1u);
-}
-`;
-
-// AUTO-GENERATED FILE — DO NOT EDIT.
-// Source: preprocess/preprocessors/shaders/webgpu/stretch.wgsl
-// Regenerate with `npm run build:shaders`.
-const source$2 = `struct Params {
-  width: u32,
-  height: u32,
-  minVal: f32,
-  range: f32,
-};
-
-override WORKGROUP_SIZE: u32 = 8u;
-
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
-@group(0) @binding(2) var<storage, read_write> outputImage: array<f32>;
-
-@compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= i32(params.width) || y >= i32(params.height)) {
-    return;
-  }
-  let idx = y * i32(params.width) + x;
-  let v = (inputImage[idx] - params.minVal) / params.range;
-  outputImage[idx] = clamp(v, 0.0, 1.0);
-}
-`;
-
-// AUTO-GENERATED FILE — DO NOT EDIT.
-// Source: preprocess/preprocessors/shaders/webgpu/quantize.wgsl
-// Regenerate with `npm run build:shaders`.
-const source$1 = `struct Params {
-  width: u32,
-  height: u32,
-  step: f32,
-  _pad: f32,
-};
-
-override WORKGROUP_SIZE: u32 = 8u;
-
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
-@group(0) @binding(2) var<storage, read_write> outputImage: array<f32>;
-
-@compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= i32(params.width) || y >= i32(params.height)) {
-    return;
-  }
-  let idx = y * i32(params.width) + x;
-  outputImage[idx] = round(inputImage[idx] / params.step) * params.step;
-}
-`;
-
-// AUTO-GENERATED FILE — DO NOT EDIT.
-// Source: preprocess/preprocessors/shaders/webgpu/median.wgsl
-// Regenerate with `npm run build:shaders`.
-const source = `struct Params {
-  width: u32,
-  height: u32,
-  radius: u32,
-  _pad: u32,
-};
-
-override WORKGROUP_SIZE: u32 = 8u;
-
-// N (the per-pixel neighborhood size, (2*radius+1)^2) sizes a plain
-// function-local \`var\`, not a \`var<workgroup>\` one — WGSL's override-as-
-// array-size exception only covers the latter, so N can't become an
-// \`override\`. It has to stay a real \`const\`, resolved at shader-module
-// creation. That means it genuinely can't be fixed at build time; a new
-// module is compiled per distinct radius, same as before. __N__ is
-// substituted at runtime in medianShaderSource() (webgpu.ts) — the one
-// remaining spot in this codebase that still needs string templating,
-// and for a language-level reason rather than convenience.
-const N: u32 = __N__u;
-
-@group(0) @binding(0) var<uniform> params: Params;
-@group(0) @binding(1) var<storage, read> inputImage: array<f32>;
-@group(0) @binding(2) var<storage, read_write> outputImage: array<f32>;
-
-fn samplePixel(x: i32, y: i32) -> f32 {
-  let cx = clamp(x, 0, i32(params.width) - 1);
-  let cy = clamp(y, 0, i32(params.height) - 1);
-  return inputImage[cy * i32(params.width) + cx];
-}
-
-@compute @workgroup_size(WORKGROUP_SIZE, WORKGROUP_SIZE)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-  let x = i32(gid.x);
-  let y = i32(gid.y);
-  if (x >= i32(params.width) || y >= i32(params.height)) {
-    return;
-  }
-
-  let r = i32(params.radius);
-  var vals: array<f32, N>;
-  var idx: u32 = 0u;
-  for (var dy = -r; dy <= r; dy = dy + 1) {
-    for (var dx = -r; dx <= r; dx = dx + 1) {
-      vals[idx] = samplePixel(x + dx, y + dy);
-      idx = idx + 1u;
-    }
-  }
-
-  // Insertion sort: O(n^2), fine for the small neighborhoods used here
-  // (n = (2*radius+1)^2, e.g. 25 at radius 2).
-  for (var i = 1u; i < N; i = i + 1u) {
-    let key = vals[i];
-    var j = i;
-    while (j > 0u && vals[j - 1u] > key) {
-      vals[j] = vals[j - 1u];
-      j = j - 1u;
-    }
-    vals[j] = key;
-  }
-
-  outputImage[y * i32(params.width) + x] = vals[N / 2u];
-}
-`;
-
-/**
- * WebGPU-accelerated preprocessing module for XDoG/FDoG
- *
- * Even faster than WebGL implementations
- */
-/* ==================================================================== */
-/* GPU device management                                                */
-/* ==================================================================== */
-let cachedDevice = null;
-let deviceInitPromise = null;
-/**
- * Deeper async check: confirms an adapter is actually obtainable, not
- * just that `navigator.gpu` exists.
- */
-async function getWebGPUUnsupportedReason() {
-    if (typeof navigator === 'undefined' || !navigator.gpu) {
-        return 'navigator.gpu is not available in this environment';
-    }
-    try {
-        const adapter = await navigator.gpu.requestAdapter();
-        if (!adapter) {
-            return 'No suitable GPU adapter was found';
-        }
-    }
-    catch (err) {
-        return `Failed to request a GPU adapter: ${err.message}`;
-    }
-    return undefined;
-}
-async function getWebGPUDevice() {
-    if (cachedDevice)
-        return cachedDevice;
-    if (deviceInitPromise)
-        return deviceInitPromise;
-    deviceInitPromise = (async () => {
-        if (!isWebGLComputeSupported()) {
-            throw new Error('WebGPU is not supported in this environment (navigator.gpu is missing)');
-        }
-        const adapter = await navigator.gpu.requestAdapter();
-        if (!adapter) {
-            throw new Error('Failed to acquire a WebGPU adapter');
-        }
-        const device = await adapter.requestDevice();
-        device.lost.then((info) => {
-            // Invalidate the cache so the next call reinitializes a fresh device.
-            cachedDevice = null;
-            deviceInitPromise = null;
-            clearShaderCaches();
-            console.warn(`WebGPU device lost: ${info.message}`);
-        });
-        cachedDevice = device;
-        return device;
-    })();
-    return deviceInitPromise;
-}
-/** Release the cached device. Mainly useful for tests / hot reload. */
-function disposeWebGPU() {
-    cachedDevice?.destroy();
-    cachedDevice = null;
-    deviceInitPromise = null;
-}
-/* ==================================================================== */
-/* Low-level GPU helpers                                                 */
-/* ==================================================================== */
-const WORKGROUP_SIZE = 8;
-function workgroupCount(size) {
-    return Math.ceil(size / WORKGROUP_SIZE);
-}
-function createUniformBuffer(device, data) {
-    const buffer = device.createBuffer({
-        size: data.byteLength,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-        mappedAtCreation: true,
-    });
-    new Uint8Array(buffer.getMappedRange()).set(new Uint8Array(data));
-    buffer.unmap();
-    return buffer;
-}
-function createReadOnlyStorageBuffer(device, data) {
-    const buffer = device.createBuffer({
-        size: data.byteLength,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-        mappedAtCreation: true,
-    });
-    new Float32Array(buffer.getMappedRange()).set(data);
-    buffer.unmap();
-    return buffer;
-}
-function createOutputStorageBuffer(device, byteLength) {
-    return device.createBuffer({
-        size: byteLength,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-    });
-}
-async function readFloat32Buffer(device, buffer, length) {
-    const byteLength = length * 4;
-    const staging = device.createBuffer({
-        size: byteLength,
-        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-    });
-    const encoder = device.createCommandEncoder();
-    encoder.copyBufferToBuffer(buffer, 0, staging, 0, byteLength);
-    device.queue.submit([encoder.finish()]);
-    await staging.mapAsync(GPUMapMode.READ);
-    const copy = new Float32Array(staging.getMappedRange().slice(0));
-    staging.unmap();
-    staging.destroy();
-    return copy;
-}
-// Shader modules are cached by cacheKey so pipelines that share a module
-// (e.g. the two Gaussian blur passes) don't recompile it twice.
-const moduleCache = new Map();
-const pipelineCache = new Map();
-function getShaderModule(device, cacheKey, code) {
-    let module = moduleCache.get(cacheKey);
-    if (!module) {
-        module = device.createShaderModule({ code });
-        moduleCache.set(cacheKey, module);
-    }
-    return module;
-}
-// in webgpu.ts, near moduleCache/pipelineCache
-function clearShaderCaches() {
-    moduleCache.clear();
-    pipelineCache.clear();
-}
-function getPipeline(device, cacheKey, code, entryPoint) {
-    const key = `${cacheKey}::${entryPoint}`;
-    let pipeline = pipelineCache.get(key);
-    if (!pipeline) {
-        const module = getShaderModule(device, cacheKey, code);
-        pipeline = device.createComputePipeline({
-            layout: 'auto',
-            compute: { module, entryPoint, constants: { WORKGROUP_SIZE } },
-        });
-        pipelineCache.set(key, pipeline);
-    }
-    return pipeline;
-}
-function dispatch(device, pipeline, bindGroup, width, height) {
-    const encoder = device.createCommandEncoder();
-    const pass = encoder.beginComputePass();
-    pass.setPipeline(pipeline);
-    pass.setBindGroup(0, bindGroup);
-    pass.dispatchWorkgroups(workgroupCount(width), workgroupCount(height));
-    pass.end();
-    device.queue.submit([encoder.finish()]);
-}
-/* ==================================================================== */
-/* Bilateral Filter                                                      */
-/* ==================================================================== */
-const DEFAULT_BILATERAL_CONFIG = {
-    sigmaSpatial: 3,
-    sigmaRange: 0.1,
-    radiusMultiplier: 2,
-};
-/**
- * The `rowOffset` field lets a single dispatch cover only a band of rows
- * of a much taller image (see the chunking loop in `process()` below).
- * `spatialWeights` is a precomputed (2*radius+1)^2 lookup table for the
- * spatial term of the bilateral weight, which depends only on (dx, dy)
- * and is identical for every pixel. Computing it on the CPU once instead
- * of calling `exp()` for it on every shader invocation roughly halves the
- * transcendental-function work in the inner loop.
- */
-class GPUBilateralFilter extends BaseWebGPUStrategy {
-    config;
-    static async isSupported() {
-        return isWebGLComputeSupported() && (await getWebGPUUnsupportedReason()) === undefined;
-    }
-    static getUnsupportedReason() {
-        return getWebGPUUnsupportedReason();
-    }
-    constructor(config = {}) {
-        super();
-        this.config = { ...DEFAULT_BILATERAL_CONFIG, ...config };
-    }
-    async process(input) {
-        const device = await getWebGPUDevice();
-        const { width, height } = input;
-        const cfg = this.config;
-        const radius = Math.ceil(cfg.sigmaSpatial * (cfg.radiusMultiplier ?? 2));
-        const side = 2 * radius + 1;
-        if (radius > 15) {
-            console.warn(`GPUBilateralFilter: radius=${radius} (from sigmaSpatial=${cfg.sigmaSpatial}) means ` +
-                `${side * side} samples/pixel. On large images this can still be expensive enough ` +
-                `to run long even chunked; consider a smaller sigmaSpatial/radiusMultiplier if you ` +
-                `see slowdowns or device loss.`);
-        }
-        // Precompute the spatial weight term (depends only on dx, dy - identical
-        // for every pixel) once on the CPU instead of recomputing it with exp()
-        // on every shader invocation for every pixel.
-        const spatialLUT = new Float32Array(side * side);
-        {
-            const sigmaSpatial2 = 2 * cfg.sigmaSpatial * cfg.sigmaSpatial;
-            let li = 0;
-            for (let dy = -radius; dy <= radius; dy++) {
-                for (let dx = -radius; dx <= radius; dx++) {
-                    spatialLUT[li++] = Math.exp(-(dx * dx + dy * dy) / sigmaSpatial2);
-                }
-            }
-        }
-        const uniformData = new ArrayBuffer(32);
-        const u32View = new Uint32Array(uniformData);
-        const f32View = new Float32Array(uniformData);
-        u32View[0] = width;
-        u32View[1] = height;
-        u32View[2] = radius;
-        u32View[3] = 0; // rowOffset - updated per chunk in the loop below
-        f32View[4] = 2 * cfg.sigmaSpatial * cfg.sigmaSpatial;
-        f32View[5] = 2 * cfg.sigmaRange * cfg.sigmaRange;
-        return this.runGuarded(device, async () => {
-            const uniformBuffer = createUniformBuffer(device, uniformData);
-            const inputBuffer = createReadOnlyStorageBuffer(device, input.data);
-            const outputBuffer = createOutputStorageBuffer(device, input.data.byteLength);
-            const spatialWeightsBuffer = createReadOnlyStorageBuffer(device, spatialLUT);
-            const pipeline = getPipeline(device, 'bilateral', source$6, 'main');
-            const bindGroup = device.createBindGroup({
-                layout: pipeline.getBindGroupLayout(0),
-                entries: [
-                    { binding: 0, resource: { buffer: uniformBuffer } },
-                    { binding: 1, resource: { buffer: inputBuffer } },
-                    { binding: 2, resource: { buffer: outputBuffer } },
-                    { binding: 3, resource: { buffer: spatialWeightsBuffer } },
-                ],
-            });
-            // Large images combined with large radii make width * height *
-            // (2*radius+1)^2 samples in a single dispatch, which can run long
-            // enough to exceed the GPU driver's watchdog timeout and bring down
-            // the whole device (VK_ERROR_DEVICE_LOST) instead of just failing
-            // this operation. Splitting the work into row bands, each submitted
-            // and awaited independently, keeps any single submission short.
-            // ROWS_PER_CHUNK is sized so that each chunk does roughly the same
-            // amount of total sampling work regardless of image width or radius.
-            const ROWS_PER_CHUNK = Math.max(1, Math.floor(4_000_000 / (width * side * side)));
-            for (let y0 = 0; y0 < height; y0 += ROWS_PER_CHUNK) {
-                const rows = Math.min(ROWS_PER_CHUNK, height - y0);
-                device.queue.writeBuffer(uniformBuffer, 12, new Uint32Array([y0]));
-                const encoder = device.createCommandEncoder();
-                const pass = encoder.beginComputePass();
-                pass.setPipeline(pipeline);
-                pass.setBindGroup(0, bindGroup);
-                pass.dispatchWorkgroups(workgroupCount(width), workgroupCount(rows));
-                pass.end();
-                device.queue.submit([encoder.finish()]);
-            }
-            const resultData = await readFloat32Buffer(device, outputBuffer, width * height);
-            uniformBuffer.destroy();
-            inputBuffer.destroy();
-            outputBuffer.destroy();
-            spatialWeightsBuffer.destroy();
-            return { data: resultData, width, height };
-        });
-    }
-}
-/* ==================================================================== */
-/* Median Filter                                                         */
-/* ==================================================================== */
-const DEFAULT_MEDIAN_CONFIG = {
-    radius: 2,
-};
-// N (the per-pixel neighborhood size) sizes a function-local `var`, not a
-// `var<workgroup>` one, so it can't become a WGSL `override`. The
-// override-as-array-size exception only covers workgroup-address-space
-// arrays (see median.wgsl's comment for the full explanation). It's a
-// genuine `const`, so it still has to be baked per radius at the string
-// level; a new shader module is compiled (and cached by getPipeline's
-// cacheKey) for each distinct radius, same as before this migration.
-function medianShaderSource(radius) {
-    const side = 2 * radius + 1;
-    const n = side * side;
-    return source.replace('__N__', String(n));
-}
-class GPUMedianFilter extends BaseWebGPUStrategy {
-    config;
-    static async isSupported() {
-        return isWebGLComputeSupported() && (await getWebGPUUnsupportedReason()) === undefined;
-    }
-    static getUnsupportedReason() {
-        return getWebGPUUnsupportedReason();
-    }
-    constructor(config = {}) {
-        super();
-        this.config = { ...DEFAULT_MEDIAN_CONFIG, ...config };
-        if (this.config.radius > 6) {
-            console.warn(`GPUMedianFilter: radius=${this.config.radius} means a per-pixel ` +
-                `neighborhood array of ${(2 * this.config.radius + 1) ** 2} elements, ` +
-                `sorted in-shader with an O(n^2) insertion sort. This can get slow ` +
-                `and register-heavy fast; consider a smaller radius on GPU.`);
-        }
-    }
-    async process(input) {
-        const device = await getWebGPUDevice();
-        const { width, height } = input;
-        const radius = this.config.radius;
-        const uniformData = new ArrayBuffer(16);
-        const u32View = new Uint32Array(uniformData);
-        u32View[0] = width;
-        u32View[1] = height;
-        u32View[2] = radius;
-        return this.runGuarded(device, async () => {
-            const uniformBuffer = createUniformBuffer(device, uniformData);
-            const inputBuffer = createReadOnlyStorageBuffer(device, input.data);
-            const outputBuffer = createOutputStorageBuffer(device, input.data.byteLength);
-            const cacheKey = `median-r${radius}`;
-            const pipeline = getPipeline(device, cacheKey, medianShaderSource(radius), 'main');
-            const bindGroup = device.createBindGroup({
-                layout: pipeline.getBindGroupLayout(0),
-                entries: [
-                    { binding: 0, resource: { buffer: uniformBuffer } },
-                    { binding: 1, resource: { buffer: inputBuffer } },
-                    { binding: 2, resource: { buffer: outputBuffer } },
-                ],
-            });
-            dispatch(device, pipeline, bindGroup, width, height);
-            const resultData = await readFloat32Buffer(device, outputBuffer, width * height);
-            uniformBuffer.destroy();
-            inputBuffer.destroy();
-            outputBuffer.destroy();
-            return { data: resultData, width, height };
-        });
-    }
-}
-/* ==================================================================== */
-/* Kuwahara Filter                                                       */
-/* ==================================================================== */
-const DEFAULT_KUWAHARA_CONFIG = {
-    radius: 3,
-};
-class GPUKuwaharaFilter extends BaseWebGPUStrategy {
-    config;
-    static async isSupported() {
-        return isWebGLComputeSupported() && (await getWebGPUUnsupportedReason()) === undefined;
-    }
-    static getUnsupportedReason() {
-        return getWebGPUUnsupportedReason();
-    }
-    constructor(config = {}) {
-        super();
-        this.config = { ...DEFAULT_KUWAHARA_CONFIG, ...config };
-    }
-    async process(input) {
-        const device = await getWebGPUDevice();
-        const { width, height } = input;
-        const radius = this.config.radius;
-        const uniformData = new ArrayBuffer(16);
-        const u32View = new Uint32Array(uniformData);
-        u32View[0] = width;
-        u32View[1] = height;
-        u32View[2] = radius;
-        return this.runGuarded(device, async () => {
-            const uniformBuffer = createUniformBuffer(device, uniformData);
-            const inputBuffer = createReadOnlyStorageBuffer(device, input.data);
-            const outputBuffer = createOutputStorageBuffer(device, input.data.byteLength);
-            const pipeline = getPipeline(device, 'kuwahara', source$5, 'main');
-            const bindGroup = device.createBindGroup({
-                layout: pipeline.getBindGroupLayout(0),
-                entries: [
-                    { binding: 0, resource: { buffer: uniformBuffer } },
-                    { binding: 1, resource: { buffer: inputBuffer } },
-                    { binding: 2, resource: { buffer: outputBuffer } },
-                ],
-            });
-            dispatch(device, pipeline, bindGroup, width, height);
-            const resultData = await readFloat32Buffer(device, outputBuffer, width * height);
-            uniformBuffer.destroy();
-            inputBuffer.destroy();
-            outputBuffer.destroy();
-            return { data: resultData, width, height };
-        });
-    }
-}
-/* ==================================================================== */
-/* Gaussian Blur (separable, two compute passes)                        */
-/* ==================================================================== */
-class GPUGaussianBlur extends BaseWebGPUStrategy {
-    sigma;
-    static async isSupported() {
-        return isWebGLComputeSupported() && (await getWebGPUUnsupportedReason()) === undefined;
-    }
-    static getUnsupportedReason() {
-        return getWebGPUUnsupportedReason();
-    }
-    constructor(sigma = 1.0) {
-        super();
-        this.sigma = sigma;
-    }
-    async process(input) {
-        const { width, height } = input;
-        if (this.sigma < 0.1) {
-            return { data: new Float32Array(input.data), width, height };
-        }
-        const device = await getWebGPUDevice();
-        const radius = Math.ceil(this.sigma * 3);
-        const kernelSize = radius * 2 + 1;
-        const kernel = generateGaussianKernel$1(this.sigma, kernelSize);
-        const uniformData = new ArrayBuffer(16);
-        const u32View = new Uint32Array(uniformData);
-        u32View[0] = width;
-        u32View[1] = height;
-        u32View[2] = radius;
-        return this.runGuarded(device, async () => {
-            const uniformBuffer = createUniformBuffer(device, uniformData);
-            const inputBuffer = createReadOnlyStorageBuffer(device, input.data);
-            const kernelBuffer = createReadOnlyStorageBuffer(device, new Float32Array(kernel));
-            const tempBuffer = createOutputStorageBuffer(device, input.data.byteLength);
-            const outputBuffer = createOutputStorageBuffer(device, input.data.byteLength);
-            const pipelineH = getPipeline(device, 'gaussian', source$4, 'main_h');
-            const pipelineV = getPipeline(device, 'gaussian', source$4, 'main_v');
-            const bindGroupH = device.createBindGroup({
-                layout: pipelineH.getBindGroupLayout(0),
-                entries: [
-                    { binding: 0, resource: { buffer: uniformBuffer } },
-                    { binding: 1, resource: { buffer: inputBuffer } },
-                    { binding: 2, resource: { buffer: kernelBuffer } },
-                    { binding: 3, resource: { buffer: tempBuffer } },
-                ],
-            });
-            const bindGroupV = device.createBindGroup({
-                layout: pipelineV.getBindGroupLayout(0),
-                entries: [
-                    { binding: 0, resource: { buffer: uniformBuffer } },
-                    { binding: 1, resource: { buffer: tempBuffer } },
-                    { binding: 2, resource: { buffer: kernelBuffer } },
-                    { binding: 3, resource: { buffer: outputBuffer } },
-                ],
-            });
-            // Both passes are recorded on one command encoder before submission,
-            // so the vertical pass reliably waits for the horizontal pass's writes
-            // to tempBuffer (WebGPU commands within one queue submission execute
-            // in program order with respect to buffer dependencies).
-            const encoder = device.createCommandEncoder();
-            let pass = encoder.beginComputePass();
-            pass.setPipeline(pipelineH);
-            pass.setBindGroup(0, bindGroupH);
-            pass.dispatchWorkgroups(workgroupCount(width), workgroupCount(height));
-            pass.end();
-            pass = encoder.beginComputePass();
-            pass.setPipeline(pipelineV);
-            pass.setBindGroup(0, bindGroupV);
-            pass.dispatchWorkgroups(workgroupCount(width), workgroupCount(height));
-            pass.end();
-            device.queue.submit([encoder.finish()]);
-            const resultData = await readFloat32Buffer(device, outputBuffer, width * height);
-            uniformBuffer.destroy();
-            inputBuffer.destroy();
-            kernelBuffer.destroy();
-            tempBuffer.destroy();
-            outputBuffer.destroy();
-            return { data: resultData, width, height };
-        });
-    }
-}
-/* ==================================================================== */
-/* Contrast Enhancement (histogram-based percentile approximation)      */
-/* ==================================================================== */
-class GPUContrastEnhancer extends BaseWebGPUStrategy {
-    blackPoint;
-    whitePoint;
-    static async isSupported() {
-        return isWebGLComputeSupported() && (await getWebGPUUnsupportedReason()) === undefined;
-    }
-    static getUnsupportedReason() {
-        return getWebGPUUnsupportedReason();
-    }
-    constructor(blackPoint = 0.01, whitePoint = 0.99) {
-        super();
-        this.blackPoint = blackPoint;
-        this.whitePoint = whitePoint;
-    }
-    /**
-     * The CPU version sorts every pixel to find exact percentiles. Sorting
-     * is a poor fit for a GPU compute pass, so this builds a 256-bin
-     * histogram instead (one atomicAdd per pixel), reads the 1KB histogram
-     * back to the CPU to locate the percentile bins, then runs a second,
-     * fully GPU-resident pass to apply the stretch. This trades a small
-     * amount of precision (bin width 1/255) for O(n) work instead of an
-     * O(n log n) sort, at the cost of one small CPU/GPU sync point.
-     *
-     * The two GPU round-trips (histogram pass, then stretch pass) are each
-     * wrapped in their own runGuarded scope rather than one scope spanning
-     * both. The CPU-side histogram bucketing that happens between them
-     * isn't GPU work, so it shouldn't sit inside a WebGPU error scope.
-     */
-    async process(input) {
-        const device = await getWebGPUDevice();
-        const { width, height } = input;
-        const size = width * height;
-        const histUniform = new ArrayBuffer(16);
-        new Uint32Array(histUniform).set([width, height, 0, 0]);
-        const histogramU32 = await this.runGuarded(device, async () => {
-            const histUniformBuffer = createUniformBuffer(device, histUniform);
-            const histInputBuffer = createReadOnlyStorageBuffer(device, input.data);
-            const histogramBuffer = device.createBuffer({
-                size: 256 * 4,
-                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
-            });
-            device.queue.writeBuffer(histogramBuffer, 0, new Uint32Array(256));
-            const histPipeline = getPipeline(device, 'histogram', source$3, 'main');
-            const histBindGroup = device.createBindGroup({
-                layout: histPipeline.getBindGroupLayout(0),
-                entries: [
-                    { binding: 0, resource: { buffer: histUniformBuffer } },
-                    { binding: 1, resource: { buffer: histInputBuffer } },
-                    { binding: 2, resource: { buffer: histogramBuffer } },
-                ],
-            });
-            dispatch(device, histPipeline, histBindGroup, width, height);
-            const result = await readUint32Buffer(device, histogramBuffer, 256);
-            histUniformBuffer.destroy();
-            histInputBuffer.destroy();
-            histogramBuffer.destroy();
-            return result;
-        });
-        const blackCount = this.blackPoint * size;
-        const whiteCount = this.whitePoint * size;
-        let cumulative = 0;
-        let minBin = 0;
-        let maxBin = 255;
-        let foundMin = false;
-        for (let bin = 0; bin < 256; bin++) {
-            cumulative += histogramU32[bin];
-            if (!foundMin && cumulative >= blackCount) {
-                minBin = bin;
-                foundMin = true;
-            }
-            if (cumulative >= whiteCount) {
-                maxBin = bin;
-                break;
-            }
-        }
-        const minVal = minBin / 255;
-        const maxVal = maxBin / 255;
-        const range = maxVal - minVal;
-        if (range < 0.01) {
-            return { data: new Float32Array(input.data), width, height };
-        }
-        const stretchUniform = new ArrayBuffer(16);
-        const stretchU32 = new Uint32Array(stretchUniform);
-        const stretchF32 = new Float32Array(stretchUniform);
-        stretchU32[0] = width;
-        stretchU32[1] = height;
-        stretchF32[2] = minVal;
-        stretchF32[3] = range;
-        return this.runGuarded(device, async () => {
-            const stretchUniformBuffer = createUniformBuffer(device, stretchUniform);
-            const stretchInputBuffer = createReadOnlyStorageBuffer(device, input.data);
-            const outputBuffer = createOutputStorageBuffer(device, input.data.byteLength);
-            const stretchPipeline = getPipeline(device, 'stretch', source$2, 'main');
-            const stretchBindGroup = device.createBindGroup({
-                layout: stretchPipeline.getBindGroupLayout(0),
-                entries: [
-                    { binding: 0, resource: { buffer: stretchUniformBuffer } },
-                    { binding: 1, resource: { buffer: stretchInputBuffer } },
-                    { binding: 2, resource: { buffer: outputBuffer } },
-                ],
-            });
-            dispatch(device, stretchPipeline, stretchBindGroup, width, height);
-            const resultData = await readFloat32Buffer(device, outputBuffer, width * height);
-            stretchUniformBuffer.destroy();
-            stretchInputBuffer.destroy();
-            outputBuffer.destroy();
-            return { data: resultData, width, height };
-        });
-    }
-}
-async function readUint32Buffer(device, buffer, length) {
-    const byteLength = length * 4;
-    const staging = device.createBuffer({
-        size: byteLength,
-        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-    });
-    const encoder = device.createCommandEncoder();
-    encoder.copyBufferToBuffer(buffer, 0, staging, 0, byteLength);
-    device.queue.submit([encoder.finish()]);
-    await staging.mapAsync(GPUMapMode.READ);
-    const copy = new Uint32Array(staging.getMappedRange().slice(0));
-    staging.unmap();
-    staging.destroy();
-    return copy;
-}
-/* ==================================================================== */
-/* Quantizer                                                             */
-/* ==================================================================== */
-class GPUQuantizer extends BaseWebGPUStrategy {
-    levels;
-    static async isSupported() {
-        return isWebGLComputeSupported() && (await getWebGPUUnsupportedReason()) === undefined;
-    }
-    static getUnsupportedReason() {
-        return getWebGPUUnsupportedReason();
-    }
-    constructor(levels = 8) {
-        super();
-        this.levels = levels;
-    }
-    async process(input) {
-        const device = await getWebGPUDevice();
-        const { width, height } = input;
-        const step = 1 / (this.levels - 1);
-        const uniformData = new ArrayBuffer(16);
-        const u32View = new Uint32Array(uniformData);
-        const f32View = new Float32Array(uniformData);
-        u32View[0] = width;
-        u32View[1] = height;
-        f32View[2] = step;
-        return this.runGuarded(device, async () => {
-            const uniformBuffer = createUniformBuffer(device, uniformData);
-            const inputBuffer = createReadOnlyStorageBuffer(device, input.data);
-            const outputBuffer = createOutputStorageBuffer(device, input.data.byteLength);
-            const pipeline = getPipeline(device, 'quantize', source$1, 'main');
-            const bindGroup = device.createBindGroup({
-                layout: pipeline.getBindGroupLayout(0),
-                entries: [
-                    { binding: 0, resource: { buffer: uniformBuffer } },
-                    { binding: 1, resource: { buffer: inputBuffer } },
-                    { binding: 2, resource: { buffer: outputBuffer } },
-                ],
-            });
-            dispatch(device, pipeline, bindGroup, width, height);
-            const resultData = await readFloat32Buffer(device, outputBuffer, width * height);
-            uniformBuffer.destroy();
-            inputBuffer.destroy();
-            outputBuffer.destroy();
-            return { data: resultData, width, height };
-        });
-    }
-}
-
-/**
  * Composed Preprocessing Module for XDoG/FDoG
  *
  * This module is the single entry point the rest of the codebase should
- * import from. Each exported class resolves its OWN best-supported
- * backend independently (WebGPU > WebGL > CPU), the first time it's
- * created:
+ * import from. It no longer does its own backend resolution (WebGPU >
+ * WebGL > CPU, demote-on-failure, etc.) — that machinery lives once in
+ * `ResilientEdgeAwareFilter` and is exercised through the
+ * `EdgeAwareFilterCore`-shaped classes exported from `filters/filters.js`
+ * (`BilateralFilter`, `MedianFilter`, `KuwaharaFilter`, `GaussianBlur`,
+ * `ContrastEnhancer`, `Quantizer`).
  *
- *   BilateralFilter.create(...)  // may end up WebGPU on this device
- *   MedianFilter.create(...)     // may end up WebGL on this device, if
- *                                // e.g. it needs a storage texture format
- *                                // WebGPU can't provide here
- *
- * A device can support WebGPU for one algorithm and not another, so
- * resolution happens per class, not once globally for the whole module.
- * This follows the same pattern used for BlurStrategy/ETFComputer.
- *
- * If a backend fails mid-session (driver crash, lost context), each
- * instance demotes itself to the next supported candidate once and
- * retries the call that failed; that shared retry/demote machinery lives
- * in `ResilientPreprocessor`, not duplicated per filter.
+ * Every class here is a thin adapter from that `apply(input, params)`
+ * shape to the simpler `Preprocessor` shape (`process(input)`, no
+ * per-call params) that the rest of this pipeline expects: it remembers
+ * the config passed to `create()` and forwards it into `apply()` on
+ * every `process()` call. This is exactly the pattern `IsotropicBlur`
+ * (blur/isotropic.ts) already uses to wrap `IsotropicBlurFilter`.
  */
-function pickCandidates(candidates, options) {
-    if (!options?.forceCPU)
-        return candidates;
-    return [candidates[candidates.length - 1]];
-}
 /**
- * Edge-preserving smoothing filter. Resolves the best supported backend
- * at creation time; falls back once if that backend fails later.
+ * Edge-preserving smoothing filter. Backend resolution and mid-session
+ * fallback are handled entirely by the underlying
+ * `BilateralEdgeAwareFilter`; this class just remembers the config.
  */
-class BilateralFilter extends ResilientPreprocessor {
-    // Ordered best-to-worst. `satisfies` (not `implements`) catches a
-    // backend missing isSupported() or the instance shape at this line.
-    static candidates = [
-        GPUBilateralFilter,
-        BilateralFilterWebGL,
-        BilateralFilter$1,
-    ];
-    constructor(resolved, config) {
-        super(BilateralFilter.candidates, resolved, config);
+class BilateralFilter {
+    filter;
+    config;
+    constructor(filter, config) {
+        this.filter = filter;
+        this.config = config;
     }
     static async create(config = {}, options) {
-        const resolved = await ResilientPreprocessor.resolve(pickCandidates(BilateralFilter.candidates, options), config);
-        return new BilateralFilter(resolved, config);
+        const filter = await BilateralFilter$1.create(config, options);
+        return new BilateralFilter(filter, config);
+    }
+    get backend() {
+        return this.filter.backend;
+    }
+    dispose() {
+        this.filter.dispose();
+    }
+    async process(input) {
+        return this.filter.apply(input, this.config);
     }
 }
 /**
  * Median filter for salt-and-pepper noise removal.
  */
-class MedianFilter extends ResilientPreprocessor {
-    static candidates = [
-        GPUMedianFilter,
-        MedianFilterWebGL,
-        MedianFilter$1,
-    ];
-    constructor(resolved, config) {
-        super(MedianFilter.candidates, resolved, config);
+class MedianFilter {
+    filter;
+    config;
+    constructor(filter, config) {
+        this.filter = filter;
+        this.config = config;
     }
     static async create(config = {}, options) {
-        const resolved = await ResilientPreprocessor.resolve(pickCandidates(MedianFilter.candidates, options), config);
-        return new MedianFilter(resolved, config);
+        const filter = await MedianFilter$1.create(config, options);
+        return new MedianFilter(filter, config);
+    }
+    get backend() {
+        return this.filter.backend;
+    }
+    dispose() {
+        this.filter.dispose();
+    }
+    async process(input) {
+        return this.filter.apply(input, this.config);
     }
 }
 /**
  * Kuwahara filter for a painterly, stylized effect.
  */
-class KuwaharaFilter extends ResilientPreprocessor {
-    static candidates = [
-        GPUKuwaharaFilter,
-        KuwaharaFilterWebGL,
-        KuwaharaFilter$1,
-    ];
-    constructor(resolved, config) {
-        super(KuwaharaFilter.candidates, resolved, config);
+class KuwaharaFilter {
+    filter;
+    config;
+    constructor(filter, config) {
+        this.filter = filter;
+        this.config = config;
     }
     static async create(config = {}, options) {
-        const resolved = await ResilientPreprocessor.resolve(pickCandidates(KuwaharaFilter.candidates, options), config);
-        return new KuwaharaFilter(resolved, config);
+        const filter = await KuwaharaFilter$1.create(config, options);
+        return new KuwaharaFilter(filter, config);
+    }
+    get backend() {
+        return this.filter.backend;
+    }
+    dispose() {
+        this.filter.dispose();
+    }
+    async process(input) {
+        return this.filter.apply(input, this.config);
     }
 }
 /**
  * Separable Gaussian blur.
  */
-class GaussianBlur extends ResilientPreprocessor {
-    static candidates = [
-        GPUGaussianBlur,
-        GaussianBlurWebGL,
-        GaussianBlur$1,
-    ];
-    constructor(resolved, sigma) {
-        super(GaussianBlur.candidates, resolved, sigma);
+class GaussianBlur {
+    filter;
+    config;
+    constructor(filter, config) {
+        this.filter = filter;
+        this.config = config;
     }
     static async create(sigma = 1.0, options) {
-        const resolved = await ResilientPreprocessor.resolve(pickCandidates(GaussianBlur.candidates, options), sigma);
-        return new GaussianBlur(resolved, sigma);
+        const config = { sigma };
+        const filter = await GaussianBlur$1.create(config, options);
+        return new GaussianBlur(filter, config);
+    }
+    get backend() {
+        return this.filter.backend;
+    }
+    dispose() {
+        this.filter.dispose();
+    }
+    async process(input) {
+        return this.filter.apply(input, this.config);
     }
 }
-function adaptContrastCtor(Ctor) {
-    const Adapted = class {
-        static isSupported = Ctor.isSupported;
-        static getUnsupportedReason = Ctor.getUnsupportedReason;
-        constructor(config) {
-            return new Ctor(config.blackPoint, config.whitePoint);
-        }
-    };
-    return Adapted;
-}
-class ContrastEnhancer extends ResilientPreprocessor {
-    static candidates = [
-        adaptContrastCtor(GPUContrastEnhancer),
-        adaptContrastCtor(ContrastEnhancerWebGL),
-        adaptContrastCtor(ContrastEnhancer$1),
-    ];
-    constructor(resolved, config) {
-        super(ContrastEnhancer.candidates, resolved, config);
+/**
+ * Black/white point contrast stretch.
+ */
+class ContrastEnhancer {
+    filter;
+    config;
+    constructor(filter, config) {
+        this.filter = filter;
+        this.config = config;
     }
     static async create(blackPoint = 0.01, whitePoint = 0.99, options) {
-        const config = { blackPoint, whitePoint };
-        const resolved = await ResilientPreprocessor.resolve(pickCandidates(ContrastEnhancer.candidates, options), config);
-        return new ContrastEnhancer(resolved, config);
+        const filter = await ContrastEnhancer$1.create(blackPoint, whitePoint, options);
+        return new ContrastEnhancer(filter, { blackPoint, whitePoint });
+    }
+    get backend() {
+        return this.filter.backend;
+    }
+    dispose() {
+        this.filter.dispose();
+    }
+    async process(input) {
+        return this.filter.apply(input, this.config);
     }
 }
 /**
  * Posterize/quantize intensity levels.
  */
-class Quantizer extends ResilientPreprocessor {
-    static candidates = [
-        GPUQuantizer,
-        QuantizerWebGL,
-        Quantizer$1,
-    ];
-    constructor(resolved, levels) {
-        super(Quantizer.candidates, resolved, levels);
+class Quantizer {
+    filter;
+    config;
+    constructor(filter, config) {
+        this.filter = filter;
+        this.config = config;
     }
     static async create(levels = 8, options) {
-        const resolved = await ResilientPreprocessor.resolve(pickCandidates(Quantizer.candidates, options), levels);
-        return new Quantizer(resolved, levels);
+        const config = { levels };
+        const filter = await Quantizer$1.create(config, options);
+        return new Quantizer(filter, config);
+    }
+    get backend() {
+        return this.filter.backend;
+    }
+    dispose() {
+        this.filter.dispose();
+    }
+    async process(input) {
+        return this.filter.apply(input, this.config);
+    }
+}
+class LocalVariance {
+    filter;
+    config;
+    constructor(filter, config) {
+        this.filter = filter;
+        this.config = config;
+    }
+    static async create(config) {
+        const filter = new LocalVarianceFilter();
+        return new LocalVariance(filter, config);
+    }
+    get backend() {
+        return this.filter.backend;
+    }
+    dispose() {
+        this.filter.dispose();
+    }
+    async process(input) {
+        return this.filter.apply(input, this.config);
     }
 }
 const PreprocessingPresets = {
@@ -12606,16 +10209,15 @@ var index$1 = /*#__PURE__*/Object.freeze({
     ContrastEnhancer: ContrastEnhancer,
     GaussianBlur: GaussianBlur,
     KuwaharaFilter: KuwaharaFilter,
-    LocalVariancePreprocessor: LocalVariancePreprocessor,
+    LocalVariance: LocalVariance,
     MedianFilter: MedianFilter,
     PreprocessingPipeline: PreprocessingPipeline,
     PreprocessingPresets: PreprocessingPresets,
     Quantizer: Quantizer,
     disposeWebGL: disposeWebGL,
     disposeWebGPU: disposeWebGPU,
-    isWebGLAvailable: isWebGLAvailable,
-    parameterEstimation: index$2,
-    webgl: webgl
+    isWebGLAvailable: isWebGLAvailable$1,
+    parameterEstimation: index$2
 });
 
 const DEFAULT_AA_CONFIG = {
@@ -14449,5 +12051,5 @@ var index = /*#__PURE__*/Object.freeze({
     rgbToImageData: rgbToImageData
 });
 
-export { DEFAULT_BILATERAL_CONFIG$3 as DEFAULT_BILATERAL_CONFIG, DEFAULT_CONTRAST_ENHANCEMENT_CONFIG, DEFAULT_ETF_CONFIG, DEFAULT_GAUSSIAN_CONFIG, DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, DEFAULT_ISOTROPIC_BLUR_CONFIG, DEFAULT_KUWAHARA_CONFIG$3 as DEFAULT_KUWAHARA_CONFIG, DEFAULT_MEDIAN_CONFIG$3 as DEFAULT_MEDIAN_CONFIG, DEFAULT_QUANTIZER_CONFIG, DoGProcessor, EdgeTangentFlowComputer, ThresholdModes, applyCustomThreshold, index$4 as blur, index$5 as dog, index as extensions, index$3 as filters, index$1 as preprocess, threshold, index$6 as utilities };
+export { DEFAULT_BILATERAL_CONFIG, DEFAULT_CONTRAST_ENHANCEMENT_CONFIG, DEFAULT_ETF_CONFIG, DEFAULT_GAUSSIAN_CONFIG, DEFAULT_GRADIENT_ALIGNED_BLUR_CONFIG, DEFAULT_ISOTROPIC_BLUR_CONFIG, DEFAULT_KUWAHARA_CONFIG, DEFAULT_MEDIAN_CONFIG, DEFAULT_QUANTIZER_CONFIG, DoGProcessor, EdgeTangentFlowComputer, ThresholdModes, applyCustomThreshold, index$4 as blur, index$5 as dog, index as extensions, index$3 as filters, index$1 as preprocess, threshold, index$6 as utilities };
 //# sourceMappingURL=index.mjs.map

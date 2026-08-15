@@ -1,4 +1,3 @@
-export type { LocalVarianceConfig } from './cpu.js';
 export * as cpu from './cpu.js';
 export type { BackendOptions } from './filters.js';
 export * from './filters.js';

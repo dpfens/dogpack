@@ -1,6 +1,6 @@
 import type { BlurStrategy, ChannelImage, EdgeAwareFilterCore } from "../interfaces/base.js";
 
-export class EdgeAwareBlurStrategy<TConfig> implements BlurStrategy {
+export class EdgeAwareBlur<TConfig> implements BlurStrategy {
   constructor(
     private filter: EdgeAwareFilterCore<TConfig>,
     private toConfig: (sigma: number) => TConfig,

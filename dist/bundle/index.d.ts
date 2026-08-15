@@ -114,10 +114,6 @@ interface Preprocessor extends Disposable, BackendIdentifiable {
     process(input: ChannelImage): Promise<ChannelImage>;
 }
 /**
- * Static (constructor) interface for preprocessor classes.
- */
-type PreprocessorCtor = StrategyCtor<Preprocessor>;
-/**
  * Configuration for isotropic Gaussian blur
  */
 interface IsotropicBlurConfig {
@@ -183,6 +179,51 @@ interface BilateralFilterConfig {
     radiusMultiplier?: number;
 }
 declare const DEFAULT_BILATERAL_CONFIG: BilateralFilterConfig;
+/**
+ * Configuration for Local Variance Texture Detection
+ *
+ * These parameters control how texture is detected. They are independent
+ * from XDoG/FDoG/HDoG parameters - you tune them separately based on the
+ * image characteristics you're working with.
+ */
+interface LocalVarianceConfig {
+    /**
+     * Window radius for variance computation
+     * Examples:
+     * - 1 = 3x3 window (fast, fine detail)
+     * - 2 = 5x5 window (recommended, balanced)
+     * - 3 = 7x7 window (slower, coarser texture detection)
+     */
+    windowRadius: number;
+    /**
+     * Normalize by local gradient to distinguish texture from structure edges
+     *
+     * Without normalization:
+     *   - High variance alone indicates texture
+     *   - Problem: Subtle structural edges with variance get suppressed
+     *
+     * With normalization:
+     *   - High variance + low gradient = texture (keep)
+     *   - High variance + high gradient = edge (reduce texture score)
+     *   - Formula: texture *= 1 / (1 + gradient^2)
+     *
+     * Recommended: true
+     */
+    normalizeByGradient: boolean;
+    /**
+     * Scale factor for raw variance values
+     * Typical range: 1.0 - 3.0
+     * Higher = more sensitive to texture variations
+     * Output is clamped to [0, 1] after scaling
+     */
+    varianceScale: number;
+    /**
+     * Optional hard cap on variance values (before normalization)
+     * Prevents outliers from dominating
+     * If undefined, no capping is applied
+     */
+    maxVariance?: number;
+}
 /**
  * Configuration for median filter
  */
@@ -1523,7 +1564,7 @@ declare class FlowGuidedBlur implements BlurStrategy, FlowGuidedBlurStrategy {
     private demoteAndFindNext;
 }
 
-declare class EdgeAwareBlurStrategy<TConfig> implements BlurStrategy {
+declare class EdgeAwareBlur<TConfig> implements BlurStrategy {
     private filter;
     private toConfig;
     constructor(filter: EdgeAwareFilterCore<TConfig>, toConfig: (sigma: number) => TConfig);
@@ -1557,8 +1598,8 @@ declare class GradientAlignedBlur implements BlurStrategy {
 
 type index$5_CPUFlowGuidedBlur = CPUFlowGuidedBlur;
 declare const index$5_CPUFlowGuidedBlur: typeof CPUFlowGuidedBlur;
-type index$5_EdgeAwareBlurStrategy<TConfig> = EdgeAwareBlurStrategy<TConfig>;
-declare const index$5_EdgeAwareBlurStrategy: typeof EdgeAwareBlurStrategy;
+type index$5_EdgeAwareBlur<TConfig> = EdgeAwareBlur<TConfig>;
+declare const index$5_EdgeAwareBlur: typeof EdgeAwareBlur;
 type index$5_FlowGuidedBlur = FlowGuidedBlur;
 declare const index$5_FlowGuidedBlur: typeof FlowGuidedBlur;
 type index$5_FlowGuidedBlurConfig = FlowGuidedBlurConfig;
@@ -1571,7 +1612,7 @@ declare const index$5_WebGLFlowGuidedBlur: typeof WebGLFlowGuidedBlur;
 type index$5_WebGPUFlowGuidedBlur = WebGPUFlowGuidedBlur;
 declare const index$5_WebGPUFlowGuidedBlur: typeof WebGPUFlowGuidedBlur;
 declare namespace index$5 {
-  export { index$5_CPUFlowGuidedBlur as CPUFlowGuidedBlur, index$5_EdgeAwareBlurStrategy as EdgeAwareBlurStrategy, index$5_FlowGuidedBlur as FlowGuidedBlur, index$5_GradientAlignedBlur as GradientAlignedBlur, index$5_IsotropicBlur as IsotropicBlur, index$5_WebGLFlowGuidedBlur as WebGLFlowGuidedBlur, index$5_WebGPUFlowGuidedBlur as WebGPUFlowGuidedBlur };
+  export { index$5_CPUFlowGuidedBlur as CPUFlowGuidedBlur, index$5_EdgeAwareBlur as EdgeAwareBlur, index$5_FlowGuidedBlur as FlowGuidedBlur, index$5_GradientAlignedBlur as GradientAlignedBlur, index$5_IsotropicBlur as IsotropicBlur, index$5_WebGLFlowGuidedBlur as WebGLFlowGuidedBlur, index$5_WebGPUFlowGuidedBlur as WebGPUFlowGuidedBlur };
   export type { index$5_FlowGuidedBlurConfig as FlowGuidedBlurConfig };
 }
 
@@ -1682,51 +1723,6 @@ declare class Quantizer$2 extends BaseCPUStrategy implements EdgeAwareFilterCore
     apply(input: ChannelImage, config: Partial<QuantizerConfig>): Promise<ChannelImage>;
 }
 /**
- * Configuration for Local Variance Texture Detection
- *
- * These parameters control how texture is detected. They are independent
- * from XDoG/FDoG/HDoG parameters - you tune them separately based on the
- * image characteristics you're working with.
- */
-interface LocalVarianceConfig$1 {
-    /**
-     * Window radius for variance computation
-     * Examples:
-     * - 1 = 3x3 window (fast, fine detail)
-     * - 2 = 5x5 window (recommended, balanced)
-     * - 3 = 7x7 window (slower, coarser texture detection)
-     */
-    windowRadius: number;
-    /**
-     * Normalize by local gradient to distinguish texture from structure edges
-     *
-     * Without normalization:
-     *   - High variance alone indicates texture
-     *   - Problem: Subtle structural edges with variance get suppressed
-     *
-     * With normalization:
-     *   - High variance + low gradient = texture (keep)
-     *   - High variance + high gradient = edge (reduce texture score)
-     *   - Formula: texture *= 1 / (1 + gradient^2)
-     *
-     * Recommended: true
-     */
-    normalizeByGradient: boolean;
-    /**
-     * Scale factor for raw variance values
-     * Typical range: 1.0 - 3.0
-     * Higher = more sensitive to texture variations
-     * Output is clamped to [0, 1] after scaling
-     */
-    varianceScale: number;
-    /**
-     * Optional hard cap on variance values (before normalization)
-     * Prevents outliers from dominating
-     * If undefined, no capping is applied
-     */
-    maxVariance?: number;
-}
-/**
  * Computes local variance as texture detection preprocessing
  *
  * STANDALONE PREPROCESSING: This class only detects texture.
@@ -1754,17 +1750,17 @@ interface LocalVarianceConfig$1 {
  * // Now use textureMap with your own edge detection
  * ```
  */
-declare class LocalVarianceFilter implements EdgeAwareFilterCore<LocalVarianceConfig$1> {
+declare class LocalVarianceFilter implements EdgeAwareFilterCore<LocalVarianceConfig> {
     /** CPU-only. No WebGL/WebGPU counterparts for this yet. */
     readonly backend: "cpu";
-    defaultConfig: LocalVarianceConfig$1;
+    defaultConfig: LocalVarianceConfig;
     dispose(): void;
     /**
      * Process using separable convolution (faster for large windows)
      * Variance = E[X^2] - E[X]^2
      * Compute box blur of X and X^2 separately, then combine
      */
-    apply(image: ChannelImage, config: Partial<LocalVarianceConfig$1>): Promise<ChannelImage>;
+    apply(image: ChannelImage, config: Partial<LocalVarianceConfig>): Promise<ChannelImage>;
     /**
      * Fast box blur using separable convolution + a sliding-window running sum.
      *
@@ -1824,8 +1820,16 @@ declare const cpu_EdgeAwareFilterPresets: typeof EdgeAwareFilterPresets;
 type cpu_LocalVarianceFilter = LocalVarianceFilter;
 declare const cpu_LocalVarianceFilter: typeof LocalVarianceFilter;
 declare namespace cpu {
-  export { BilateralFilter$2 as BilateralFilter, ContrastEnhancer$2 as ContrastEnhancer, cpu_EdgeAwareFilterPresets as EdgeAwareFilterPresets, GaussianBlur$2 as GaussianBlur, KuwaharaFilter$2 as KuwaharaFilter, cpu_LocalVarianceFilter as LocalVarianceFilter, MedianFilter$2 as MedianFilter, Quantizer$2 as Quantizer };
-  export type { LocalVarianceConfig$1 as LocalVarianceConfig };
+  export {
+    BilateralFilter$2 as BilateralFilter,
+    ContrastEnhancer$2 as ContrastEnhancer,
+    cpu_EdgeAwareFilterPresets as EdgeAwareFilterPresets,
+    GaussianBlur$2 as GaussianBlur,
+    KuwaharaFilter$2 as KuwaharaFilter,
+    cpu_LocalVarianceFilter as LocalVarianceFilter,
+    MedianFilter$2 as MedianFilter,
+    Quantizer$2 as Quantizer,
+  };
 }
 
 /**
@@ -1870,32 +1874,32 @@ declare abstract class ResilientEdgeAwareFilter<TOptions> implements EdgeAwareFi
  * Achieves 50-100x speedup over CPU implementations for large images.
  */
 
-declare class BilateralFilterWebGL$1 extends BaseWebGLStrategy implements EdgeAwareFilterCore<BilateralFilterConfig> {
+declare class BilateralFilterWebGL extends BaseWebGLStrategy implements EdgeAwareFilterCore<BilateralFilterConfig> {
     static isSupported(): Promise<boolean>;
     static getUnsupportedReason(): Promise<string | undefined>;
     apply(input: ChannelImage, config: Partial<BilateralFilterConfig>): Promise<ChannelImage>;
 }
-declare class GaussianBlurWebGL$1 extends BaseWebGLStrategy implements EdgeAwareFilterCore<GaussianConfig> {
+declare class GaussianBlurWebGL extends BaseWebGLStrategy implements EdgeAwareFilterCore<GaussianConfig> {
     static isSupported(): Promise<boolean>;
     static getUnsupportedReason(): Promise<string | undefined>;
     apply(input: ChannelImage, config: Partial<GaussianConfig>): Promise<ChannelImage>;
 }
-declare class MedianFilterWebGL$1 extends BaseWebGLStrategy implements EdgeAwareFilterCore<MedianFilterConfig> {
+declare class MedianFilterWebGL extends BaseWebGLStrategy implements EdgeAwareFilterCore<MedianFilterConfig> {
     static isSupported(): Promise<boolean>;
     static getUnsupportedReason(): Promise<string | undefined>;
     apply(input: ChannelImage, config?: Partial<MedianFilterConfig>): Promise<ChannelImage>;
 }
-declare class KuwaharaFilterWebGL$1 extends BaseWebGLStrategy implements EdgeAwareFilterCore<KuwaharaFilterConfig> {
+declare class KuwaharaFilterWebGL extends BaseWebGLStrategy implements EdgeAwareFilterCore<KuwaharaFilterConfig> {
     static isSupported(): Promise<boolean>;
     static getUnsupportedReason(): Promise<string | undefined>;
     apply(input: ChannelImage, config?: Partial<KuwaharaFilterConfig>): Promise<ChannelImage>;
 }
-declare class ContrastEnhancerWebGL$1 extends BaseWebGLStrategy implements EdgeAwareFilterCore<ContrastEnhancementConfig> {
+declare class ContrastEnhancerWebGL extends BaseWebGLStrategy implements EdgeAwareFilterCore<ContrastEnhancementConfig> {
     static isSupported(): Promise<boolean>;
     static getUnsupportedReason(): Promise<string | undefined>;
     apply(input: ChannelImage, config: Partial<ContrastEnhancementConfig>): Promise<ChannelImage>;
 }
-declare class QuantizerWebGL$1 extends BaseWebGLStrategy implements EdgeAwareFilterCore<QuantizerConfig> {
+declare class QuantizerWebGL extends BaseWebGLStrategy implements EdgeAwareFilterCore<QuantizerConfig> {
     static isSupported(): Promise<boolean>;
     static getUnsupportedReason(): Promise<string | undefined>;
     apply(input: ChannelImage, config: Partial<QuantizerConfig>): Promise<ChannelImage>;
@@ -1903,28 +1907,42 @@ declare class QuantizerWebGL$1 extends BaseWebGLStrategy implements EdgeAwareFil
 /**
  * Check if WebGL 2.0 is available
  */
-declare function isWebGLAvailable$1(): boolean;
+declare function isWebGLAvailable(): boolean;
 /**
  * Cleanup all WebGL resources
  */
-declare function disposeWebGL$1(): void;
+declare function disposeWebGL(): void;
 
-declare namespace webgl$1 {
+type webgl_BilateralFilterWebGL = BilateralFilterWebGL;
+declare const webgl_BilateralFilterWebGL: typeof BilateralFilterWebGL;
+type webgl_ContrastEnhancerWebGL = ContrastEnhancerWebGL;
+declare const webgl_ContrastEnhancerWebGL: typeof ContrastEnhancerWebGL;
+type webgl_GaussianBlurWebGL = GaussianBlurWebGL;
+declare const webgl_GaussianBlurWebGL: typeof GaussianBlurWebGL;
+type webgl_KuwaharaFilterWebGL = KuwaharaFilterWebGL;
+declare const webgl_KuwaharaFilterWebGL: typeof KuwaharaFilterWebGL;
+type webgl_MedianFilterWebGL = MedianFilterWebGL;
+declare const webgl_MedianFilterWebGL: typeof MedianFilterWebGL;
+type webgl_QuantizerWebGL = QuantizerWebGL;
+declare const webgl_QuantizerWebGL: typeof QuantizerWebGL;
+declare const webgl_disposeWebGL: typeof disposeWebGL;
+declare const webgl_isWebGLAvailable: typeof isWebGLAvailable;
+declare namespace webgl {
   export {
-    BilateralFilterWebGL$1 as BilateralFilter,
-    BilateralFilterWebGL$1 as BilateralFilterWebGL,
-    ContrastEnhancerWebGL$1 as ContrastEnhancer,
-    ContrastEnhancerWebGL$1 as ContrastEnhancerWebGL,
-    GaussianBlurWebGL$1 as GaussianBlur,
-    GaussianBlurWebGL$1 as GaussianBlurWebGL,
-    KuwaharaFilterWebGL$1 as KuwaharaFilter,
-    KuwaharaFilterWebGL$1 as KuwaharaFilterWebGL,
-    MedianFilterWebGL$1 as MedianFilter,
-    MedianFilterWebGL$1 as MedianFilterWebGL,
-    QuantizerWebGL$1 as Quantizer,
-    QuantizerWebGL$1 as QuantizerWebGL,
-    disposeWebGL$1 as disposeWebGL,
-    isWebGLAvailable$1 as isWebGLAvailable,
+    BilateralFilterWebGL as BilateralFilter,
+    webgl_BilateralFilterWebGL as BilateralFilterWebGL,
+    ContrastEnhancerWebGL as ContrastEnhancer,
+    webgl_ContrastEnhancerWebGL as ContrastEnhancerWebGL,
+    GaussianBlurWebGL as GaussianBlur,
+    webgl_GaussianBlurWebGL as GaussianBlurWebGL,
+    KuwaharaFilterWebGL as KuwaharaFilter,
+    webgl_KuwaharaFilterWebGL as KuwaharaFilterWebGL,
+    MedianFilterWebGL as MedianFilter,
+    webgl_MedianFilterWebGL as MedianFilterWebGL,
+    QuantizerWebGL as Quantizer,
+    webgl_QuantizerWebGL as QuantizerWebGL,
+    webgl_disposeWebGL as disposeWebGL,
+    webgl_isWebGLAvailable as isWebGLAvailable,
   };
 }
 
@@ -1940,7 +1958,7 @@ declare namespace webgl$1 {
  */
 declare function getWebGPUUnsupportedReason(): Promise<string | undefined>;
 /** Release the cached device. Mainly useful for tests / hot reload. */
-declare function disposeWebGPU$1(): void;
+declare function disposeWebGPU(): void;
 declare function clearShaderCaches(): void;
 /**
  * The `rowOffset` field lets a single dispatch cover only a band of rows
@@ -2026,6 +2044,7 @@ declare const webgpu_GPUPreprocessingPresets: typeof GPUPreprocessingPresets;
 type webgpu_GPUQuantizer = GPUQuantizer;
 declare const webgpu_GPUQuantizer: typeof GPUQuantizer;
 declare const webgpu_clearShaderCaches: typeof clearShaderCaches;
+declare const webgpu_disposeWebGPU: typeof disposeWebGPU;
 declare const webgpu_getWebGPUUnsupportedReason: typeof getWebGPUUnsupportedReason;
 declare namespace webgpu {
   export {
@@ -2037,7 +2056,7 @@ declare namespace webgpu {
     webgpu_GPUPreprocessingPresets as GPUPreprocessingPresets,
     webgpu_GPUQuantizer as GPUQuantizer,
     webgpu_clearShaderCaches as clearShaderCaches,
-    disposeWebGPU$1 as disposeWebGPU,
+    webgpu_disposeWebGPU as disposeWebGPU,
     webgpu_getWebGPUUnsupportedReason as getWebGPUUnsupportedReason,
   };
 }
@@ -2065,7 +2084,7 @@ declare namespace webgpu {
  * in `ResilientEdgeAwareFilter`, not duplicated per filter.
  */
 
-interface BackendOptions$1 {
+interface BackendOptions {
     /** Force CPU even if WebGL/WebGPU are available. Default: false. */
     forceCPU?: boolean;
 }
@@ -2076,7 +2095,7 @@ interface BackendOptions$1 {
 declare class BilateralFilter$1 extends ResilientEdgeAwareFilter<Partial<BilateralFilterConfig>> {
     private static readonly candidates;
     private constructor();
-    static create(config?: Partial<BilateralFilterConfig>, options?: BackendOptions$1): Promise<BilateralFilter$1>;
+    static create(config?: Partial<BilateralFilterConfig>, options?: BackendOptions): Promise<BilateralFilter$1>;
 }
 /**
  * Median filter for salt-and-pepper noise removal.
@@ -2084,7 +2103,7 @@ declare class BilateralFilter$1 extends ResilientEdgeAwareFilter<Partial<Bilater
 declare class MedianFilter$1 extends ResilientEdgeAwareFilter<Partial<MedianFilterConfig>> {
     private static readonly candidates;
     private constructor();
-    static create(config?: Partial<MedianFilterConfig>, options?: BackendOptions$1): Promise<MedianFilter$1>;
+    static create(config?: Partial<MedianFilterConfig>, options?: BackendOptions): Promise<MedianFilter$1>;
 }
 /**
  * Kuwahara filter for a painterly, stylized effect.
@@ -2092,7 +2111,7 @@ declare class MedianFilter$1 extends ResilientEdgeAwareFilter<Partial<MedianFilt
 declare class KuwaharaFilter$1 extends ResilientEdgeAwareFilter<Partial<KuwaharaFilterConfig>> {
     private static readonly candidates;
     private constructor();
-    static create(config?: Partial<KuwaharaFilterConfig>, options?: BackendOptions$1): Promise<KuwaharaFilter$1>;
+    static create(config?: Partial<KuwaharaFilterConfig>, options?: BackendOptions): Promise<KuwaharaFilter$1>;
 }
 /**
  * Separable Isotropic blur.
@@ -2100,7 +2119,7 @@ declare class KuwaharaFilter$1 extends ResilientEdgeAwareFilter<Partial<Kuwahara
 declare class IsotropicBlurFilter extends ResilientEdgeAwareFilter<IsotropicBlurConfig> {
     private static readonly candidates;
     private constructor();
-    static create(config: Partial<IsotropicBlurConfig>, options?: BackendOptions$1): Promise<IsotropicBlurFilter>;
+    static create(config: Partial<IsotropicBlurConfig>, options?: BackendOptions): Promise<IsotropicBlurFilter>;
 }
 /**
  * Separable Gaussian blur.
@@ -2108,12 +2127,12 @@ declare class IsotropicBlurFilter extends ResilientEdgeAwareFilter<IsotropicBlur
 declare class GaussianBlur$1 extends ResilientEdgeAwareFilter<GaussianConfig> {
     private static readonly candidates;
     private constructor();
-    static create(config: GaussianConfig, options?: BackendOptions$1): Promise<GaussianBlur$1>;
+    static create(config: GaussianConfig, options?: BackendOptions): Promise<GaussianBlur$1>;
 }
 declare class ContrastEnhancer$1 extends ResilientEdgeAwareFilter<ContrastEnhancementConfig> {
     private static readonly candidates;
     private constructor();
-    static create(blackPoint?: number, whitePoint?: number, options?: BackendOptions$1): Promise<ContrastEnhancer$1>;
+    static create(blackPoint?: number, whitePoint?: number, options?: BackendOptions): Promise<ContrastEnhancer$1>;
 }
 /**
  * Posterize/quantize intensity levels.
@@ -2121,7 +2140,7 @@ declare class ContrastEnhancer$1 extends ResilientEdgeAwareFilter<ContrastEnhanc
 declare class Quantizer$1 extends ResilientEdgeAwareFilter<QuantizerConfig> {
     private static readonly candidates;
     private constructor();
-    static create(config: QuantizerConfig, options?: BackendOptions$1): Promise<Quantizer$1>;
+    static create(config: QuantizerConfig, options?: BackendOptions): Promise<Quantizer$1>;
 }
 declare const PreprocessingPresets$1: {
     /**
@@ -2151,13 +2170,18 @@ declare const PreprocessingPresets$1: {
     nature: (input: ChannelImage) => Promise<ChannelImage>;
 };
 
+type index$4_BackendOptions = BackendOptions;
 type index$4_IsotropicBlurFilter = IsotropicBlurFilter;
 declare const index$4_IsotropicBlurFilter: typeof IsotropicBlurFilter;
 declare const index$4_cpu: typeof cpu;
+declare const index$4_disposeWebGL: typeof disposeWebGL;
+declare const index$4_disposeWebGPU: typeof disposeWebGPU;
+declare const index$4_isWebGLAvailable: typeof isWebGLAvailable;
+declare const index$4_webgl: typeof webgl;
 declare const index$4_webgpu: typeof webgpu;
 declare namespace index$4 {
-  export { BilateralFilter$1 as BilateralFilter, ContrastEnhancer$1 as ContrastEnhancer, GaussianBlur$1 as GaussianBlur, index$4_IsotropicBlurFilter as IsotropicBlurFilter, KuwaharaFilter$1 as KuwaharaFilter, MedianFilter$1 as MedianFilter, PreprocessingPresets$1 as PreprocessingPresets, Quantizer$1 as Quantizer, index$4_cpu as cpu, disposeWebGL$1 as disposeWebGL, disposeWebGPU$1 as disposeWebGPU, isWebGLAvailable$1 as isWebGLAvailable, webgl$1 as webgl, index$4_webgpu as webgpu };
-  export type { BackendOptions$1 as BackendOptions, LocalVarianceConfig$1 as LocalVarianceConfig };
+  export { BilateralFilter$1 as BilateralFilter, ContrastEnhancer$1 as ContrastEnhancer, GaussianBlur$1 as GaussianBlur, index$4_IsotropicBlurFilter as IsotropicBlurFilter, KuwaharaFilter$1 as KuwaharaFilter, MedianFilter$1 as MedianFilter, PreprocessingPresets$1 as PreprocessingPresets, Quantizer$1 as Quantizer, index$4_cpu as cpu, index$4_disposeWebGL as disposeWebGL, index$4_disposeWebGPU as disposeWebGPU, index$4_isWebGLAvailable as isWebGLAvailable, index$4_webgl as webgl, index$4_webgpu as webgpu };
+  export type { index$4_BackendOptions as BackendOptions };
 }
 
 /**
@@ -2316,338 +2340,106 @@ declare namespace index$3 {
 }
 
 /**
- * Preprocessing module for XDoG/FDoG
- *
- * Provides filters to prepare images before line detection.
- * These help reduce noise and texture while preserving important edges.
- *
- * Section 3.2 of the paper discusses the importance of bilateral
- * preprocessing for "indication" - attenuating weak edges while
- * preserving strong edges.
- */
-
-/**
- * Configuration for Local Variance Texture Detection
- *
- * These parameters control how texture is detected. They are independent
- * from XDoG/FDoG/HDoG parameters - you tune them separately based on the
- * image characteristics you're working with.
- */
-interface LocalVarianceConfig {
-    /**
-     * Window radius for variance computation
-     * Examples:
-     * - 1 = 3x3 window (fast, fine detail)
-     * - 2 = 5x5 window (recommended, balanced)
-     * - 3 = 7x7 window (slower, coarser texture detection)
-     */
-    windowRadius: number;
-    /**
-     * Normalize by local gradient to distinguish texture from structure edges
-     *
-     * Without normalization:
-     *   - High variance alone indicates texture
-     *   - Problem: Subtle structural edges with variance get suppressed
-     *
-     * With normalization:
-     *   - High variance + low gradient = texture (keep)
-     *   - High variance + high gradient = edge (reduce texture score)
-     *   - Formula: texture *= 1 / (1 + gradient^2)
-     *
-     * Recommended: true
-     */
-    normalizeByGradient: boolean;
-    /**
-     * Scale factor for raw variance values
-     * Typical range: 1.0 - 3.0
-     * Higher = more sensitive to texture variations
-     * Output is clamped to [0, 1] after scaling
-     */
-    varianceScale: number;
-    /**
-     * Optional hard cap on variance values (before normalization)
-     * Prevents outliers from dominating
-     * If undefined, no capping is applied
-     */
-    maxVariance?: number;
-}
-/**
- * Computes local variance as texture detection preprocessing
- *
- * STANDALONE PREPROCESSING: This class only detects texture.
- * It does NOT perform edge detection.
- *
- * Input: ChannelImage (typically grayscale image)
- * Output: ChannelImage with same dimensions where each pixel value
- *         represents texture strength (0 = pure structure, 1 = pure texture)
- *
- * The output can be:
- * 1. Passed to your XDoG/FDoG/HDoG implementation to modulate parameters
- * 2. Combined with other texture detection methods (Spectral, Patch-based)
- * 3. Visualized for debugging
- * 4. Processed through additional preprocessing steps
- *
- * Example:
- * ```
- * const preprocessor = new LocalVariancePreprocessor({
- *   windowRadius: 2,
- *   normalizeByGradient: true,
- * });
- *
- * const textureMap = preprocessor.process(grayImage);
- * // textureMap.data[i] = texture strength at pixel i
- * // Now use textureMap with your own edge detection
- * ```
- */
-declare class LocalVariancePreprocessor implements Preprocessor {
-    private config;
-    /** CPU-only. No WebGL/WebGPU counterparts for this yet. */
-    readonly backend: "cpu";
-    constructor(config?: Partial<LocalVarianceConfig>);
-    dispose(): void;
-    /**
-     * Process using separable convolution (faster for large windows)
-     * Variance = E[X^2] - E[X]^2
-     * Compute box blur of X and X^2 separately, then combine
-     */
-    process(image: ChannelImage): Promise<ChannelImage>;
-    /**
-     * Fast box blur using separable convolution + a sliding-window running sum.
-     *
-     * @remarks
-     * Each pass is O(width * height): the window sum is updated incrementally
-     * as it slides one pixel over (`sum += incoming - outgoing`) rather than
-     * being re-summed from scratch at every position, so cost no longer grows
-     * with `radius`. Edge pixels use clamp-to-edge boundary handling.
-     *
-     * Trade-off: because each sum is derived from the previous one instead of
-     * being recomputed from scratch, floating-point error can accumulate along
-     * a scan line, unlike the resum-per-pixel approach this replaces. This is
-     * negligible in practice for 0-1 normalized pixel values and the small
-     * radii (1-4) this preprocessor supports.
-     *
-     * @private
-     */
-    private boxBlur;
-    /**
-     * Compute gradient map using Sobel filter (separable for efficiency)
-     * @private
-     */
-    private computeGradientMap;
-}
-
-/**
- * Shared machinery for "pick the best supported backend, fall back
- * gracefully if it fails later" preprocessors.
- */
-
-declare abstract class ResilientPreprocessor<TConfig> implements Preprocessor {
-    private readonly candidates;
-    private readonly config;
-    private readonly failedBackends;
-    private instance;
-    private currentCtor;
-    /**
-     * Subclasses resolve their instance via `resolve()` *before* calling
-     * this (in their own async static `create()`), then hand the result in
-     * here. The constructor itself stays synchronous, as constructors must.
-     */
-    protected constructor(candidates: readonly PreprocessorCtor[], resolved: {
-        instance: Preprocessor;
-        ctor: PreprocessorCtor;
-    }, config: TConfig);
-    /**
-     * Try each candidate in order, skipping unsupported ones. If a
-     * candidate reports supported but throws on construction anyway
-     * (isSupported() lied), move on to the next.
-     */
-    protected static resolve<TConfig>(candidates: readonly PreprocessorCtor[], config: TConfig): Promise<{
-        instance: Preprocessor;
-        ctor: PreprocessorCtor;
-    }>;
-    get backend(): "webgpu" | "webgl" | "cpu";
-    dispose(): void;
-    process(input: ChannelImage): Promise<ChannelImage>;
-    private demoteAndFindNext;
-}
-
-/**
- * WebGL-Accelerated Preprocessing Module for XDoG/FDoG
- *
- * High-performance GPU implementations of image preprocessing filters.
- * Achieves 50-100x speedup over CPU implementations for large images.
- */
-
-declare class BilateralFilterWebGL extends BaseWebGLStrategy implements Preprocessor {
-    private readonly config;
-    static isSupported(): Promise<boolean>;
-    static getUnsupportedReason(): Promise<string | undefined>;
-    constructor(config?: Partial<BilateralFilterConfig>);
-    process(input: ChannelImage): Promise<ChannelImage>;
-}
-declare class GaussianBlurWebGL extends BaseWebGLStrategy implements Preprocessor {
-    private readonly sigma;
-    static isSupported(): Promise<boolean>;
-    static getUnsupportedReason(): Promise<string | undefined>;
-    constructor(sigma?: number);
-    process(input: ChannelImage): Promise<ChannelImage>;
-}
-declare class MedianFilterWebGL extends BaseWebGLStrategy implements Preprocessor {
-    private readonly config;
-    static isSupported(): Promise<boolean>;
-    static getUnsupportedReason(): Promise<string | undefined>;
-    constructor(config?: Partial<MedianFilterConfig>);
-    process(input: ChannelImage): Promise<ChannelImage>;
-}
-declare class KuwaharaFilterWebGL extends BaseWebGLStrategy implements Preprocessor {
-    private readonly config;
-    static isSupported(): Promise<boolean>;
-    static getUnsupportedReason(): Promise<string | undefined>;
-    constructor(config?: Partial<KuwaharaFilterConfig>);
-    process(input: ChannelImage): Promise<ChannelImage>;
-}
-declare class ContrastEnhancerWebGL extends BaseWebGLStrategy implements Preprocessor {
-    private readonly blackPoint;
-    private readonly whitePoint;
-    static isSupported(): Promise<boolean>;
-    static getUnsupportedReason(): Promise<string | undefined>;
-    constructor(blackPoint?: number, whitePoint?: number);
-    process(input: ChannelImage): Promise<ChannelImage>;
-}
-declare class QuantizerWebGL extends BaseWebGLStrategy implements Preprocessor {
-    private readonly levels;
-    static isSupported(): Promise<boolean>;
-    static getUnsupportedReason(): Promise<string | undefined>;
-    constructor(levels?: number);
-    process(input: ChannelImage): Promise<ChannelImage>;
-}
-/**
- * Check if WebGL 2.0 is available
- */
-declare function isWebGLAvailable(): boolean;
-/**
- * Cleanup all WebGL resources
- */
-declare function disposeWebGL(): void;
-
-type webgl_BilateralFilterWebGL = BilateralFilterWebGL;
-declare const webgl_BilateralFilterWebGL: typeof BilateralFilterWebGL;
-type webgl_ContrastEnhancerWebGL = ContrastEnhancerWebGL;
-declare const webgl_ContrastEnhancerWebGL: typeof ContrastEnhancerWebGL;
-type webgl_GaussianBlurWebGL = GaussianBlurWebGL;
-declare const webgl_GaussianBlurWebGL: typeof GaussianBlurWebGL;
-type webgl_KuwaharaFilterWebGL = KuwaharaFilterWebGL;
-declare const webgl_KuwaharaFilterWebGL: typeof KuwaharaFilterWebGL;
-type webgl_MedianFilterWebGL = MedianFilterWebGL;
-declare const webgl_MedianFilterWebGL: typeof MedianFilterWebGL;
-type webgl_QuantizerWebGL = QuantizerWebGL;
-declare const webgl_QuantizerWebGL: typeof QuantizerWebGL;
-declare const webgl_disposeWebGL: typeof disposeWebGL;
-declare const webgl_isWebGLAvailable: typeof isWebGLAvailable;
-declare namespace webgl {
-  export {
-    BilateralFilterWebGL as BilateralFilter,
-    webgl_BilateralFilterWebGL as BilateralFilterWebGL,
-    ContrastEnhancerWebGL as ContrastEnhancer,
-    webgl_ContrastEnhancerWebGL as ContrastEnhancerWebGL,
-    GaussianBlurWebGL as GaussianBlur,
-    webgl_GaussianBlurWebGL as GaussianBlurWebGL,
-    KuwaharaFilterWebGL as KuwaharaFilter,
-    webgl_KuwaharaFilterWebGL as KuwaharaFilterWebGL,
-    MedianFilterWebGL as MedianFilter,
-    webgl_MedianFilterWebGL as MedianFilterWebGL,
-    QuantizerWebGL as Quantizer,
-    webgl_QuantizerWebGL as QuantizerWebGL,
-    webgl_disposeWebGL as disposeWebGL,
-    webgl_isWebGLAvailable as isWebGLAvailable,
-  };
-}
-
-/**
- * WebGPU-accelerated preprocessing module for XDoG/FDoG
- *
- * Even faster than WebGL implementations
- */
-
-/** Release the cached device. Mainly useful for tests / hot reload. */
-declare function disposeWebGPU(): void;
-
-/**
  * Composed Preprocessing Module for XDoG/FDoG
  *
  * This module is the single entry point the rest of the codebase should
- * import from. Each exported class resolves its OWN best-supported
- * backend independently (WebGPU > WebGL > CPU), the first time it's
- * created:
+ * import from. It no longer does its own backend resolution (WebGPU >
+ * WebGL > CPU, demote-on-failure, etc.) — that machinery lives once in
+ * `ResilientEdgeAwareFilter` and is exercised through the
+ * `EdgeAwareFilterCore`-shaped classes exported from `filters/filters.js`
+ * (`BilateralFilter`, `MedianFilter`, `KuwaharaFilter`, `GaussianBlur`,
+ * `ContrastEnhancer`, `Quantizer`).
  *
- *   BilateralFilter.create(...)  // may end up WebGPU on this device
- *   MedianFilter.create(...)     // may end up WebGL on this device, if
- *                                // e.g. it needs a storage texture format
- *                                // WebGPU can't provide here
- *
- * A device can support WebGPU for one algorithm and not another, so
- * resolution happens per class, not once globally for the whole module.
- * This follows the same pattern used for BlurStrategy/ETFComputer.
- *
- * If a backend fails mid-session (driver crash, lost context), each
- * instance demotes itself to the next supported candidate once and
- * retries the call that failed; that shared retry/demote machinery lives
- * in `ResilientPreprocessor`, not duplicated per filter.
+ * Every class here is a thin adapter from that `apply(input, params)`
+ * shape to the simpler `Preprocessor` shape (`process(input)`, no
+ * per-call params) that the rest of this pipeline expects: it remembers
+ * the config passed to `create()` and forwards it into `apply()` on
+ * every `process()` call. This is exactly the pattern `IsotropicBlur`
+ * (blur/isotropic.ts) already uses to wrap `IsotropicBlurFilter`.
  */
 
-interface BackendOptions {
-    /** Force CPU even if WebGL/WebGPU are available. Default: false. */
-    forceCPU?: boolean;
-}
 /**
- * Edge-preserving smoothing filter. Resolves the best supported backend
- * at creation time; falls back once if that backend fails later.
+ * Edge-preserving smoothing filter. Backend resolution and mid-session
+ * fallback are handled entirely by the underlying
+ * `BilateralEdgeAwareFilter`; this class just remembers the config.
  */
-declare class BilateralFilter extends ResilientPreprocessor<Partial<BilateralFilterConfig>> {
-    private static readonly candidates;
+declare class BilateralFilter implements Preprocessor {
+    private readonly filter;
+    private readonly config;
     private constructor();
     static create(config?: Partial<BilateralFilterConfig>, options?: BackendOptions): Promise<BilateralFilter>;
+    get backend(): "webgpu" | "webgl" | "cpu";
+    dispose(): void;
+    process(input: ChannelImage): Promise<ChannelImage>;
 }
 /**
  * Median filter for salt-and-pepper noise removal.
  */
-declare class MedianFilter extends ResilientPreprocessor<Partial<MedianFilterConfig>> {
-    private static readonly candidates;
+declare class MedianFilter implements Preprocessor {
+    private readonly filter;
+    private readonly config;
     private constructor();
     static create(config?: Partial<MedianFilterConfig>, options?: BackendOptions): Promise<MedianFilter>;
+    get backend(): "webgpu" | "webgl" | "cpu";
+    dispose(): void;
+    process(input: ChannelImage): Promise<ChannelImage>;
 }
 /**
  * Kuwahara filter for a painterly, stylized effect.
  */
-declare class KuwaharaFilter extends ResilientPreprocessor<Partial<KuwaharaFilterConfig>> {
-    private static readonly candidates;
+declare class KuwaharaFilter implements Preprocessor {
+    private readonly filter;
+    private readonly config;
     private constructor();
     static create(config?: Partial<KuwaharaFilterConfig>, options?: BackendOptions): Promise<KuwaharaFilter>;
+    get backend(): "webgpu" | "webgl" | "cpu";
+    dispose(): void;
+    process(input: ChannelImage): Promise<ChannelImage>;
 }
 /**
  * Separable Gaussian blur.
  */
-declare class GaussianBlur extends ResilientPreprocessor<number> {
-    private static readonly candidates;
+declare class GaussianBlur implements Preprocessor {
+    private readonly filter;
+    private readonly config;
     private constructor();
     static create(sigma?: number, options?: BackendOptions): Promise<GaussianBlur>;
+    get backend(): "webgpu" | "webgl" | "cpu";
+    dispose(): void;
+    process(input: ChannelImage): Promise<ChannelImage>;
 }
-interface ContrastPoints {
-    blackPoint: number;
-    whitePoint: number;
-}
-declare class ContrastEnhancer extends ResilientPreprocessor<ContrastPoints> {
-    private static readonly candidates;
+/**
+ * Black/white point contrast stretch.
+ */
+declare class ContrastEnhancer implements Preprocessor {
+    private readonly filter;
+    private readonly config;
     private constructor();
     static create(blackPoint?: number, whitePoint?: number, options?: BackendOptions): Promise<ContrastEnhancer>;
+    get backend(): "webgpu" | "webgl" | "cpu";
+    dispose(): void;
+    process(input: ChannelImage): Promise<ChannelImage>;
 }
 /**
  * Posterize/quantize intensity levels.
  */
-declare class Quantizer extends ResilientPreprocessor<number> {
-    private static readonly candidates;
+declare class Quantizer implements Preprocessor {
+    private readonly filter;
+    private readonly config;
     private constructor();
     static create(levels?: number, options?: BackendOptions): Promise<Quantizer>;
+    get backend(): "webgpu" | "webgl" | "cpu";
+    dispose(): void;
+    process(input: ChannelImage): Promise<ChannelImage>;
+}
+declare class LocalVariance implements Preprocessor {
+    private readonly filter;
+    private readonly config;
+    private constructor();
+    static create(config: Partial<LocalVarianceConfig>): Promise<LocalVariance>;
+    get backend(): "cpu";
+    dispose(): void;
+    process(input: ChannelImage): Promise<ChannelImage>;
 }
 declare const PreprocessingPresets: {
     /**
@@ -2705,9 +2497,8 @@ type index$2_GaussianBlur = GaussianBlur;
 declare const index$2_GaussianBlur: typeof GaussianBlur;
 type index$2_KuwaharaFilter = KuwaharaFilter;
 declare const index$2_KuwaharaFilter: typeof KuwaharaFilter;
-type index$2_LocalVarianceConfig = LocalVarianceConfig;
-type index$2_LocalVariancePreprocessor = LocalVariancePreprocessor;
-declare const index$2_LocalVariancePreprocessor: typeof LocalVariancePreprocessor;
+type index$2_LocalVariance = LocalVariance;
+declare const index$2_LocalVariance: typeof LocalVariance;
 type index$2_MedianFilter = MedianFilter;
 declare const index$2_MedianFilter: typeof MedianFilter;
 type index$2_PreprocessingPipeline = PreprocessingPipeline;
@@ -2718,10 +2509,9 @@ declare const index$2_Quantizer: typeof Quantizer;
 declare const index$2_disposeWebGL: typeof disposeWebGL;
 declare const index$2_disposeWebGPU: typeof disposeWebGPU;
 declare const index$2_isWebGLAvailable: typeof isWebGLAvailable;
-declare const index$2_webgl: typeof webgl;
 declare namespace index$2 {
-  export { index$2_BilateralFilter as BilateralFilter, index$2_ContrastEnhancer as ContrastEnhancer, index$2_GaussianBlur as GaussianBlur, index$2_KuwaharaFilter as KuwaharaFilter, index$2_LocalVariancePreprocessor as LocalVariancePreprocessor, index$2_MedianFilter as MedianFilter, index$2_PreprocessingPipeline as PreprocessingPipeline, index$2_PreprocessingPresets as PreprocessingPresets, index$2_Quantizer as Quantizer, index$2_disposeWebGL as disposeWebGL, index$2_disposeWebGPU as disposeWebGPU, index$2_isWebGLAvailable as isWebGLAvailable, index$3 as parameterEstimation, index$2_webgl as webgl };
-  export type { index$2_BackendOptions as BackendOptions, index$2_LocalVarianceConfig as LocalVarianceConfig };
+  export { index$2_BilateralFilter as BilateralFilter, index$2_ContrastEnhancer as ContrastEnhancer, index$2_GaussianBlur as GaussianBlur, index$2_KuwaharaFilter as KuwaharaFilter, index$2_LocalVariance as LocalVariance, index$2_MedianFilter as MedianFilter, index$2_PreprocessingPipeline as PreprocessingPipeline, index$2_PreprocessingPresets as PreprocessingPresets, index$2_Quantizer as Quantizer, index$2_disposeWebGL as disposeWebGL, index$2_disposeWebGPU as disposeWebGPU, index$2_isWebGLAvailable as isWebGLAvailable, index$3 as parameterEstimation };
+  export type { index$2_BackendOptions as BackendOptions };
 }
 
 declare function isWebGLComputeSupported(): boolean;

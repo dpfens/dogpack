@@ -4,8 +4,8 @@
  * `param` is the swap contract: ParameterMapPipeline.set() and
  * CompositeStrategy both check it before wiring a strategy in.
  */
-import { GaussianBlur } from '../preprocess/preprocessors/preprocessor.js';
-import { LocalVariancePreprocessor } from '../preprocess/preprocessors/cpu.js';
+import { GaussianBlur } from '../preprocess/preprocessors/index.js';
+import { LocalVariance } from '../preprocess/preprocessors/index.js';
 import { computeStructureTensorMaps } from './structure-tensor.js';
 import { lerpChannel, mapChannel, blendChannels, multiplyChannels, combineChannels, normalizeChannel } from './channel-map-ops.js';
 /** Local-variance texture. High texture -> low p / high epsilon. */
@@ -19,7 +19,7 @@ export class TextureStrategy {
         this.config = config;
     }
     async compute(input) {
-        const texture = await new LocalVariancePreprocessor(this.config).process(input);
+        const texture = await (await LocalVariance.create(this.config)).process(input);
         return this.param === 'p'
             ? lerpChannel(this.opts.high, this.opts.low, texture)
             : lerpChannel(this.opts.low, this.opts.high, texture);

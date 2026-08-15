@@ -118,7 +118,7 @@ export * as filters from './filters/index.js'
 
 // Preprocessing
 export * as preprocess from './preprocess/index.js'
-export type { LocalVarianceConfig, BackendOptions } from './preprocess/index.js'
+export type { BackendOptions } from './preprocess/index.js'
 
 export type {
   ThresholdConfig,
@@ -144,6 +144,7 @@ export type {
   QuantizerConfig,
   BilateralFilterConfig,
   GradientAlignedBlurConfig,
+  LocalVarianceConfig,
   MedianFilterConfig,
   KuwaharaFilterConfig,
   Preprocessor

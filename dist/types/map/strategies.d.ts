@@ -4,8 +4,7 @@
  * `param` is the swap contract: ParameterMapPipeline.set() and
  * CompositeStrategy both check it before wiring a strategy in.
  */
-import type { ChannelImage, Preprocessor, Disposable } from '../interfaces/base.js';
-import { type LocalVarianceConfig } from '../preprocess/preprocessors/cpu.js';
+import type { ChannelImage, Preprocessor, Disposable, LocalVarianceConfig } from '../interfaces/base.js';
 import { type StructureTensorMaps } from './structure-tensor.js';
 export type DogMapParam = 'p' | 'epsilon' | 'phi';
 export interface ParameterMapStrategy extends Disposable {

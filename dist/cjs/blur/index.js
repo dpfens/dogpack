@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.GradientAlignedBlur = exports.EdgeAwareBlurStrategy = exports.FlowGuidedBlur = exports.WebGPUFlowGuidedBlur = exports.WebGLFlowGuidedBlur = exports.CPUFlowGuidedBlur = exports.IsotropicBlur = void 0;
+exports.GradientAlignedBlur = exports.EdgeAwareBlur = exports.FlowGuidedBlur = exports.WebGPUFlowGuidedBlur = exports.WebGLFlowGuidedBlur = exports.CPUFlowGuidedBlur = exports.IsotropicBlur = void 0;
 var isotropic_js_1 = require("./isotropic.js");
 Object.defineProperty(exports, "IsotropicBlur", { enumerable: true, get: function () { return isotropic_js_1.IsotropicBlur; } });
 var flow_guided_js_1 = require("./flow-guided.js");
@@ -9,7 +9,7 @@ Object.defineProperty(exports, "WebGLFlowGuidedBlur", { enumerable: true, get: f
 Object.defineProperty(exports, "WebGPUFlowGuidedBlur", { enumerable: true, get: function () { return flow_guided_js_1.WebGPUFlowGuidedBlur; } });
 Object.defineProperty(exports, "FlowGuidedBlur", { enumerable: true, get: function () { return flow_guided_js_1.FlowGuidedBlur; } });
 var edge_aware_blur_js_1 = require("./edge-aware-blur.js");
-Object.defineProperty(exports, "EdgeAwareBlurStrategy", { enumerable: true, get: function () { return edge_aware_blur_js_1.EdgeAwareBlurStrategy; } });
+Object.defineProperty(exports, "EdgeAwareBlur", { enumerable: true, get: function () { return edge_aware_blur_js_1.EdgeAwareBlur; } });
 var index_js_1 = require("./gradient-aligned/index.js");
 Object.defineProperty(exports, "GradientAlignedBlur", { enumerable: true, get: function () { return index_js_1.GradientAlignedBlur; } });
 //# sourceMappingURL=index.js.map
