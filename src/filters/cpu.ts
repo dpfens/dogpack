@@ -12,7 +12,7 @@
 
 import { type ChannelImage, type BilateralFilterConfig, type MedianFilterConfig, type KuwaharaFilterConfig, DEFAULT_BILATERAL_CONFIG, DEFAULT_MEDIAN_CONFIG, DEFAULT_KUWAHARA_CONFIG, DEFAULT_CONTRAST_ENHANCEMENT_CONFIG, DEFAULT_QUANTIZER_CONFIG, DEFAULT_GAUSSIAN_CONFIG } from '../interfaces/base.js';
 import { BaseCPUStrategy } from '../base.js';
-import type { ContrastEnhancementConfig, EdgeAwareFilterCore, GaussianConfig, QuantizerConfig } from '../interfaces/base.js';
+import type { ContrastEnhancementConfig, EdgeAwareFilterCore, GaussianConfig, LocalVarianceConfig, QuantizerConfig } from '../interfaces/base.js';
 import { createChannelImage, getPixel } from '../utils/image.js';
 import { generateGaussianKernel } from '../utils/math.js';
 
@@ -288,55 +288,6 @@ export class Quantizer extends BaseCPUStrategy implements EdgeAwareFilterCore<Qu
 
     return output;
   }
-}
-
-/**
- * Configuration for Local Variance Texture Detection
- * 
- * These parameters control how texture is detected. They are independent
- * from XDoG/FDoG/HDoG parameters - you tune them separately based on the
- * image characteristics you're working with.
- */
-export interface LocalVarianceConfig {
-  /**
-   * Window radius for variance computation
-   * Examples:
-   * - 1 = 3x3 window (fast, fine detail)
-   * - 2 = 5x5 window (recommended, balanced)
-   * - 3 = 7x7 window (slower, coarser texture detection)
-   */
-  windowRadius: number;
-  
-  /**
-   * Normalize by local gradient to distinguish texture from structure edges
-   * 
-   * Without normalization:
-   *   - High variance alone indicates texture
-   *   - Problem: Subtle structural edges with variance get suppressed
-   * 
-   * With normalization:
-   *   - High variance + low gradient = texture (keep)
-   *   - High variance + high gradient = edge (reduce texture score)
-   *   - Formula: texture *= 1 / (1 + gradient^2)
-   * 
-   * Recommended: true
-   */
-  normalizeByGradient: boolean;
-  
-  /**
-   * Scale factor for raw variance values
-   * Typical range: 1.0 - 3.0
-   * Higher = more sensitive to texture variations
-   * Output is clamped to [0, 1] after scaling
-   */
-  varianceScale: number;
-  
-  /**
-   * Optional hard cap on variance values (before normalization)
-   * Prevents outliers from dominating
-   * If undefined, no capping is applied
-   */
-  maxVariance?: number;
 }
 
 /**
