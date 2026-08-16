@@ -252,14 +252,17 @@ export class DogComponent {
 
   onEpsilonAutoToggle(checked: boolean): void {
     this.epsilonAuto.set(checked);
+    this.onCommit();
   }
 
   onPAutoToggle(checked: boolean): void {
     this.pAuto.set(checked);
+    this.onCommit();
   }
 
   onPhiAutoToggle(checked: boolean): void {
     this.phiAuto.set(checked);
+    this.onCommit();
   }
 
   /**
