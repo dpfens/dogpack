@@ -201,6 +201,15 @@ export class AppComponent implements OnInit {
 
   readonly faqs = [
     {
+      name: "General",
+      items: [
+        {
+          "question": "Is this AI?",
+          "answer":  "No, this is not AI. There's no model and no training data. XDoG-family filters are a well-established edge-detection technique. Edges produce a strong signal because the two blurs diverge there; flat regions produce almost nothing because they stay close together. FDoG, ADoG, and HDoG are modern refinements published as recently as the 2021, adding flow-aligned smoothing, tone sensitivity, screentone, and layered combination to fix the exact weaknesses plain edge detection has. Everything still runs deterministically in your browser so the same input with the samep parameters always produces the same output."
+        }
+      ]
+    },
+    {
       "name": "Choosing an algorithm",
       "items": [
         {
