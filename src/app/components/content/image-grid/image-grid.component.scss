@@ -1,0 +1,72 @@
+.image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  align-content: start;
+}
+
+.image-grid-tile {
+  aspect-ratio: 1 / 1;
+
+  content-visibility: auto;
+}
+
+.image-grid-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.image-grid-base {
+  position: absolute;
+}
+
+.image-grid-reveal-final {
+  position: absolute;
+  inset: 0;
+
+  --wipe-duration: 5s;
+  --wipe-delay: 0s;
+  --reveal-backdrop: #f2f2f2;
+
+  background-color: var(--reveal-backdrop);
+
+  clip-path: inset(0 100% 0 0);
+  -webkit-clip-path: inset(0 100% 0 0);
+
+  animation-name: image-grid-wipe;
+  animation-duration: var(--wipe-duration);
+  animation-delay: var(--wipe-delay);
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: normal;
+  will-change: clip-path;
+}
+
+@keyframes image-grid-wipe {
+  0%,
+  6% {
+    clip-path: inset(0 100% 0 0);
+    -webkit-clip-path: inset(0 100% 0 0);
+  }
+
+  46%,
+  54% {
+    clip-path: inset(0 0 0 0);
+    -webkit-clip-path: inset(0 0 0 0);
+  }
+
+  94%,
+  100% {
+    clip-path: inset(0 100% 0 0);
+    -webkit-clip-path: inset(0 100% 0 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .image-grid-reveal-final {
+    animation: none;
+    clip-path: inset(0 0 0 0);
+    -webkit-clip-path: inset(0 0 0 0);
+  }
+}

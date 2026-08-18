@@ -1,4 +1,4 @@
-import { Component, computed, inject, OnInit, signal } from '@angular/core';
+import { Component, computed, ElementRef, inject, OnInit, signal, SimpleChanges, ViewChild } from '@angular/core';
 import { DOCUMENT } from '@angular/common';
 import { Meta, Title } from '@angular/platform-browser';
 
@@ -8,6 +8,8 @@ import { ApplicationAnalyticsService } from './services/analytics/application-an
 import { GoogleAnalyticsService } from './services/analytics/google-analytics.service';
 import { VERSION } from './version';
 import { WebGpuService } from './services/webgpu/webgpu-service';
+import { ImageGridComponent } from "./components/content/image-grid/image-grid.component";
+import { ProcessingExample } from './models/content';
 
 /** Canonical URL of the app - update if the domain/path ever changes. */
 const APP_PATH = '/dogpack/';
@@ -25,7 +27,7 @@ const APP_OG_IMAGE: string | null = null;
 
 @Component({
   selector: 'app-root',
-  imports: [WorkbenchComponent],
+  imports: [WorkbenchComponent, ImageGridComponent],
   templateUrl: './app.html',
   styleUrl: './app.scss',
 })
@@ -43,6 +45,7 @@ export class AppComponent implements OnInit {
   readonly sourceMedia = this.sourceMediaService.media;
   readonly error = this.sourceMediaService.error;
 
+  readonly repository = VERSION.repository;
   readonly version = VERSION.version;
   dateTimeFormatter = new Intl.DateTimeFormat(Intl.DateTimeFormat().resolvedOptions().locale, { dateStyle: 'short', timeStyle: 'short' });
   rawBuildDate = VERSION.buildDate;
@@ -295,4 +298,39 @@ export class AppComponent implements OnInit {
       ]
     }
   ]
+
+  examples: ProcessingExample[] = [
+    {
+      originalUrl: "assets/images/boat/original.webp",
+      finalUrl: "assets/images/boat/xdog.png",
+    },
+    {
+      originalUrl: "assets/images/car/original.webp",
+      finalUrl: "assets/images/car/xdog-hard.png",
+    },
+    {
+      originalUrl: "assets/images/dog/original.webp",
+      finalUrl: "assets/images/dog/fdog.png",
+    },
+    {
+      originalUrl: "assets/images/garage/original.webp",
+      finalUrl: "assets/images/garage/xdog-2.png",
+    },
+    {
+      originalUrl: "assets/images/house/original.webp",
+      finalUrl: "assets/images/house/fdog.png",
+    },
+    {
+      originalUrl: "assets/images/marina/original.webp",
+      finalUrl: "assets/images/marina/xdog.png",
+    },
+    {
+      originalUrl: "assets/images/spike/original.webp",
+      finalUrl: "assets/images/spike/xdog.png",
+    },
+    {
+      originalUrl: "assets/images/yard/original.webp",
+      finalUrl: "assets/images/yard/xdog.png",
+    },
+  ];
 }

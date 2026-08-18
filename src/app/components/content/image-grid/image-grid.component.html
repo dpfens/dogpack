@@ -1,0 +1,27 @@
+<div
+  #gridEl
+  class="position-absolute top-0 start-0 w-100 h-100 z-0 image-grid"
+  [style.grid-template-columns]="'repeat(' + cols() + ', 1fr)'"
+  [style.grid-template-rows]="'repeat(' + rows() + ', 1fr)'"
+>
+  @for (example of examples(); track example.originalUrl + example.finalUrl; let i = $index) {
+    <div class="ratio ratio-1x1 image-grid-tile">
+      <img
+        [src]="example.originalUrl"
+        class="w-100 h-100 object-fit-cover image-grid-base"
+        loading="lazy"
+        alt=""
+        aria-hidden="true"
+      />
+      <img
+        [src]="example.finalUrl"
+        class="w-100 h-100 object-fit-cover image-grid-reveal-final"
+        loading="lazy"
+        [style.--wipe-duration]="wipeDuration(i)"
+        [style.--wipe-delay]="wipeDelay(i)"
+        alt=""
+        aria-hidden="true"
+      />
+    </div>
+  }
+</div>

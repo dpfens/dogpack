@@ -22,28 +22,35 @@
   <app-workbench [sourceMedia]="media" />
 } @else {
   <div
-    class="landing d-flex flex-column align-items-center justify-content-center text-center"
+    class="landing position-relative d-flex flex-column align-items-center justify-content-center text-center overflow-hidden"
     [class.dragging]="isDragging()"
     (dragover)="onDragOver($event)"
     (dragleave)="onDragLeave($event)"
     (drop)="onDrop($event)"
   >
-    <h1 class="display-5 mb-2">DoG Studio</h1>
-    <p class="text-body-secondary mb-4">
-      Configurable sketch-ification of images and videos, all in your browser.
-    </p>
 
-    <label class="upload-dropzone p-5 rounded-4">
-      <input type="file" accept="image/*,video/*" class="d-none" (change)="onFileSelected($event)" />
-      <i class="btl bt-upload bt-4x mb-3"></i>
+    <app-image-grid [examples]="examples" />
 
-      <div class="fw-semibold">Drop an image or video here, or click to browse</div>
-      <div class="text-body-secondary small">PNG, JPG, WebP, MP4, or MOV</div>
-    </label>
+    <!-- Foreground content -->
+    <div class="p-3 position-relative z-1 bg-light">
 
-    @if (error(); as message) {
-      <div class="alert alert-danger mt-3 mb-0" role="alert">{{ message }}</div>
-    }
+      <h1 class="display-5 mb-2">DoG Studio</h1>
+      <p class="text-body-secondary mb-4">
+        Configurable sketch-ification of images and videos, all in your browser.
+      </p>
+
+      <label class="upload-dropzone p-5 rounded-4">
+        <input type="file" accept="image/*,video/*" class="d-none" (change)="onFileSelected($event)" />
+        <i class="btl bt-upload bt-4x mb-3"></i>
+
+        <div class="fw-semibold">Drop an image or video here, or click to browse</div>
+        <div class="text-body-secondary small">PNG, JPG, WebP, MP4, or MOV</div>
+      </label>
+
+      @if (error(); as message) {
+        <div class="alert alert-danger mt-3 mb-0" role="alert">{{ message }}</div>
+      }
+    </div>
   </div>
 
   <div class="container mb-5">
@@ -310,6 +317,12 @@
       <dt>Version</dt>
       <dd class="ms-1">
         <data [value]="version">{{ version }}</data>
+      </dd>
+    </div>
+    <div class="d-flex">
+      <dt>Source</dt>
+      <dd class="ms-1">
+        <a [href]="repository" target="_blank" rel="noopener">GitHub</a>
       </dd>
     </div>
   </dl>
