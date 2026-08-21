@@ -30,17 +30,6 @@
       @if (sourceImage(); as image) {
         <app-preprocessing-component #preprocessing [image]="image" />
 
-        <!-- The pipeline builder. Its own runPreview() runs its FULL composed
-             model (itself plus every nested layer/leaf) and reports through
-             DoGService, same as every leaf's own Preview button does.
-
-             For video sources, this still only ever previews against the
-             single representative frame above - the "Export video" panel
-             below is what actually runs the pipeline over every frame.
-
-             Disabled during export: dogService's working-image slot is
-             shared mutable state, and running an interactive preview at the
-             same time as a per-frame batch export would race on it. -->
         <div class="card drop-shadow mt-3">
           <div class="card-header d-flex align-items-center justify-content-between sticky-top bg-body"
               style="top: 0; z-index: 1020;">

@@ -7,6 +7,7 @@ import { DoGService } from '../../../services/dog/dog-service';
 import { PreprocessingService } from '../../../services/preprocessing/preprocessing';
 import { VideoFrameService } from '../../../services/video-frame/video-frame-service';
 import { SourceMedia } from '../../../services/source-media/source-media-service';
+import { ApplicationAnalyticsService } from '../../../services/analytics/application-analytics.service';
 import { luminanceToImageData } from 'dogpack/utils';
 
 @Component({
@@ -19,6 +20,7 @@ export class WorkbenchComponent {
   private readonly dogService = inject(DoGService);
   private readonly preprocessingService = inject(PreprocessingService);
   private readonly videoFrameService = inject(VideoFrameService);
+  private readonly analytics = inject(ApplicationAnalyticsService);
 
   /**
    * Handles to the live pipeline the user has built, so a batch export can
@@ -136,25 +138,26 @@ export class WorkbenchComponent {
     this.videoExportError.set(null);
     this._videoResultBlob.set(null);
 
-    const blob = await this.videoFrameService.transformVideo(
-      media.file,
-      (frame) => this.runFrameThroughPipeline(frame.imageData),
-      {
-        // Audio is passed through unmodified - we're only touching video.
-        sourceFileForAudio: media.file,
-      }
-    );
-    this._videoResultBlob.set(blob);
-    this.videoExportState.set('done');
+    this.analytics.trackVideoExportStarted();
+    const startedAt = performance.now();
 
-    /*
     try {
-      
+      const blob = await this.videoFrameService.transformVideo(
+        media.file,
+        (frame) => this.runFrameThroughPipeline(frame.imageData),
+        {
+          // Audio is passed through unmodified - we're only touching video.
+          sourceFileForAudio: media.file,
+        }
+      );
+      this._videoResultBlob.set(blob);
+      this.videoExportState.set('done');
+      this.analytics.trackVideoExportCompleted(performance.now() - startedAt);
     } catch {
       this.videoExportError.set('Could not process this video.');
       this.videoExportState.set('error');
+      this.analytics.trackVideoExportFailed('transform_failed');
     }
-      */
   }
 
   /**

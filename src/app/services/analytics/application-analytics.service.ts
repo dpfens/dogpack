@@ -170,4 +170,33 @@ export class ApplicationAnalyticsService {
       value: Math.round(durationMs),
     });
   }
+
+  // ---------------------------------------------------------------------
+  // Video export (workbench.ts) - "Run on full video", which streams the
+  // composed pipeline over every frame of a video source via
+  // VideoFrameService.transformVideo().
+  // ---------------------------------------------------------------------
+
+  /** The "Run on full video" export was started. */
+  trackVideoExportStarted(): void {
+    this.ga.trackEvent({ action: 'video_export_start', category: 'video_export' });
+  }
+
+  /** A video export finished successfully. `durationMs` is total wall-clock time. */
+  trackVideoExportCompleted(durationMs: number): void {
+    this.ga.trackEvent({
+      action: 'video_export_complete',
+      category: 'video_export',
+      value: Math.round(durationMs),
+    });
+  }
+
+  /** A video export failed partway through. `reason` should be a short, non-PII label. */
+  trackVideoExportFailed(reason: string): void {
+    this.ga.trackEvent({
+      action: 'video_export_error',
+      category: 'video_export',
+      label: reason,
+    });
+  }
 }
