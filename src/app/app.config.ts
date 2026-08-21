@@ -19,7 +19,7 @@ export const appConfig: ApplicationConfig = {
     provideRouter(routes),
     provideAppInitializer(() => {
       const gaService = inject(GoogleAnalyticsService);
-      gaService.initialize('G-J0ZMYBT112');
+      gaService.initialize('G-LCPSJYMVQS');
     }),
     provideAppInitializer(() => {
       const platformId = inject(PLATFORM_ID);
