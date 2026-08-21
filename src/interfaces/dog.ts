@@ -367,7 +367,7 @@ export const DOG_PARAM_RANGES: Record<DogConfigParamType, ParamRange> = {
   k:       { hardMin: 1.0, hardMax: Infinity, recommendedMin: 1.4,  recommendedMax: 1.6,  default: 1.6, step: 0.01 },
   p:       { hardMin: 0,   hardMax: Infinity, recommendedMin: 0,    recommendedMax: 120,  default: 20,  step: 1 },
   epsilon: { hardMin: 0,   hardMax: 1,        recommendedMin: 0.5,  recommendedMax: 1.0,  default: 0.5, step: 0.01 },
-  phi:     { hardMin: 0,   hardMax: Infinity, recommendedMin: 0.01, recommendedMax: 200,  default: 10,  step: 0.5 },
+  phi:     { hardMin: 0,   hardMax: Infinity, recommendedMin: 0.01, recommendedMax: 200,  default: 100,  step: 0.5 },
 } as const;
 
 export type XDogConfigParamType = 'kernelSizeMultiplier';
