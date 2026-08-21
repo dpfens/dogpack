@@ -121,46 +121,60 @@ export class DogComponent {
     );
   }
 
+  private static clamp(v: number, min: number, max: number): number {
+    return Math.min(Math.max(v, min), max);
+  }
+
   __validation_sync__ = effect(() => {
     const r = this.ranges();
+    let clampedSomething = false;
+
+    const clampControl = (c: FormControl<number>, min: number, max: number) => {
+      c.setValidators([Validators.required, Validators.min(min), Validators.max(max)]);
+      const clamped = DogComponent.clamp(c.value, min, max);
+      if (clamped !== c.value) {
+        c.setValue(clamped, { emitEvent: false });
+        clampedSomething = true;
+      }
+      c.updateValueAndValidity({ emitEvent: false });
+    };
+
     for (const key of this.paramKeys) {
-      const c = this.form.controls[key];
-      c.setValidators([
-        Validators.required,
-        Validators.min(r[key].hardMin),
-        Validators.max(r[key].hardMax),
-      ]);
-      c.updateValueAndValidity({ emitEvent: false });
+      clampControl(this.form.controls[key], r[key].hardMin, r[key].hardMax);
     }
 
-    // pWeak/pStrong are just the endpoints of the same underlying p
-    // quantity, so they share its range's bounds.
-    for (const c of [this.form.controls.pWeak, this.form.controls.pStrong]) {
-      c.setValidators([
-        Validators.required,
-        Validators.min(r.p.hardMin),
-        Validators.max(r.p.hardMax),
-      ]);
-      c.updateValueAndValidity({ emitEvent: false });
-    }
+    // pWeak/pStrong share p's bounds.
+    clampControl(this.form.controls.pWeak, r.p.hardMin, r.p.hardMax);
+    clampControl(this.form.controls.pStrong, r.p.hardMin, r.p.hardMax);
 
-    // phiHard shares phi's full range -- it's meant to reach genuinely
-    // steep, near-binary thresholds. phiSoft does NOT: it gets its own
-    // (much narrower) static bounds in buildForm(), see the comment
-    // there for the derivation.
-    this.form.controls.phiHard.setValidators([
-      Validators.required,
-      Validators.min(r.phi.hardMin),
-      Validators.max(r.phi.hardMax),
-    ]);
-    this.form.controls.phiHard.updateValueAndValidity({ emitEvent: false });
+    // phiHard shares phi's full range (phiSoft has its own static bounds,
+    // unaffected by ranges()).
+    clampControl(this.form.controls.phiHard, r.phi.hardMin, r.phi.hardMax);
+
+    // A clamp means the *effective* config actually changed underneath the
+    // user. re-emit so downstream (worker/config) reflects the value
+    // that's now actually shown on the slider.
+    if (clampedSomething) {
+      untracked(() => this.emitIfValid());
+    }
   });
 
   private initialEmitDone = false;
 
+  private defaultsApplied = false;
+
   __on_input = effect(() => {
+    const r = this.ranges();
     const p = this.preset();
     untracked(() => {
+      if (!this.defaultsApplied) {
+        this.defaultsApplied = true;
+        const defaults: Partial<Record<DogConfigParamType, number>> = {};
+        for (const key of this.paramKeys) {
+          defaults[key] = r[key].default;
+        }
+        this.form.patchValue(defaults);
+      }
       if (p) {
         this.applyPreset(p);
       }
@@ -179,11 +193,11 @@ export class DogComponent {
       });
 
     return new FormGroup<DogFormControls>({
-      sigma: num(1.0),
-      k: num(1.6),
-      p: num(20),
-      epsilon: num(0.5),
-      phi: num(10),
+      sigma: num(0),
+      k: num(0),
+      p: num(0),
+      epsilon: num(0),
+      phi: num(0),
       strategyKey: new FormControl<ThresholdType>('Soft', { nonNullable: true }),
       highOffset: new FormControl<number>(0.2, {
         nonNullable: true,

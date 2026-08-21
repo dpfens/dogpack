@@ -4,9 +4,6 @@ import {
   PreprocessingPipeline,
   PreprocessingPresets,
 } from 'dogpack/preprocess';
-import {
-  webgl,
-} from 'dogpack/preprocess';
 import type { ChannelImage, Preprocessor } from 'dogpack';
 import type { ChannelMode, PipelineStepConfig } from '../../models/preprocessing';
 import { imageDataToLuminance, luminanceToImageData } from 'dogpack/utils';
@@ -19,29 +16,11 @@ export interface PreprocessingResult {
 @Injectable({ providedIn: 'root' })
 export class PreprocessingService {
   /** Exposed for templates/debug UI that want to show "GPU" vs "CPU". */
-  readonly usingWebGL = signal(webgl.isWebGLAvailable());
 
   /** Force CPU regardless of WebGL availability (e.g. a debug toggle). */
   readonly forceCPU = signal(false);
 
   private refCount = 0;
-
-  /** Call once per consumer (component/feature) that will build pipelines. */
-  acquire(): void {
-    this.refCount++;
-  }
-
-  /**
-   * Call once per matching acquire(), typically in ngOnDestroy. Only
-   * actually tears down the shared GL context when the last consumer
-   * releases it.
-   */
-  release(): void {
-    this.refCount = Math.max(0, this.refCount - 1);
-    if (this.refCount === 0) {
-      webgl.disposeWebGL();
-    }
-  }
 
   /**
    * Turn a declarative list of steps into a real, ready-to-run pipeline.

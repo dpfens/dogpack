@@ -1,4 +1,4 @@
-import { Component, DestroyRef, effect, inject, input, output, signal } from '@angular/core';
+import { Component, effect, inject, input, output, signal } from '@angular/core';
 
 import { PreprocessingService } from '../../../services/preprocessing/preprocessing';
 import { ApplicationAnalyticsService } from '../../../services/analytics/application-analytics.service';
@@ -35,7 +35,6 @@ const ADDABLE_STEPS: PipelineStepConfig[] = [
 })
 export class PreprocessingComponent {
   private readonly preprocessing = inject(PreprocessingService);
-  private readonly destroyRef = inject(DestroyRef);
   private readonly dogService = inject(DoGService);
   private readonly analytics = inject(ApplicationAnalyticsService);
 
@@ -50,12 +49,6 @@ export class PreprocessingComponent {
   readonly stepLabels = PIPELINE_STEP_LABELS;
   readonly addableSteps = ADDABLE_STEPS;
   readonly presetNames = PRESET_NAMES;
-  readonly usingWebGL = this.preprocessing.usingWebGL;
-
-  constructor() {
-    this.preprocessing.acquire();
-    this.destroyRef.onDestroy(() => this.preprocessing.release());
-  }
 
   __on_change__ = effect(async () => {
     this.dogService.setPending({kind: 'preprocessing'});
