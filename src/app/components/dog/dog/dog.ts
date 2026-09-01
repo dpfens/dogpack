@@ -17,6 +17,7 @@ import {
 import { ParamRange, DogConfigParamType } from 'dogpack';
 import { ThresholdStrategyDescriptor, ThresholdType, WireDoGConfig } from '../../../models/dog';
 import { ParamSliderComponent } from '../../ui/param-slider-component/param-slider-component';
+import { HysteresisBandSliderComponent } from '../../ui/hysteresis-band-slider/hysteresis-band-slider';
 import {
   DOG_PARAM_HINTS,
   THRESHOLD_STRATEGIES,
@@ -50,7 +51,7 @@ type DogFormControls = {
 @Component({
   selector: 'dog',
   standalone: true,
-  imports: [ReactiveFormsModule, ParamSliderComponent],
+  imports: [ReactiveFormsModule, ParamSliderComponent, HysteresisBandSliderComponent],
   templateUrl: './dog.html',
 })
 export class DogComponent {

@@ -1,0 +1,110 @@
+:host {
+  display: block;
+}
+
+.hbs-track {
+  position: relative;
+  height: 1.75rem;
+  margin: 0.35rem 0 0.5rem;
+}
+
+.hbs-rail {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 4px;
+  transform: translateY(-50%);
+  background: var(--bs-secondary-bg, #e9ecef);
+  border-radius: 2px;
+}
+
+.hbs-band {
+  position: absolute;
+  top: 50%;
+  height: 4px;
+  transform: translateY(-50%);
+  background: var(--bs-primary, #0d6efd);
+  border-radius: 2px;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.hbs-epsilon-tick {
+  position: absolute;
+  top: 50%;
+  width: 2px;
+  height: 1.1rem;
+  transform: translate(-50%, -50%);
+  background: var(--bs-dark, #212529);
+  pointer-events: none;
+}
+
+// Two full-width range inputs stacked on the same track. Only their thumbs
+// are interactive (pointer-events: auto on the thumb pseudo-element only),
+// so clicking/dragging anywhere else on the track doesn't fight between
+// the two inputs -- you grab whichever handle you click on.
+.hbs-thumb {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  pointer-events: none;
+}
+
+.hbs-thumb::-webkit-slider-runnable-track {
+  background: transparent;
+}
+.hbs-thumb::-moz-range-track {
+  background: transparent;
+  border: none;
+}
+
+.hbs-thumb::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  pointer-events: auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--bs-primary, #0d6efd);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+}
+
+.hbs-thumb::-moz-range-thumb {
+  pointer-events: auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--bs-primary, #0d6efd);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+}
+
+.hbs-thumb-high::-webkit-slider-thumb {
+  background: var(--bs-dark, #212529);
+}
+.hbs-thumb-high::-moz-range-thumb {
+  background: var(--bs-dark, #212529);
+}
+
+.hbs-swatch {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin: 0 0.35rem;
+  vertical-align: middle;
+}
+.hbs-swatch-low {
+  background: var(--bs-primary, #0d6efd);
+}
+.hbs-swatch-high {
+  background: var(--bs-dark, #212529);
+}
