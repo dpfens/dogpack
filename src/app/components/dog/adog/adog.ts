@@ -142,6 +142,20 @@ export class ADogComponent extends DogPreviewableComponent<ADogConfig> {
     return { kind: 'config', type: 'adog', config: this.config() };
   }
 
+  fromModel(model: ADogConfig): void {
+    const c = model.config;
+    this.config.set(c);
+
+    // tau first in adogKeys: the epsilon ceiling derives from it, and
+    // __validation_sync__ re-clamps once dogRanges() updates.
+    for (const key of this.adogKeys) {
+      const val = c[key];
+      if (typeof val === 'number') this.controlFor[key].setValue(val);
+    }
+
+    this.restoreBase(c);
+  }
+
   epsilonEstimator = async (src: ChannelImage, opts: LocalBaselineOptions) => {
     const result = await parameterEstimation.epsilon.adogLocalBaselineEstimate(src, { ...opts, tau: this.tau.value, s: this.s.value });
     return result;

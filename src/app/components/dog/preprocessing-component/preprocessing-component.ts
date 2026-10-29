@@ -42,7 +42,7 @@ export class PreprocessingComponent {
   readonly channelImage = output<ImageData>();
   readonly lastOutput = signal<ImageData | null>(null);
 
-  readonly steps = signal<PipelineStepConfig[]>([]);
+  readonly steps = signal<PipelineStepConfig[]>([ADDABLE_STEPS[0]]);
   readonly channelMode = signal<ChannelMode>('rgb');
   readonly selectedAddIndex = signal(0);
 

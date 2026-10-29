@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, input, signal, viewChild } from '@angular/core';
+import { Component, computed, effect, inject, input, Signal, signal, viewChild } from '@angular/core';
 
 import { ImageCanvasComponent, ImageStatus } from '../image-canvas/image-canvas';
 import { PreprocessingComponent } from '../../dog/preprocessing-component/preprocessing-component';
@@ -9,6 +9,26 @@ import { VideoFrameService } from '../../../services/video-frame/video-frame-ser
 import { SourceMedia } from '../../../services/source-media/source-media-service';
 import { ApplicationAnalyticsService } from '../../../services/analytics/application-analytics.service';
 import { luminanceToImageData } from 'dogpack/utils';
+import { ADogConfig, DogNode, XDogConfig } from '../../../models/dog';
+import { DEFAULT_ADOG_CONFIG, DEFAULT_DOG_CONFIG } from 'dogpack/dog';
+
+const DEFAULT_ADOG_NODE: ADogConfig = {
+  kind: 'config',
+  type: 'adog',
+  config: {
+    ...DEFAULT_ADOG_CONFIG,
+    thresholdStrategy: { kind: 'hard' },
+  },
+} as ADogConfig;
+const DEFAULT_XDOG_NODE: XDogConfig = {
+  kind: 'config',
+  type: 'xdog',
+  config: {
+    ...DEFAULT_DOG_CONFIG,
+    thresholdStrategy: { kind: 'soft' },
+  },
+} as XDogConfig;
+
 
 @Component({
   selector: 'app-workbench',
@@ -55,6 +75,10 @@ export class WorkbenchComponent {
   readonly activeImage = this.dogService.activeImage;
   readonly activeLabel = this.dogService.activeLabel;
   readonly pending = this.dogService.pending;
+
+  readonly defaultNodes: Signal<DogNode[]> = computed(() => {
+    return [DEFAULT_ADOG_NODE, DEFAULT_XDOG_NODE];
+  });
 
   readonly canvasStatus = computed<ImageStatus>(() => {
     if (this.pending()) return 'loading';

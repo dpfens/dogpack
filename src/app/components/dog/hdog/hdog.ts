@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, model, output, signal, untracked, viewChild } from '@angular/core';
+import { afterNextRender, Component, computed, effect, inject, Injector, model, output, signal, untracked, viewChild } from '@angular/core';
 import { FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
 import {
   ADOG_PARAM_RANGES,
@@ -12,7 +12,7 @@ import { ChannelImage } from 'dogpack';
 import { FDogComponent } from '../fdog/fdog';
 import { ADogComponent } from '../adog/adog';
 import { ParamSliderComponent } from '../../ui/param-slider-component/param-slider-component';
-import { DogModelProvider, HDogConfig, HDogPresetConfig, WireHDoGConfig } from '../../../models/dog';
+import { DogModelProvider, HDogConfig, HDogPresetConfig, WireADoGConfig, WireFDoGConfig, WireHDoGConfig } from '../../../models/dog';
 import { DoGService } from '../../../services/dog/dog-service';
 import { HDOG_EXTRA_PARAM_HINTS, withRange } from '../../content/pipeline-help-content';
 import { ApplicationAnalyticsService } from '../../../services/analytics/application-analytics.service';
@@ -36,6 +36,7 @@ export class HDogComponent implements DogModelProvider<HDogConfig> {
   readonly previewPending = signal(false);
   private readonly dogService = inject(DoGService);
   private readonly analytics = inject(ApplicationAnalyticsService);
+  private readonly injector = inject(Injector);
 
   private fdogCmp = viewChild.required(FDogComponent);
   private adogCmp = viewChild.required(ADogComponent);
@@ -117,5 +118,24 @@ export class HDogComponent implements DogModelProvider<HDogConfig> {
 
   toModel(): HDogConfig {
     return { kind: 'config', type: 'hdog', config: this.config() };
+  }
+
+  fromModel(model: HDogConfig): void {
+    const c = model.config;
+
+    if (typeof c.adogSecondaryScaleFactor === 'number') {
+      this.adogSecondaryScaleFactor.setValue(c.adogSecondaryScaleFactor); // valueChanges updates scaleFactor
+    }
+
+    // viewChild.required() throws until the view exists, so always wait.
+    afterNextRender(() => {
+      // The wire type is Partial<...>, but __on_nested_change__ always writes full configs.
+      if (c.fdog) {
+        this.fdogCmp().fromModel({ kind: 'config', type: 'fdog', config: c.fdog as WireFDoGConfig });
+      }
+      if (c.adog) {
+        this.adogCmp().fromModel({ kind: 'config', type: 'adog', config: c.adog as WireADoGConfig });
+      }
+    }, { injector: this.injector });
   }
 }

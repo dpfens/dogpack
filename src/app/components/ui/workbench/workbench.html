@@ -46,7 +46,7 @@
             </button>
           </div>
           <div class="card-body">
-            <dog-layer #rootLayer />
+            <dog-layer #rootLayer [nodes]="defaultNodes()" />
           </div>
         </div>
       } @else if (isVideo()) {

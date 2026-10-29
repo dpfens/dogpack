@@ -5,6 +5,8 @@ import {
   ElementRef,
   inject,
   Injector,
+  input,
+  OnInit,
   Renderer2,
   signal,
   Type,
@@ -18,7 +20,7 @@ import { FDogComponent } from '../fdog/fdog';
 import { ADogComponent } from '../adog/adog';
 import { HDogComponent } from '../hdog/hdog';
 import { extensions } from 'dogpack';
-import { DogComponentType, DogLayer, DogNode } from '../../../models/dog';
+import { DogComponentType, DogConfigNode, DogLayer, DogModelProvider, DogNode, isLayer } from '../../../models/dog';
 import { DogPreviewableComponent } from '../base';
 import { DogFocusLabel } from '../../../services/dog/dog-service';
 import { BuiltinBlendMode } from 'dogpack/extensions';
@@ -55,7 +57,7 @@ function leafComponent(type: DogComponentType): Type<DogLeaf> {
   templateUrl: './layer.html',
   styleUrl: './layer.scss',
 })
-export class DogLayerComponent extends DogPreviewableComponent<DogLayer> {
+export class DogLayerComponent extends DogPreviewableComponent<DogLayer> implements OnInit {
   /**
    * Hidden mounting point. createComponent() needs *some* ViewContainerRef to
    * instantiate into; every node is created here first and then its native
@@ -71,7 +73,6 @@ export class DogLayerComponent extends DogPreviewableComponent<DogLayer> {
   private readonly slots = viewChildren('slot', { read: ElementRef });
 
   private readonly renderer = inject(Renderer2);
-  private readonly injector = inject(Injector);
   /**
    * Backs the collapse-target DOM id in layer.html (`dog-layer-collapse-{id}`).
    * Must be unique across *every* DogLayerComponent instance, not just this
@@ -86,6 +87,14 @@ export class DogLayerComponent extends DogPreviewableComponent<DogLayer> {
   readonly name: WritableSignal<string> = signal('');
   readonly instances: WritableSignal<DogEntry[]> = signal([]);
   readonly blend: WritableSignal<BuiltinBlendMode | undefined> = signal(undefined);
+
+  /** Optional initial children, as plain data. Read once on init. */
+  readonly nodes = input<readonly DogNode[]>([]);
+
+  ngOnInit(): void {
+    this.load(this.nodes());
+  }
+
 
   /** Menu options rendered by the "Add node" dropdown in the template. */
   readonly nodeTypes: ReadonlyArray<{ kind: DogNodeKind; label: string }> = [
@@ -103,6 +112,30 @@ export class DogLayerComponent extends DogPreviewableComponent<DogLayer> {
    * explicit literal array of the modes you support.
    */
   readonly blendModes: BuiltinBlendMode[] = Object.keys(extensions.multiScale.BlendFunctions) as BuiltinBlendMode[];
+
+  private load(nodes: readonly DogNode[]): void {
+    for (const node of nodes) this.addFromModel(node);
+  }
+
+  private addFromModel(node: DogNode): DogRef {
+    if (isLayer(node)) {
+      const ref = this.addLayer();
+      ref.instance.fromModel(node);
+      return ref;
+    }
+    const ref = this.add(leafComponent(node.type), node.type);
+    // The leaf union's fromModel params intersect to `never` (xdog & fdog
+    // discriminants conflict), so dispatch through the shared base type.
+    // Safe because node.type chose the matching component class above.
+    (ref.instance as DogModelProvider<DogConfigNode>).fromModel(node);
+    return ref;
+  }
+
+  fromModel(layer: DogLayer): void {
+    this.name.set(layer.name);
+    this.blend.set(layer.blendMode); // direct set; setBlendMode() would fire analytics
+    this.load(layer.components);
+  }
 
   setBlendMode(mode: BuiltinBlendMode | undefined): void {
     this.blend.set(mode);

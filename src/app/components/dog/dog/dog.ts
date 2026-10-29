@@ -33,6 +33,12 @@ const THRESHOLD_TYPE_TO_DESCRIPTOR_KIND: Record<ThresholdType, ThresholdStrategy
   Hysteresis: 'hysteresis',
 };
 
+const DESCRIPTOR_KIND_TO_THRESHOLD_TYPE: Record<ThresholdStrategyDescriptor['kind'], ThresholdType> = {
+  soft: 'Soft',
+  hard: 'Hard',
+  hysteresis: 'Hysteresis',
+};
+
 type DogFormControls = {
   [K in DogConfigParamType]: FormControl<number>;
 } & {
@@ -178,6 +184,10 @@ export class DogComponent {
       }
       if (p) {
         this.applyPreset(p);
+      }
+      if (this.pendingModel) {
+        this.applyModel(this.pendingModel);
+        this.pendingModel = null;
       }
       if (!this.initialEmitDone) {
         this.initialEmitDone = true;
@@ -334,4 +344,63 @@ export class DogComponent {
       thresholdStrategy: this.buildThresholdStrategyDescriptor(this.form),
     });
   }
+
+  private pendingModel: WireDoGConfig | null = null;
+
+/** Inverse of emitIfValid(): hydrate the form from a wire config. */
+fromModel(config: WireDoGConfig): void {
+  if (!this.defaultsApplied) {
+    // __on_input hasn't run yet and would overwrite us with range defaults.
+    this.pendingModel = config;
+    return;
+  }
+  this.applyModel(config);
+  this.emitIfValid();
+}
+
+private applyModel(c: WireDoGConfig): void {
+  const f = this.form.controls;
+  const set = (ctl: FormControl<number>, v: number | undefined) => {
+    if (typeof v === 'number') ctl.setValue(v);
+  };
+
+  set(f.sigma, c.sigma);
+  set(f.k, c.k);
+
+  if (typeof c.p === 'number') {
+    this.pAuto.set(false);
+    f.p.setValue(c.p);
+  } else {
+    this.pAuto.set(true);
+    set(f.pWeak, c.p.weak);
+    set(f.pStrong, c.p.strong);
+    set(f.pSmoothingSigma, c.p.smoothingSigma);
+  }
+
+  if (typeof c.epsilon === 'number') {
+    this.epsilonAuto.set(false);
+    f.epsilon.setValue(c.epsilon);
+  } else {
+    // AutoEpsilon.sigma is just config.sigma again (see emitIfValid), so it's dropped.
+    this.epsilonAuto.set(true);
+    set(f.contrastMargin, c.epsilon.contrastMargin);
+  }
+
+  if (typeof c.phi === 'number') {
+    this.phiAuto.set(false);
+    f.phi.setValue(c.phi);
+  } else {
+    this.phiAuto.set(true);
+    set(f.phiSoft, c.phi.soft);
+    set(f.phiHard, c.phi.hard);
+    set(f.phiSigma, c.phi.sigma);
+  }
+
+  const ts = c.thresholdStrategy;
+  f.strategyKey.setValue(DESCRIPTOR_KIND_TO_THRESHOLD_TYPE[ts.kind]); // also updates strategyValue
+  if (ts.kind === 'hysteresis') {
+    set(f.highOffset, ts.highOffset);
+    set(f.lowOffset, ts.lowOffset);
+  }
+}
 }

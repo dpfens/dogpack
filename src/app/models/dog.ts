@@ -175,6 +175,7 @@ export function isConfigOfType<K extends DogComponentType>(
 
 export interface DogModelProvider<T extends DogNode> {
   toModel(): T;
+  fromModel(model: T): void;
 }
 
 /** What actually crosses the postMessage boundary to the worker - the config tree plus the pixels it runs on. */

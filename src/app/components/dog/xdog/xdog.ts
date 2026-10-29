@@ -1,4 +1,4 @@
-import { Component, input, model, signal } from '@angular/core';
+import { afterNextRender, Component, inject, Injector, input, model, signal, viewChild } from '@angular/core';
 import { FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
 import { DogConfigParamType, ParamRange, STYLE_PRESETS, XDOG_PARAM_RANGES, XDogConfigParamType } from 'dogpack/dog';
 import { DogComponent } from '../dog/dog';
@@ -16,6 +16,11 @@ type BlurType = 'Isotropic';
 const BLUR_TYPE_TO_DESCRIPTOR_KIND: Record<BlurType, BlurStrategyDescriptor['kind']> = {
   Isotropic: 'isotropic',
 };
+
+const BLUR_DESCRIPTOR_KIND_TO_TYPE: Partial<Record<BlurStrategyDescriptor['kind'], BlurType>> = {
+  isotropic: 'Isotropic',
+};
+
 
 @Component({
   selector: 'xdog',
@@ -97,5 +102,22 @@ export class XDogComponent extends DogPreviewableComponent<XDogConfig> {
 
   toModel(): XDogConfig {
     return this.config();
+  }
+
+  fromModel(model: XDogConfig): void {
+    this.config.set(model); // so toModel() round-trips even before first render
+
+    const { blurStrategy, kernelSizeMultiplier } = model.config;
+
+    const blurType = blurStrategy && BLUR_DESCRIPTOR_KIND_TO_TYPE[blurStrategy.kind];
+    if (blurType) this.blurStrategyKey.set(blurType);
+
+    const kernel =
+      kernelSizeMultiplier ??
+      (blurStrategy?.kind === 'isotropic' ? blurStrategy.kernelSizeMultiplier : undefined);
+    if (typeof kernel === 'number') this.kernelSizeMultiplier.setValue(kernel);
+
+    // Own controls first: onConfig() reads them when <dog> re-emits.
+    this.restoreBase(model.config);
   }
 }

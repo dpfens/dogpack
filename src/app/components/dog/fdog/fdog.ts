@@ -197,4 +197,25 @@ export class FDogComponent extends DogPreviewableComponent<FDogConfig> {
   toModel(): FDogConfig {
     return { kind: 'config', type: 'fdog', config: this.config() };
   }
+
+  fromModel(model: FDogConfig): void {
+    const c = model.config;
+    this.config.set(c); // __sync_config__ early-returns until <dog> emits, so this survives
+
+    for (const key of this.fdogKeys) {
+      const val = c[key];
+      if (typeof val === 'number') this.controlFor[key].setValue(val);
+    }
+
+    const cw = c.confidenceWeighting;
+    this.confidenceWeightingEnabled.set(!!cw);
+    if (cw) {
+      if (typeof cw.epsilonMargin === 'number') this.epsilonMargin.setValue(cw.epsilonMargin);
+      if (typeof cw.sigmaMBlend === 'boolean') this.sigmaMBlend.setValue(cw.sigmaMBlend);
+      if (typeof cw.sigmaABlend === 'boolean') this.sigmaABlend.setValue(cw.sigmaABlend);
+      if (typeof cw.pByMagnitude === 'boolean') this.pByMagnitude.setValue(cw.pByMagnitude);
+    }
+
+    this.restoreBase(c);
+  }
 }

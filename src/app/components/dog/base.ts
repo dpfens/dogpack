@@ -1,9 +1,10 @@
-import { Directive, inject, output, signal } from '@angular/core';
+import { afterNextRender, Directive, inject, Injector, output, signal, viewChild } from '@angular/core';
 import { ChannelImage } from 'dogpack';
 import { luminanceToImageData } from 'dogpack/utils';
-import { DogModelProvider, DogNode } from '../../models/dog';
+import { DogModelProvider, DogNode, WireDoGConfig } from '../../models/dog';
 import { DoGService, type DogFocusLabel } from '../../services/dog/dog-service';
 import { ApplicationAnalyticsService } from '../../services/analytics/application-analytics.service';
+import { DogComponent } from './dog/dog';
 
 /**
  * Shared "run my model through the worker and report the result" behavior
@@ -26,6 +27,14 @@ import { ApplicationAnalyticsService } from '../../services/analytics/applicatio
 export abstract class DogPreviewableComponent<T extends DogNode> implements DogModelProvider<T> {
   protected readonly dogService = inject(DoGService);
   protected readonly analytics = inject(ApplicationAnalyticsService);
+  protected readonly injector = inject(Injector);
+  private readonly dogCmp = viewChild(DogComponent);
+
+  protected restoreBase(base: WireDoGConfig): void {
+    const dog = this.dogCmp();
+    if (dog) dog.fromModel(base); // already rendered (reset, or nested inside HDoG)
+    else afterNextRender(() => this.dogCmp()?.fromModel(base), { injector: this.injector });
+  }
 
   /** Same contract every leaf/layer previously declared individually. */
   readonly channelImage = output<ChannelImage>();
@@ -34,6 +43,8 @@ export abstract class DogPreviewableComponent<T extends DogNode> implements DogM
   readonly previewPending = signal(false);
 
   abstract toModel(): T;
+
+  abstract fromModel(model: T): void;
 
   /** Label reported to DoGService's shared focus state while/after this node runs. */
   protected abstract focusLabel(): DogFocusLabel;
