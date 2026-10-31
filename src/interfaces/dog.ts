@@ -451,6 +451,8 @@ export const DEFAULT_DOG_CONFIG: DoGConfig = {
   thresholdStrategy: new SoftThresholdStrategy()
 };
 
+export const DEFAULT_XDOG_CONFIG = DEFAULT_DOG_CONFIG;
+
 /**
  * Default values for FDoGConfig.confidenceWeighting's sub-options, used
  * once the caller opts in by providing the (possibly empty) object.
